@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MigrateCRM – Implementation Plan</title>
+<style>
+  @page { size: A4; margin: 18mm 15mm 18mm 15mm; }
+  :root { --ink:#1b2333; --muted:#5b6578; --brand:#1449e1; --line:#d7dce5; --soft:#f3f6fb; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: var(--ink); font-size: 10pt; line-height: 1.45; margin: 0; }
+  h1 { font-size: 26pt; margin: 0 0 6px; color: var(--brand); }
+  h2 { font-size: 15pt; color: var(--brand); border-bottom: 2px solid var(--brand); padding-bottom: 3px; margin: 22px 0 10px; break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 14px 0 6px; break-after: avoid; }
+  p { margin: 4px 0 8px; }
+  ul { margin: 4px 0 8px; padding-left: 18px; }
+  li { margin: 2px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 9pt; }
+  th, td { border: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  tr { break-inside: avoid; }
+  code { font-family: Menlo, Consolas, monospace; font-size: 8.6pt; background: var(--soft); padding: 0 3px; border-radius: 3px; }
+  pre { font-family: Menlo, Consolas, monospace; font-size: 8.2pt; background: var(--soft); border: 1px solid var(--line); padding: 8px 10px; border-radius: 4px; white-space: pre; line-height: 1.35; break-inside: avoid; }
+  .cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; break-after: page; }
+  .cover .sub { font-size: 14pt; color: var(--muted); margin-bottom: 26px; }
+  .meta td { border: none; padding: 2px 10px 2px 0; font-size: 10.5pt; }
+  .meta td:first-child { color: var(--muted); width: 140px; }
+  .note { background: #fff8e6; border-left: 4px solid #e0a100; padding: 6px 10px; margin: 8px 0; font-size: 9pt; }
+  .matrix { font-size: 7.6pt; }
+  .matrix th, .matrix td { padding: 3px 3px; text-align: center; }
+  .matrix td:first-child, .matrix th:first-child { text-align: left; white-space: nowrap; }
+  .matrix .grp td { background: #e8eefc; font-weight: 700; text-align: left; }
+  .y { color: #127a3a; font-weight: 700; }
+  .o { color: #9a5b00; font-weight: 700; }
+  .toc li { margin: 3px 0; }
+  .pb { break-before: page; }
+  .small { font-size: 8.6pt; color: var(--muted); }
+  .diagram { width: 100%; margin: 6px 0 12px; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <h1>MigrateCRM</h1>
+  <div class="sub">Implementation Plan — Enterprise CRM for an Australian Registered Migration Agency</div>
+  <table class="meta">
+    <tr><td>Version</td><td>2.0 (replaces v1 Next.js plan)</td></tr>
+    <tr><td>Date</td><td>2 November 2026</td></tr>
+    <tr><td>Backend</td><td>Python 3.12 · FastAPI · SQLAlchemy 2 · Alembic</td></tr>
+    <tr><td>Frontend</td><td>React 18 · TypeScript · Vite · TanStack Query · Tailwind CSS</td></tr>
+    <tr><td>Database</td><td>Neon (serverless PostgreSQL), AWS Sydney region</td></tr>
+    <tr><td>Jurisdiction</td><td>Australia (MARA / OMARA regulated agents)</td></tr>
+    <tr><td>Scope</td><td>Core CRM + Billing &amp; Client Account + Client Portal + Reports</td></tr>
+  </table>
+  <h3 style="margin-top:30px">Contents</h3>
+  <ol class="toc">
+    <li>Goals and scope</li>
+    <li>Technology decisions</li>
+    <li>System architecture</li>
+    <li>Repository structure</li>
+    <li>Functional modules</li>
+    <li>Roles</li>
+    <li>Permission matrix and access rules</li>
+    <li>Data model</li>
+    <li>API design</li>
+    <li>Frontend design</li>
+    <li>Security</li>
+    <li>Australian compliance support</li>
+    <li>Neon database operations</li>
+    <li>Testing and quality</li>
+    <li>Deployment and environments</li>
+    <li>Delivery phases</li>
+    <li>Risks and open questions</li>
+  </ol>
+</section>
+
+<h2>1. Goals and scope</h2>
+<p>Build a production-grade CRM for an Australian migration agency, modelled on Salesforce concepts: <b>Leads</b> are converted into
+<b>Contacts</b> (clients), <b>Organisations</b> (accounts, e.g. employer sponsors) and <b>Matters</b> (visa cases, the equivalent of
+Opportunities/Cases). Every record has a Salesforce-style record page: highlights panel, stage <b>Path</b>, related lists and an activity timeline.</p>
+<ul>
+  <li><b>In scope:</b> leads, contacts, organisations, matters, tasks &amp; activities, documents, billing (service agreements, invoices, payments, client/trust account), client portal, reports with CSV export, administration, audit log, notifications.</li>
+  <li><b>Out of scope (v1):</b> direct lodgement into ImmiAccount (no public API), e-mail inbox sync, SMS gateway, accounting-package sync (Xero/MYOB), mobile apps. The design leaves extension points for these.</li>
+  <li><b>Quality bar:</b> role-based security enforced on the server, full audit trail, automated tests, typed API contract, reproducible deployments.</li>
+</ul>
+
+<h2>2. Technology decisions</h2>
+<table>
+  <tr><th style="width:24%">Area</th><th>Decision</th><th style="width:30%">Reason</th></tr>
+  <tr><td>Backend framework</td><td>FastAPI on Python 3.12, served by Uvicorn (Gunicorn workers in production)</td><td>Typed, fast, automatic OpenAPI schema.</td></tr>
+  <tr><td>ORM / migrations</td><td>SQLAlchemy 2.0 (typed ORM) + Alembic</td><td>Mature, explicit transactions, versioned schema changes.</td></tr>
+  <tr><td>Validation</td><td>Pydantic v2 schemas for every request and response</td><td>One source of truth for API shapes.</td></tr>
+  <tr><td>Database</td><td>Neon serverless PostgreSQL 16+, project in <code>aws-ap-southeast-2</code> (Sydney)</td><td>Managed Postgres, branching for dev/preview, Australian data residency.</td></tr>
+  <tr><td>DB driver</td><td>psycopg 3 (<code>postgresql+psycopg://</code>), <code>sslmode=require</code></td><td>Well supported by SQLAlchemy and Neon.</td></tr>
+  <tr><td>Background jobs</td><td>Celery + Redis (worker + beat scheduler)</td><td>E-mails, deadline / visa-expiry reminders, report exports.</td></tr>
+  <tr><td>File storage</td><td>S3-compatible object storage (AWS S3, Sydney region); local disk adapter for development</td><td>Durable, encrypted at rest, pre-signed downloads.</td></tr>
+  <tr><td>PDF generation</td><td>WeasyPrint (HTML templates → PDF)</td><td>Invoices and service agreements.</td></tr>
+  <tr><td>Passwords / MFA</td><td>Argon2id (<code>argon2-cffi</code>); TOTP MFA (<code>pyotp</code>)</td><td>Current best practice; MFA mandatory for staff.</td></tr>
+  <tr><td>Frontend</td><td>React 18 + TypeScript, Vite, React Router, TanStack Query, React Hook Form + Zod, Tailwind CSS, Recharts</td><td>Fast SPA, typed forms, cached server state.</td></tr>
+  <tr><td>API client</td><td>Generated from the FastAPI OpenAPI schema (<code>openapi-typescript</code>)</td><td>Front and back end cannot drift.</td></tr>
+  <tr><td>Testing</td><td>pytest + httpx (backend), Vitest + Testing Library (frontend), Playwright (end-to-end)</td><td>Unit, integration and E2E coverage.</td></tr>
+  <tr><td>Tooling</td><td>uv (Python deps), Ruff, mypy, ESLint, Prettier, pre-commit, GitHub Actions</td><td>Consistent quality gates.</td></tr>
+  <tr><td>Money</td><td>Integer cents (AUD); GST 10 % computed per line</td><td>No floating-point errors.</td></tr>
+</table>
+
+<h2>3. System architecture</h2>
+<svg class="diagram" viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg" font-family="Arial" font-size="11">
+  <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5b6578"/></marker></defs>
+  <rect x="10" y="20" width="150" height="70" rx="8" fill="#eef3ff" stroke="#1449e1"/>
+  <text x="85" y="45" text-anchor="middle" font-weight="bold">React SPA</text>
+  <text x="85" y="62" text-anchor="middle">Staff app  /  Client portal</text>
+  <text x="85" y="78" text-anchor="middle" fill="#5b6578">Vite build, CDN</text>
+  <rect x="230" y="20" width="170" height="70" rx="8" fill="#eef3ff" stroke="#1449e1"/>
+  <text x="315" y="45" text-anchor="middle" font-weight="bold">FastAPI  /api/v1</text>
+  <text x="315" y="62" text-anchor="middle">Auth · RBAC · Services</text>
+  <text x="315" y="78" text-anchor="middle" fill="#5b6578">Gunicorn + Uvicorn</text>
+  <rect x="480" y="10" width="220" height="50" rx="8" fill="#ecf8f0" stroke="#127a3a"/>
+  <text x="590" y="32" text-anchor="middle" font-weight="bold">Neon PostgreSQL (Sydney)</text>
+  <text x="590" y="48" text-anchor="middle" fill="#5b6578">pooled endpoint (app) · direct (migrations)</text>
+  <rect x="480" y="75" width="220" height="45" rx="8" fill="#fff8e6" stroke="#e0a100"/>
+  <text x="590" y="96" text-anchor="middle" font-weight="bold">S3 object storage</text>
+  <text x="590" y="111" text-anchor="middle" fill="#5b6578">client documents, PDFs</text>
+  <rect x="230" y="140" width="170" height="70" rx="8" fill="#eef3ff" stroke="#1449e1"/>
+  <text x="315" y="165" text-anchor="middle" font-weight="bold">Celery worker + beat</text>
+  <text x="315" y="182" text-anchor="middle">reminders · e-mail · exports</text>
+  <text x="315" y="198" text-anchor="middle" fill="#5b6578">same codebase as API</text>
+  <rect x="480" y="140" width="100" height="45" rx="8" fill="#f3f6fb" stroke="#5b6578"/>
+  <text x="530" y="167" text-anchor="middle" font-weight="bold">Redis</text>
+  <rect x="600" y="140" width="100" height="45" rx="8" fill="#f3f6fb" stroke="#5b6578"/>
+  <text x="650" y="160" text-anchor="middle" font-weight="bold">SMTP</text>
+  <text x="650" y="175" text-anchor="middle" fill="#5b6578">transactional mail</text>
+  <line x1="160" y1="55" x2="228" y2="55" stroke="#5b6578" marker-end="url(#a)"/>
+  <text x="194" y="48" text-anchor="middle" fill="#5b6578" font-size="9">HTTPS JSON</text>
+  <line x1="400" y1="45" x2="478" y2="35" stroke="#5b6578" marker-end="url(#a)"/>
+  <line x1="400" y1="70" x2="478" y2="95" stroke="#5b6578" marker-end="url(#a)"/>
+  <line x1="315" y1="90" x2="315" y2="138" stroke="#5b6578" marker-end="url(#a)"/>
+  <line x1="400" y1="165" x2="478" y2="163" stroke="#5b6578" marker-end="url(#a)"/>
+  <line x1="400" y1="190" x2="598" y2="175" stroke="#5b6578" marker-end="url(#a)"/>
+  <line x1="380" y1="140" x2="490" y2="62" stroke="#5b6578" stroke-dasharray="4 3" marker-end="url(#a)"/>
+</svg>
+<ul>
+  <li><b>Layered backend:</b> <code>routers</code> (HTTP, validation) → <code>services</code> (business rules, permission checks, transactions, audit) → <code>repositories/models</code> (SQLAlchemy). Routers never touch the DB directly.</li>
+  <li><b>Single origin:</b> SPA and API served under one domain (<code>app.example.com</code> and <code>app.example.com/api</code>) so session cookies stay first-party and <code>SameSite=Lax</code> works without CORS.</li>
+  <li><b>Stateless API processes:</b> sessions in Postgres, jobs in Redis, files in S3 → horizontal scaling.</li>
+</ul>
+
+<h2>4. Repository structure</h2>
+<pre>crm-migration-agent/
+├── backend/
+│   ├── app/
+│   │   ├── main.py              # FastAPI app, middleware, router registration
+│   │   ├── core/                # config (pydantic-settings), security, logging, errors
+│   │   ├── db/                  # engine/session, base model, mixins (timestamps, soft delete)
+│   │   ├── models/              # SQLAlchemy models (one module per domain)
+│   │   ├── schemas/             # Pydantic request/response models
+│   │   ├── auth/                # login, sessions, MFA, password reset, dependencies
+│   │   ├── permissions/         # role→permission matrix, record scopes, require() dependency
+│   │   ├── services/            # leads, contacts, matters, billing, trust, documents, reports …
+│   │   ├── routers/             # /api/v1/* endpoints
+│   │   ├── storage/             # S3 + local adapters
+│   │   ├── pdf/                 # WeasyPrint templates (invoice, agreement)
+│   │   └── worker/              # Celery app, scheduled tasks, e-mail templates
+│   ├── alembic/                 # migrations
+│   ├── scripts/seed.py          # demo users (one per role), visa catalogue, sample data
+│   ├── tests/                   # pytest: unit, API, permission matrix
+│   └── pyproject.toml
+├── frontend/
+│   ├── src/
+│   │   ├── api/                 # generated OpenAPI types + typed fetch client
+│   │   ├── auth/                # session context, route guards, &lt;Can permission=…&gt;
+│   │   ├── components/          # UI kit: DataTable, Path, RecordHeader, RelatedList, forms …
+│   │   ├── features/            # leads, contacts, organisations, matters, tasks, billing, reports, admin
+│   │   ├── portal/              # client portal pages
+│   │   └── routes.tsx
+│   ├── e2e/                     # Playwright tests
+│   └── package.json
+├── docker-compose.yml           # api, worker, beat, redis, minio (local S3), frontend
+├── .github/workflows/ci.yml
+└── docs/</pre>
+
+<h2 class="pb">5. Functional modules</h2>
+<table>
+  <tr><th style="width:20%">Module</th><th>Features</th></tr>
+  <tr><td>Home dashboard</td><td>KPIs (open leads, active matters, lodged this month, outstanding invoices), my open tasks, deadlines due in 7/30 days, visa expiries, matter pipeline by stage, recent activity. Content adapts to role.</td></tr>
+  <tr><td>Leads</td><td>Capture (manual + public enquiry form endpoint with spam protection), list views with filters/search/sort/pagination, saved views, status Path, rating, owner, duplicate detection by e-mail/phone. <b>Convert</b> → Contact (+ optional Organisation) + optional Matter in one transaction, with lead history carried over.</td></tr>
+  <tr><td>Contacts (clients)</td><td>Identity, date of birth, citizenship, passport &amp; expiry, current visa &amp; expiry, onshore/offshore, family relationships, consents (privacy, marketing). Related: matters, documents, tasks, activities, invoices, client-account ledger, portal access.</td></tr>
+  <tr><td>Organisations</td><td>Employers / sponsors: ABN, industry, standard business sponsorship approval and expiry, related contacts and matters.</td></tr>
+  <tr><td>Matters</td><td>Auto-numbered <code>MAT-YYYY-NNNN</code>; visa subclass &amp; stream; stage Path; status; priority; responsible RMA; case officer; applicants (primary, partner, dependants, sponsor, nominator); ImmiAccount TRN / application ID; lodgement date; RFI / natural-justice deadlines; decision date, outcome, grant number, granted visa expiry; fees. Document checklist generated from the visa template. Kanban board by stage.</td></tr>
+  <tr><td>Tasks &amp; activities</td><td>Tasks (to-do, call, e-mail, meeting, follow-up, statutory deadline) with priority, due date, assignee and reminders. Activity timeline: notes, calls, e-mails, meetings, system events (stage changes, uploads, signatures).</td></tr>
+  <tr><td>Documents</td><td>Upload to matter/contact, category, client-visible flag, link to checklist item, versioning, virus scan hook, soft delete, pre-signed download links that expire in 5 minutes.</td></tr>
+  <tr><td>Billing</td><td><b>Service agreements</b> (scope of services, professional fee, disbursements, government charges estimate, Consumer Guide provided flag, sent → signed by the client in the portal, PDF). <b>Invoices</b> (line items, GST / GST-free lines, draft → issued → paid / void, PDF, e-mail). <b>Payments</b>. <b>Client (trust) account</b> ledger per client: deposits, withdrawals, transfer-to-office against an invoice; balance can never go negative.</td></tr>
+  <tr><td>Client portal</td><td>Client login (invited by staff), view own matters and stage, outstanding checklist items, upload documents, download client-visible documents, secure messages with the team, sign service agreements, view/download invoices.</td></tr>
+  <tr><td>Reports</td><td>Lead funnel &amp; conversion by source/owner, matters by stage / visa / outcome, grant rate, average processing time, revenue (invoiced, collected, outstanding, aged debtors 0–30/31–60/61–90/90+), client-account balances, staff workload. Date-range filters, charts, CSV export (audited).</td></tr>
+  <tr><td>Administration</td><td>Users (invite, role, activate/deactivate, reset MFA, unlock), visa catalogue and checklist templates, firm settings (name, ABN, MARA number, GST registration, invoice terms, bank &amp; client-account details), audit log viewer with filters, data export.</td></tr>
+  <tr><td>Cross-cutting</td><td>Global search (leads, contacts, organisations, matters), in-app + e-mail notifications, scheduled reminders (task due, RFI deadline, visa expiry 90/30/7 days, sponsorship expiry), health checks.</td></tr>
+</table>
+
+<h3>Key workflows and states</h3>
+<table>
+  <tr><th style="width:20%">Object</th><th>States</th></tr>
+  <tr><td>Lead status</td><td>NEW → CONTACTED → QUALIFIED → CONSULTATION_BOOKED → CONVERTED; or UNQUALIFIED / LOST (reason required). CONVERTED only via conversion.</td></tr>
+  <tr><td>Matter stage</td><td>CONSULTATION → AGREEMENT → DOCUMENT_COLLECTION → PREPARATION → READY_TO_LODGE → LODGED → FURTHER_INFO → DECISION. Status: OPEN / ON_HOLD / CLOSED. Outcome: GRANTED / REFUSED / WITHDRAWN / INVALID.</td></tr>
+  <tr><td>Matter rules</td><td>Moving past AGREEMENT requires a signed service agreement (admin can override with a reason, audited). Moving to LODGED, FURTHER_INFO or DECISION, and recording an outcome, requires <code>matter.lodge</code>. LODGED requires lodgement date and application reference. DECISION requires outcome and decision date.</td></tr>
+  <tr><td>Service agreement</td><td>DRAFT → SENT → SIGNED, or CANCELLED. Signed agreements are immutable.</td></tr>
+  <tr><td>Invoice</td><td>DRAFT → ISSUED → PARTIALLY_PAID → PAID, or VOID (reason required). Only drafts are editable; numbers allocated on issue.</td></tr>
+  <tr><td>Checklist item</td><td>PENDING → RECEIVED → APPROVED, or REJECTED (needs replacement) / NOT_APPLICABLE.</td></tr>
+</table>
+
+<h2 class="pb">6. Roles</h2>
+<table>
+  <tr><th style="width:20%">Role (code)</th><th style="width:22%">Typical user</th><th>Summary of access</th></tr>
+  <tr><td><code>ADMIN</code></td><td>Principal / system administrator</td><td>Full access including users, firm settings, audit log, deletes and stage overrides.</td></tr>
+  <tr><td><code>PRACTICE_MANAGER</code></td><td>Office / practice manager</td><td>All CRM data, billing, client account, reports, visa catalogue, audit log. Cannot manage users or firm settings, or delete matters.</td></tr>
+  <tr><td><code>MIGRATION_AGENT</code></td><td>Registered Migration Agent (RMA)</td><td>Full client work on all matters, including <b>lodgement and outcomes</b> (registered-agent-only actions), service agreements and invoices. Cannot manage the client account, record payments, or delete leads, contacts, organisations or matters.</td></tr>
+  <tr><td><code>CASE_OFFICER</code></td><td>Paralegal / case officer</td><td>Works only on matters <b>assigned</b> to them: documents, checklist, tasks, notes, client messages. Cannot lodge, record outcomes, or see billing.</td></tr>
+  <tr><td><code>INTAKE_CONSULTANT</code></td><td>Sales / intake</td><td>Own and unassigned leads, lead conversion, contacts and organisations. No matters, billing or reports.</td></tr>
+  <tr><td><code>ACCOUNTS</code></td><td>Finance officer</td><td>Invoices, payments, client account, billing reports; read-only contacts and matters.</td></tr>
+  <tr><td><code>AUDITOR</code></td><td>Compliance / external reviewer</td><td>Read-only access to everything including audit log and reports. Cannot change any data.</td></tr>
+  <tr><td><code>CLIENT</code></td><td>Agency client</td><td>Client portal only, limited to their own contact record, matters, documents, messages, agreements and invoices.</td></tr>
+</table>
+
+<h2>7. Permission matrix and access rules</h2>
+<p class="small"><span class="y">✓</span> = granted for all records. <span class="o">own</span> = only records the user owns or is assigned to (enforced in queries). Blank = denied. Permissions are checked on the server for every request; the UI only hides what the server would refuse.</p>
+<table class="matrix">
+  <thead><tr><th>Permission</th><th>ADMIN</th><th>PRAC. MGR</th><th>RMA</th><th>CASE OFF.</th><th>INTAKE</th><th>ACCOUNTS</th><th>AUDITOR</th><th>CLIENT</th></tr></thead>
+  <tr class="grp"><td colspan="9">General</td></tr>
+  <tr><td>dashboard.view</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td></tr>
+  <tr><td>search.global</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td><td class="o">own</td><td class="y">✓</td><td class="y">✓</td><td></td></tr>
+  <tr class="grp"><td colspan="9">Leads</td></tr>
+  <tr><td>lead.read</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td class="o">own</td><td></td><td class="y">✓</td><td></td></tr>
+  <tr><td>lead.create / lead.update</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td class="o">own</td><td></td><td></td><td></td></tr>
+  <tr><td>lead.assign (change owner)</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>lead.convert</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td class="o">own</td><td></td><td></td><td></td></tr>
+  <tr><td>lead.delete</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr class="grp"><td colspan="9">Contacts &amp; organisations</td></tr>
+  <tr><td>contact.read</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own (portal profile)</td></tr>
+  <tr><td>contact.create / contact.update</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td></tr>
+  <tr><td>contact.delete</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>contact.portal_invite</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>organisation.read</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td></tr>
+  <tr><td>organisation.create / update</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td class="y">✓</td><td></td><td></td><td></td></tr>
+  <tr><td>organisation.delete</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr class="grp"><td colspan="9">Matters</td></tr>
+  <tr><td>matter.read</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td><td></td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td></tr>
+  <tr><td>matter.create</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>matter.update (details, stage up to READY_TO_LODGE, checklist, applicants)</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>matter.assign (RMA / case officer)</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>matter.lodge (lodgement, RFI, decision, outcome)</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>matter.override (skip agreement gate)</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>matter.delete</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr class="grp"><td colspan="9">Tasks, activities, documents, messages</td></tr>
+  <tr><td>task.read</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td><td class="o">own</td><td class="o">own</td><td class="y">✓</td><td></td></tr>
+  <tr><td>task.create / task.update</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td><td class="o">own</td><td class="o">own</td><td></td><td></td></tr>
+  <tr><td>task.delete</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>activity.create (log note/call/e-mail/meeting)</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td><td class="o">own</td><td class="y">✓</td><td></td><td></td></tr>
+  <tr><td>document.read / download</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td><td></td><td></td><td class="y">✓</td><td class="o">own, client-visible</td></tr>
+  <tr><td>document.upload</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td><td></td><td></td><td></td><td class="o">own</td></tr>
+  <tr><td>document.delete (soft)</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>message.read</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td><td></td><td></td><td class="y">✓</td><td class="o">own</td></tr>
+  <tr><td>message.send</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td><td></td><td></td><td></td><td class="o">own</td></tr>
+  <tr class="grp"><td colspan="9">Billing &amp; client account</td></tr>
+  <tr><td>agreement.read</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td><td></td><td class="y">✓</td><td class="y">✓</td><td class="o">own</td></tr>
+  <tr><td>agreement.manage (create, send, cancel)</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>agreement.sign</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="o">own</td></tr>
+  <tr><td>invoice.read</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td class="y">✓</td><td class="y">✓</td><td class="o">own (issued)</td></tr>
+  <tr><td>invoice.manage (create, issue, void)</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td class="y">✓</td><td></td><td></td></tr>
+  <tr><td>payment.record</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td class="y">✓</td><td></td><td></td></tr>
+  <tr><td>trust.read</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td class="y">✓</td><td class="y">✓</td><td></td></tr>
+  <tr><td>trust.manage (deposit, withdraw, transfer)</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td class="y">✓</td><td></td><td></td></tr>
+  <tr class="grp"><td colspan="9">Reports &amp; administration</td></tr>
+  <tr><td>report.view</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td class="o">billing only</td><td class="y">✓</td><td></td></tr>
+  <tr><td>report.export (CSV)</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td class="o">billing only</td><td class="y">✓</td><td></td></tr>
+  <tr><td>visa.manage (catalogue, checklists)</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>user.manage</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>settings.manage</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>audit.read</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td class="y">✓</td><td></td></tr>
+  <tr><td>portal.access</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="y">✓</td></tr>
+</table>
+
+<h3>Definition of "own"</h3>
+<ul>
+  <li><b>Matters (case officer):</b> user is the matter's case officer or responsible agent. Everything hanging off a matter (documents, checklist, messages, agreements, tasks on it) inherits this.</li>
+  <li><b>Matters (client):</b> the client's contact is the primary client or a listed applicant on the matter.</li>
+  <li><b>Leads (intake):</b> lead owner is the user, or the lead is unassigned (claiming sets the owner).</li>
+  <li><b>Tasks:</b> user is assignee or creator; a task on an accessible matter is also visible.</li>
+  <li><b>Activities / global search:</b> limited to records the user can read.</li>
+</ul>
+<h3>Additional access rules</h3>
+<ul>
+  <li>Staff cannot use portal endpoints and clients cannot use staff endpoints (separate router groups with separate dependencies).</li>
+  <li>Only <code>ADMIN</code> may create or change another admin. Users cannot change their own role or deactivate themselves. The last active admin cannot be deactivated.</li>
+  <li>A record outside the user's scope returns <b>404</b> (not 403) so its existence is not disclosed.</li>
+  <li>Deletes are refused when dependent records exist (e.g. a contact with matters or invoices); most "deletes" are soft or replaced by deactivate/void.</li>
+  <li>Issued invoices and signed agreements are immutable; corrections are made by voiding / new versions.</li>
+  <li>Client-account withdrawals and transfers cannot exceed the client's balance (checked inside a locked transaction).</li>
+  <li>Implementation: one Python module holds the matrix (<code>ROLE_PERMISSIONS</code>); a FastAPI dependency <code>require("matter.update")</code> guards each route; scope helpers add <code>WHERE</code> clauses; a parametrised pytest suite tests every role × endpoint against this table.</li>
+</ul>
+
+<h2 class="pb">8. Data model</h2>
+<p>All tables have UUID primary keys, <code>created_at</code>, <code>updated_at</code>. Enumerations are PostgreSQL <code>CHECK</code>-constrained text columns mirrored as Python <code>StrEnum</code>s. Money is <code>BIGINT</code> cents.</p>
+<table>
+  <tr><th style="width:22%">Table</th><th>Key columns</th></tr>
+  <tr><td>users</td><td>email (unique, case-insensitive), name, password_hash, role, is_active, mfa_secret (encrypted), mara_number, contact_id (client users), failed_logins, locked_until, last_login_at</td></tr>
+  <tr><td>sessions</td><td>token_hash (unique), user_id, expires_at, last_seen_at, ip, user_agent, mfa_verified</td></tr>
+  <tr><td>password_reset_tokens / invitations</td><td>token_hash, user_id / contact_id, expires_at, used_at</td></tr>
+  <tr><td>firm_settings</td><td>firm_name, abn, mara_number, gst_registered, gst_rate_bp, invoice_terms_days, bank details, client-account details</td></tr>
+  <tr><td>sequences</td><td>key, value (matter, invoice, agreement numbering; row-locked increment)</td></tr>
+  <tr><td>organisations</td><td>name, abn, industry, contact details, is_sponsor, sponsor_approval_date, sponsor_expiry_date, owner_id</td></tr>
+  <tr><td>contacts</td><td>names, dob, gender, marital status, country of birth, citizenship, passport no./expiry, current visa/expiry, in_australia, address, occupation, consents, status, organisation_id, owner_id</td></tr>
+  <tr><td>contact_relationships</td><td>contact_id, related_contact_id, relationship (partner, child, parent, sibling)</td></tr>
+  <tr><td>leads</td><td>names, contact details, country, citizenship, visa_interest, source, status, rating, estimated_value, owner_id, lost_reason, converted_contact_id, converted_matter_id, converted_at</td></tr>
+  <tr><td>visa_types / visa_checklist_templates</td><td>subclass, stream, name, category, default fees, is_active / name, category, required, sort_order</td></tr>
+  <tr><td>matters</td><td>matter_number, title, client_id, organisation_id, visa_type_id, stage, status, priority, location, responsible_agent_id, case_officer_id, application_reference, lodged_at, decision_date, outcome, grant_number, granted_visa_expiry, fees, client_status_note, closed_at</td></tr>
+  <tr><td>matter_applicants</td><td>matter_id, contact_id, role (unique per matter + contact)</td></tr>
+  <tr><td>checklist_items</td><td>matter_id, name, category, required, status, client_visible, document_id, notes</td></tr>
+  <tr><td>tasks</td><td>subject, type, status, priority, due_at, completed_at, assignee_id, created_by_id, matter_id / contact_id / lead_id</td></tr>
+  <tr><td>activities</td><td>type, subject, body, occurred_at, user_id, polymorphic parent (matter / contact / lead / organisation)</td></tr>
+  <tr><td>documents</td><td>file_name, storage_key, mime_type, size, sha256, category, client_visible, uploaded_by_client, version, matter_id / contact_id, deleted_at</td></tr>
+  <tr><td>messages</td><td>matter_id, sender_id, from_client, body, read_at</td></tr>
+  <tr><td>service_agreements</td><td>number, matter_id, status, scope, professional_fee, disbursements, government_fee, payment_terms, consumer_guide_provided, sent_at, signed_at, signed_by_name, signed_ip, pdf_document_id</td></tr>
+  <tr><td>invoices / invoice_lines</td><td>number, status, contact_id, matter_id, issue/due dates, subtotal, gst, total, amount_paid, void_reason / description, qty, unit_price, gst_applicable, amount, gst</td></tr>
+  <tr><td>payments</td><td>invoice_id, amount, method, reference, received_at, trust_transaction_id</td></tr>
+  <tr><td>trust_transactions</td><td>contact_id, matter_id, invoice_id, type (DEPOSIT / WITHDRAWAL / TRANSFER_TO_OFFICE), amount, description, reference, transaction_date — append-only; reversals are new entries</td></tr>
+  <tr><td>notifications</td><td>user_id, title, body, link, read_at</td></tr>
+  <tr><td>audit_logs</td><td>user_id, action, entity_type, entity_id, summary, changes (JSONB before/after), ip, user_agent, request_id — append-only (DB role has no UPDATE/DELETE)</td></tr>
+</table>
+
+<h2>9. API design</h2>
+<ul>
+  <li>REST under <code>/api/v1</code>; OpenAPI at <code>/api/docs</code> (disabled in production or admin-only).</li>
+  <li>List endpoints: <code>?page=&amp;page_size=&amp;sort=&amp;q=</code> plus field filters; response <code>{ items, total, page, page_size }</code>.</li>
+  <li>Errors: <code>{ "error": { "code", "message", "fields": {…} } }</code>; 401 unauthenticated, 403 missing permission, 404 not found / out of scope, 409 state conflict, 422 validation.</li>
+  <li>Optimistic concurrency: updates send <code>updated_at</code>; mismatch → 409 so two staff cannot overwrite each other.</li>
+  <li>Idempotency keys on payment and trust endpoints.</li>
+</ul>
+<table>
+  <tr><th style="width:30%">Group</th><th>Main endpoints</th></tr>
+  <tr><td>Auth</td><td>POST /auth/login, /auth/mfa/verify, /auth/logout, /auth/password/forgot, /auth/password/reset, /auth/invitation/accept · GET /auth/me (user + permissions)</td></tr>
+  <tr><td>Leads</td><td>CRUD /leads · POST /leads/{id}/convert · POST /leads/public-enquiry</td></tr>
+  <tr><td>Contacts / Organisations</td><td>CRUD /contacts, /organisations · POST /contacts/{id}/portal-invite · GET /contacts/{id}/trust-ledger</td></tr>
+  <tr><td>Matters</td><td>CRUD /matters · POST /matters/{id}/stage · /lodge · /decision · /close · /reopen · applicants, checklist, timeline sub-resources · GET /matters/board</td></tr>
+  <tr><td>Tasks / Activities</td><td>CRUD /tasks · POST /tasks/{id}/complete · POST /activities</td></tr>
+  <tr><td>Documents</td><td>POST /documents (multipart) · GET /documents/{id}/download (pre-signed URL) · DELETE</td></tr>
+  <tr><td>Billing</td><td>/agreements (+ /send, /cancel, /pdf) · /invoices (+ /issue, /void, /pdf, /send) · /payments · /trust-transactions</td></tr>
+  <tr><td>Portal</td><td>/portal/matters, /portal/documents, /portal/messages, /portal/agreements/{id}/sign, /portal/invoices</td></tr>
+  <tr><td>Reports / Admin</td><td>/reports/{name}?from&amp;to (+ .csv) · /search · /notifications · /admin/users · /admin/visa-types · /admin/settings · /admin/audit-logs</td></tr>
+</table>
+
+<h2 class="pb">10. Frontend design</h2>
+<ul>
+  <li><b>Salesforce-style shell:</b> top bar (app switcher, global search, notifications, user menu), object tabs (Home, Leads, Contacts, Organisations, Matters, Tasks, Billing, Reports, Admin) shown only when the user has the read permission.</li>
+  <li><b>List views:</b> reusable <code>DataTable</code> with column sort, filters, search, pagination, saved views, bulk actions (assign owner, export).</li>
+  <li><b>Record pages:</b> highlights panel, stage <code>Path</code> component with "Mark stage complete", details tab (inline edit), related lists, activity timeline with composer (log call / note / e-mail / task).</li>
+  <li><b>Matter board:</b> Kanban by stage; drag-and-drop calls the same stage endpoint (server rules still apply).</li>
+  <li><b>Permission-aware UI:</b> <code>/auth/me</code> returns the permission list; <code>&lt;Can permission="invoice.manage"&gt;</code> hides controls; route guards redirect; server remains the authority.</li>
+  <li><b>Client portal:</b> separate, simplified layout under <code>/portal</code>, mobile-first.</li>
+  <li><b>Accessibility &amp; UX:</b> WCAG 2.1 AA, keyboard navigation, focus states, form error summaries, toasts, loading skeletons, empty states, responsive down to 360 px, Australian date (DD/MM/YYYY) and AUD formats.</li>
+</ul>
+
+<h2>11. Security</h2>
+<table>
+  <tr><th style="width:24%">Control</th><th>Implementation</th></tr>
+  <tr><td>Authentication</td><td>Argon2id password hashes; password policy (≥ 12 chars, breached-password check via k-anonymity API optional); lockout after 5 failures for 15 minutes; mandatory TOTP MFA for staff, optional for clients; password reset by single-use 30-minute token.</td></tr>
+  <tr><td>Sessions</td><td>Opaque 256-bit token in <code>HttpOnly</code>, <code>Secure</code>, <code>SameSite=Lax</code> cookie; only SHA-256 hash stored; 12 h absolute / 60 min idle timeout; revoked on logout, password change, deactivation; admins can revoke all sessions of a user.</td></tr>
+  <tr><td>CSRF</td><td>Double-submit token header (<code>X-CSRF-Token</code>) required on all state-changing requests, plus Origin check.</td></tr>
+  <tr><td>Authorisation</td><td>Deny-by-default dependency on every route; record scopes in queries; automated matrix tests.</td></tr>
+  <tr><td>Input / output</td><td>Pydantic validation, SQLAlchemy parameterised queries, React escaping, strict Content-Security-Policy, HSTS, X-Frame-Options DENY, nosniff.</td></tr>
+  <tr><td>Files</td><td>Size limit 20 MB, MIME sniffing + extension allow-list (PDF, images, Office docs), random storage keys, S3 server-side encryption, private bucket, short-lived pre-signed URLs, malware-scan hook (ClamAV) before release.</td></tr>
+  <tr><td>Data protection</td><td>TLS everywhere (Neon requires SSL); passport numbers and MFA secrets encrypted at application level (Fernet key in secrets manager); backups via Neon point-in-time restore.</td></tr>
+  <tr><td>Abuse</td><td>Rate limiting (login, password reset, public enquiry form, uploads) via Redis; CAPTCHA on public form.</td></tr>
+  <tr><td>Audit &amp; monitoring</td><td>Append-only audit log of create/update/delete/login/export/download/sign; structured JSON logs with request IDs; Sentry error tracking; uptime health checks.</td></tr>
+  <tr><td>Secrets &amp; supply chain</td><td>Environment variables from a secrets manager, none in Git; Dependabot, <code>pip-audit</code>, <code>npm audit</code>, secret scanning in CI.</td></tr>
+</table>
+
+<h2>12. Australian compliance support</h2>
+<div class="note">The CRM supports compliance workflows; it does not by itself guarantee compliance. Requirements below should be confirmed by the principal against current OMARA guidance before go-live.</div>
+<ul>
+  <li><b>Code of Conduct for registered migration agents:</b> service agreement record with scope, fees and estimated charges; flag that the Consumer Guide was provided; agreement gate before work progresses; client sign-off captured with name, time and IP.</li>
+  <li><b>Client money:</b> separate client (trust) account ledger per client, no overdraw, transfer-to-office only against an issued invoice, full statement per client, reconciliation report.</li>
+  <li><b>Record keeping:</b> documents, communications and billing retained; soft deletes; retention period configurable (default 7 years) with purge job requiring admin approval.</li>
+  <li><b>Registered-agent actions:</b> lodgement and outcome recording restricted to <code>matter.lodge</code>; RMA MARA number stored on the user and shown on agreements and invoices.</li>
+  <li><b>Privacy Act 1988 / APPs:</b> privacy and marketing consent fields, data minimisation, access logging, export of a client's data on request, data hosted in Australia (Neon Sydney, S3 Sydney).</li>
+  <li><b>GST:</b> professional fees taxable at 10 % when the firm is GST-registered; government visa application charges passed through as GST-free lines; tax-invoice fields (ABN, "Tax Invoice" title) on PDFs.</li>
+</ul>
+
+<h2 class="pb">13. Neon database operations</h2>
+<ul>
+  <li><b>Region:</b> create the Neon project in AWS Asia Pacific (Sydney) <code>aws-ap-southeast-2</code>. The region is fixed at project creation.</li>
+  <li><b>Two connection strings:</b> <code>DATABASE_URL</code> = pooled endpoint (<code>-pooler</code> host, PgBouncer transaction mode) for the API and workers; <code>DATABASE_URL_DIRECT</code> = direct endpoint for Alembic migrations and long-running admin scripts.</li>
+  <li><b>Driver settings:</b> psycopg 3 with <code>sslmode=require</code>. On the pooled endpoint use client-library (protocol-level) prepared statements only, never SQL <code>PREPARE</code>; if the deployed libpq is older than PostgreSQL 17, disable psycopg prepared statements (<code>prepare_threshold=None</code>) to stay safe. Avoid session-level features (<code>LISTEN/NOTIFY</code>, session advisory locks, <code>SET</code> without <code>LOCAL</code>) on pooled connections.</li>
+  <li><b>Pooling in the app:</b> small SQLAlchemy pool (<code>pool_size=5</code>, <code>pool_pre_ping=True</code>, <code>pool_recycle=300</code>) because Neon can scale compute to zero and drop idle connections.</li>
+  <li><b>Branches:</b> <code>main</code> (production), <code>staging</code>, and a short-lived branch per pull request created by CI for migration and E2E tests, deleted on merge.</li>
+  <li><b>Backups / restore:</b> Neon point-in-time restore window sized for the plan; nightly logical dump (<code>pg_dump</code>) to S3 for long-term retention.</li>
+  <li><b>Cold starts:</b> keep production compute always-on (disable scale-to-zero) to avoid first-request latency; allow scale-to-zero on dev branches.</li>
+</ul>
+
+<h2>14. Testing and quality</h2>
+<table>
+  <tr><th style="width:22%">Layer</th><th>What is tested</th></tr>
+  <tr><td>Backend unit</td><td>GST and invoice totals, trust balance rules, stage transition rules, numbering, permission matrix (every role × permission), scope helpers.</td></tr>
+  <tr><td>Backend API</td><td>pytest + httpx against a disposable Postgres (Neon CI branch or local container): each endpoint for allowed role, denied role, out-of-scope record, validation errors.</td></tr>
+  <tr><td>Frontend</td><td>Vitest + Testing Library for components (DataTable, Path, forms, &lt;Can&gt;).</td></tr>
+  <tr><td>End-to-end</td><td>Playwright: login + MFA, lead → conversion → matter, checklist + upload, agreement send → portal sign, invoice issue → payment / trust transfer, report CSV, role restrictions.</td></tr>
+  <tr><td>Gates in CI</td><td>Ruff, mypy (strict), ESLint, <code>tsc</code>, all tests, Alembic upgrade/downgrade check, dependency audit. Target ≥ 85 % backend coverage on services.</td></tr>
+  <tr><td>Non-functional</td><td>Load test (k6) for list/search endpoints: p95 &lt; 300 ms at 50 concurrent users; OWASP ZAP baseline scan; accessibility audit (axe).</td></tr>
+</table>
+
+<h2>15. Deployment and environments</h2>
+<ul>
+  <li><b>Local:</b> <code>docker compose up</code> runs API, worker, beat, Redis, MinIO (local S3) and the Vite dev server; database is a personal Neon dev branch (or local Postgres). <code>scripts/seed.py</code> creates one demo user per role.</li>
+  <li><b>Environments:</b> development → staging → production, each with its own Neon branch/project, S3 bucket and secrets.</li>
+  <li><b>Containers:</b> one Python image (API / worker / beat via command), one static frontend build served by CDN or Nginx.</li>
+  <li><b>Hosting (recommended):</b> AWS Sydney (ECS Fargate or App Runner) to keep data in Australia, close to Neon <code>aws-ap-southeast-2</code>.</li>
+  <li><b>CI/CD (GitHub Actions):</b> lint → test → build images → run <code>alembic upgrade head</code> on the direct endpoint → deploy → smoke test. Production deploys need manual approval.</li>
+</ul>
+
+<h2>16. Delivery phases</h2>
+<table>
+  <tr><th style="width:6%">#</th><th style="width:26%">Phase</th><th>Deliverables</th><th style="width:12%">Estimate</th></tr>
+  <tr><td>0</td><td>Foundations</td><td>Repos, tooling, CI, Neon project + branches, Docker Compose, config, logging, error format.</td><td>1 week</td></tr>
+  <tr><td>1</td><td>Auth &amp; RBAC</td><td>Users, sessions, MFA, password reset, invitations, permission matrix + scopes + tests, audit log, app shell &amp; UI kit.</td><td>2 weeks</td></tr>
+  <tr><td>2</td><td>Core CRM</td><td>Leads (+ conversion), contacts, organisations, global search, activities, tasks, notifications.</td><td>2–3 weeks</td></tr>
+  <tr><td>3</td><td>Matters</td><td>Visa catalogue, matters, Path + rules, applicants, checklist, documents (S3), board view.</td><td>2–3 weeks</td></tr>
+  <tr><td>4</td><td>Billing</td><td>Service agreements + PDF, invoices + PDF, payments, client-account ledger.</td><td>2 weeks</td></tr>
+  <tr><td>5</td><td>Client portal</td><td>Invitations, portal pages, uploads, messages, agreement signing, invoices.</td><td>1–2 weeks</td></tr>
+  <tr><td>6</td><td>Reports &amp; dashboard</td><td>Dashboards per role, reports, charts, CSV export, scheduled reminder jobs.</td><td>1–2 weeks</td></tr>
+  <tr><td>7</td><td>Admin &amp; hardening</td><td>Admin screens, retention job, security review, load test, accessibility, E2E suite, documentation, UAT, go-live.</td><td>2 weeks</td></tr>
+</table>
+<p class="small">Estimates assume a small team (1 backend, 1 frontend developer, part-time QA). Each phase ends with a demo and passing CI.</p>
+
+<h2>17. Risks and open questions</h2>
+<table>
+  <tr><th style="width:35%">Item</th><th>Mitigation / decision needed</th></tr>
+  <tr><td>Government fees and visa streams change (usually each 1 July)</td><td>Visa catalogue and fees are admin-editable data, not code.</td></tr>
+  <tr><td>Neon scale-to-zero latency and pooler limits</td><td>Always-on compute in production; pooled endpoint; settings in §13.</td></tr>
+  <tr><td>No ImmiAccount API</td><td>Manual entry of TRN, lodgement and decision data; documents uploaded manually.</td></tr>
+  <tr><td>E-signature legal weight</td><td>Typed-name + checkbox + timestamp + IP in v1; confirm with principal whether a third-party e-sign provider (e.g. DocuSign) is required.</td></tr>
+  <tr><td>Open questions</td><td>(1) Hosting provider and domain. (2) E-mail provider (SES, SendGrid, M365). (3) Need for Xero/MYOB sync. (4) Number of users and offices (affects multi-office support). (5) Branding.</td></tr>
+</table>
+
+</body>
+</html>
