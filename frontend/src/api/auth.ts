@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { MessageResponse, Role, Scope } from "./types";
+import type { MessageResponse, ObjectAccess, Ref } from "./types";
 
 export type LoginState = "authenticated" | "mfa_required" | "mfa_setup_required";
 
@@ -8,8 +8,8 @@ export type MeResponse = {
     id: string;
     email: string;
     name: string;
-    role: Role;
-    role_label: string;
+    profile: Ref;
+    role: Ref | null;
     is_staff: boolean;
     title: string | null;
     mara_number: string | null;
@@ -21,7 +21,9 @@ export type MeResponse = {
     expires_at: string;
     recovery_codes_remaining: number | null;
   };
-  permissions: Record<string, Scope>;
+  system_permissions: string[];
+  object_permissions: Record<string, ObjectAccess>;
+  is_system_admin: boolean;
 };
 
 export type MfaSetup = { secret: string; otpauth_uri: string; qr_svg_data_uri: string };

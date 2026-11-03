@@ -1,12 +1,12 @@
 import { apiRequest, toQueryString } from "./client";
-import type { MessageResponse, Page, Role } from "./types";
+import type { MessageResponse, Page } from "./types";
 
 export type User = {
   id: string;
   email: string;
   name: string;
-  role: Role;
-  role_label: string;
+  profile: { id: string; name: string; is_portal: boolean };
+  role: { id: string; name: string } | null;
   is_active: boolean;
   title: string | null;
   phone: string | null;
@@ -23,14 +23,16 @@ export type UserListParams = {
   page?: number;
   page_size?: number;
   q?: string;
-  role?: Role | "";
+  profile_id?: string;
+  role_id?: string;
   is_active?: boolean;
 };
 
 export type UserCreateInput = {
   email: string;
   name: string;
-  role: Role;
+  profile_id: string;
+  role_id: string | null;
   title: string | null;
   phone: string | null;
   mara_number: string | null;
@@ -39,7 +41,8 @@ export type UserCreateInput = {
 export type UserUpdateInput = {
   updated_at: string;
   name?: string;
-  role?: Role;
+  profile_id?: string;
+  role_id?: string | null;
   title?: string | null;
   phone?: string | null;
   mara_number?: string | null;

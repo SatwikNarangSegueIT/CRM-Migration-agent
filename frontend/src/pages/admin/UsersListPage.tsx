@@ -1,7 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { errorMessage } from "../../api/client";
-import type { Role } from "../../api/types";
 import { usersApi, type User } from "../../api/users";
 import { PlusIcon, RefreshIcon, UsersIcon } from "../../components/icons";
 import {
@@ -19,7 +18,7 @@ import {
 import { formatDateTime } from "../../lib/format";
 import { metaLine, useRelativeTime } from "../../lib/time";
 import { UserStatusBadges } from "./UserStatusBadges";
-import { useStaffRoles } from "./useStaffRoles";
+import { useStaffProfiles } from "./useStaffRoles";
 
 const PAGE_SIZE = 25;
 
@@ -34,7 +33,8 @@ const COLUMNS: Column<User>[] = [
     ),
   },
   { key: "email", header: "E-mail", render: (u) => <span className="break-all">{u.email}</span> },
-  { key: "role", header: "Role", render: (u) => u.role_label },
+  { key: "profile", header: "Profile", render: (u) => u.profile.name },
+  { key: "role", header: "Role", render: (u) => u.role?.name ?? "—" },
   { key: "status", header: "Status", render: (u) => <UserStatusBadges user={u} /> },
   {
     key: "last_login",
@@ -49,9 +49,9 @@ export function UsersListPage() {
   const [params, setParams] = useSearchParams();
   const page = Math.max(1, Number(params.get("page")) || 1);
   const q = params.get("q") ?? "";
-  const role = (params.get("role") ?? "") as Role | "";
+  const role = params.get("profile") ?? "";
   const status = params.get("status") ?? "";
-  const roles = useStaffRoles();
+  const roles = useStaffProfiles();
 
   const users = useQuery({
     queryKey: ["users", { page, q, role, status }],
@@ -61,7 +61,7 @@ export function UsersListPage() {
           page,
           page_size: PAGE_SIZE,
           q: q || undefined,
-          role: role || undefined,
+          profile_id: role || undefined,
           is_active: status === "" ? undefined : status === "active",
         },
         signal,
@@ -94,7 +94,7 @@ export function UsersListPage() {
         meta={metaLine([
           total !== undefined && `${total} ${total === 1 ? "item" : "items"}`,
           "Sorted by Name",
-          roleLabel && `Filtered by role: ${roleLabel}`,
+          roleLabel && `Filtered by profile: ${roleLabel}`,
           q && `Matching "${q}"`,
           updated && `Updated ${updated}`,
         ])}
@@ -119,16 +119,16 @@ export function UsersListPage() {
           <>
             <ListSearch key={q} initial={q} onSearch={(value) => update({ q: value })} label="Search users" />
             <label htmlFor="role-filter" className="sr-only">
-              Role
+              Profile
             </label>
             <div className="w-44">
               <Select
                 id="role-filter"
                 className={compactSelect}
                 value={role}
-                onChange={(e) => update({ role: e.target.value })}
+                onChange={(e) => update({ profile: e.target.value })}
               >
-                <option value="">All roles</option>
+                <option value="">All profiles</option>
                 {roles.data?.map((r) => (
                   <option key={r.value} value={r.value}>
                     {r.label}
@@ -172,7 +172,7 @@ export function UsersListPage() {
           ) : (
             <EmptyState
               title="No users yet"
-              description="Invite your team to start working in MigrateCRM."
+              description="Invite your team to start working in the CRM."
               action={{ label: "New user", to: "/admin/users/new" }}
             />
           )

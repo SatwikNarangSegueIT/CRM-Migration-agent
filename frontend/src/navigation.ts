@@ -1,61 +1,66 @@
-// Data-driven app navigation for the left rail and the app bar tabs.
-// Add a new app (Contacts, Accounts, Sales, Service…) by appending to APPS.
-import type { ComponentType, SVGProps } from "react";
-import { HomeIcon, ShieldIcon } from "./components/icons";
+// App navigation derived from /meta/apps (configurable in Setup -> Apps).
+import type { AppInfo, AppTab } from "./api/types";
 
-export type AppTab = { to: string; label: string; permission?: string; end?: boolean };
+const LAST_APP_KEY = "crm.lastApp";
 
-export type AppDef = {
-  id: string;
-  label: string;
-  /** Short label for the narrow rail (defaults to `label`). */
-  railLabel?: string;
-  icon: ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
-  /** Where the rail item links to when no tab is available. */
-  to: string;
-  /** Path prefixes that belong to this app (used to highlight the active app). */
-  match: (pathname: string) => boolean;
-  tabs: AppTab[];
-  /** Shown only if the user holds this permission; apps with tabs need at least one visible tab. */
-  permission?: string;
-};
-
-export const APPS: AppDef[] = [
-  {
-    id: "home",
-    label: "Home",
-    icon: HomeIcon,
-    to: "/",
-    match: (p) => p === "/" || p.startsWith("/account") || p === "/forbidden",
-    tabs: [],
-  },
-  {
-    id: "admin",
-    label: "Administration",
-    railLabel: "Admin",
-    icon: ShieldIcon,
-    to: "/admin/users",
-    match: (p) => p.startsWith("/admin"),
-    tabs: [
-      { to: "/admin/users", label: "Users", permission: "user.manage" },
-      { to: "/admin/audit", label: "Audit Log", permission: "audit.read" },
-    ],
-  },
-];
-
-export type VisibleApp = AppDef & { visibleTabs: AppTab[]; href: string };
-
-export function visibleApps(can: (permission: string) => boolean): VisibleApp[] {
-  const result: VisibleApp[] = [];
-  for (const app of APPS) {
-    if (app.permission && !can(app.permission)) continue;
-    const visibleTabs = app.tabs.filter((t) => !t.permission || can(t.permission));
-    if (app.tabs.length > 0 && visibleTabs.length === 0) continue;
-    result.push({ ...app, visibleTabs, href: visibleTabs[0]?.to ?? app.to });
+export function tabHref(app: AppInfo, tab: AppTab): string {
+  switch (tab.kind) {
+    case "home":
+      return `/app/${app.key}`;
+    case "object":
+      return `/o/${tab.object}`;
+    case "calendar":
+      return "/calendar";
+    case "reports":
+      return "/reports";
+    case "dashboards":
+      return "/dashboards";
+    case "queues":
+      return "/o/case?scope=queue";
   }
-  return result;
 }
 
-export function activeApp(apps: VisibleApp[], pathname: string): VisibleApp | undefined {
-  return apps.find((a) => a.match(pathname)) ?? apps.find((a) => a.id === "home");
+export function appHref(app: AppInfo): string {
+  const first = app.tabs[0];
+  return first ? tabHref(app, first) : `/app/${app.key}`;
+}
+
+export function rememberApp(key: string): void {
+  try {
+    sessionStorage.setItem(LAST_APP_KEY, key);
+  } catch {
+    // Private mode: navigation still works, the app just isn't remembered.
+  }
+}
+
+function lastApp(): string | null {
+  try {
+    return sessionStorage.getItem(LAST_APP_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function tabMatches(app: AppInfo, tab: AppTab, pathname: string, search: string): boolean {
+  const href = tabHref(app, tab);
+  const [path, query] = href.split("?");
+  if (query) return pathname === path && search.includes(query);
+  if (tab.kind === "home") return pathname === path;
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
+
+/** The app whose tabs to show: the one in the URL, the last used one if it contains this page, or any app that does. */
+export function currentApp(apps: AppInfo[], pathname: string, search: string): AppInfo | undefined {
+  const m = /^\/app\/([^/]+)/.exec(pathname);
+  if (m) return apps.find((a) => a.key === m[1]);
+  const contains = (a: AppInfo) => a.tabs.some((t) => tabMatches(a, t, pathname, search));
+  const remembered = apps.find((a) => a.key === lastApp());
+  if (remembered && contains(remembered)) return remembered;
+  return apps.find(contains);
+}
+
+export function activeTab(app: AppInfo, pathname: string, search: string): AppTab | undefined {
+  // Prefer the most specific match (e.g. "Queues" over "Cases").
+  const matches = app.tabs.filter((t) => tabMatches(app, t, pathname, search));
+  return matches.find((t) => tabHref(app, t).includes("?")) ?? matches[0];
 }

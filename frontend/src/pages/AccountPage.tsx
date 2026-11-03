@@ -160,8 +160,8 @@ export function AccountPage() {
             <dd className="col-span-2 text-slate-900">{me.user.name}</dd>
             <dt className="text-slate-500">E-mail</dt>
             <dd className="col-span-2 break-all text-slate-900">{me.user.email}</dd>
-            <dt className="text-slate-500">Role</dt>
-            <dd className="col-span-2 text-slate-900">{me.user.role_label}</dd>
+            <dt className="text-slate-500">Profile</dt>
+            <dd className="col-span-2 text-slate-900">{me.user.profile.name}</dd>
             {me.user.title && (
               <>
                 <dt className="text-slate-500">Title</dt>

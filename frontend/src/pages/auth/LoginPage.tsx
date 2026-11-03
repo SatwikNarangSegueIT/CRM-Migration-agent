@@ -33,7 +33,7 @@ export function LoginPage() {
   }
 
   return (
-    <AuthLayout title="Sign in" subtitle="Use your MigrateCRM account.">
+    <AuthLayout title="Sign in" subtitle="Use your work account.">
       <form onSubmit={onSubmit} className="space-y-4" noValidate>
         {login.isError && <Alert tone="error">{errorMessage(login.error)}</Alert>}
         <TextField

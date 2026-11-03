@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError, errorMessage, fieldError } from "../../api/client";
-import type { Role } from "../../api/types";
 import { isLocked, usersApi, type User, type UserUpdateInput } from "../../api/users";
 import { useAuth } from "../../auth/context";
 import {
@@ -19,14 +18,15 @@ import {
 import { formatDateTime, nullIfBlank } from "../../lib/format";
 import { NotFoundPage } from "../NotFoundPage";
 import { UserStatusBadges } from "./UserStatusBadges";
-import { useStaffRoles } from "./useStaffRoles";
+import { useHierarchyRoles, useStaffProfiles, type Option } from "./useStaffRoles";
 
-type FormState = { name: string; role: Role; title: string; phone: string; mara: string };
+type FormState = { name: string; profile: string; role: string; title: string; phone: string; mara: string };
 
 function toForm(user: User): FormState {
   return {
     name: user.name,
-    role: user.role,
+    profile: user.profile.id,
+    role: user.role?.id ?? "",
     title: user.title ?? "",
     phone: user.phone ?? "",
     mara: user.mara_number ?? "",
@@ -72,7 +72,8 @@ export function UserDetailPage() {
   const { me } = useAuth();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const roles = useStaffRoles();
+  const profiles = useStaffProfiles();
+  const roles = useHierarchyRoles();
   const user = useQuery({ queryKey: ["users", id], queryFn: ({ signal }) => usersApi.get(id, signal) });
   const [pending, setPending] = useState<ActionKey | null>(null);
 
@@ -176,7 +177,8 @@ export function UserDetailPage() {
               key={u.updated_at}
               user={u}
               isSelf={isSelf}
-              roleOptions={roles.data ?? [{ value: u.role, label: u.role_label }]}
+              profileOptions={profiles.data ?? [{ value: u.profile.id, label: u.profile.name }]}
+              roleOptions={roles.data ?? (u.role ? [{ value: u.role.id, label: u.role.name }] : [])}
               onSaved={(updated) => {
                 onUserChanged(updated);
                 toast.show("User updated.");
@@ -232,13 +234,15 @@ export function UserDetailPage() {
 function UserDetailsForm({
   user: u,
   isSelf,
+  profileOptions,
   roleOptions,
   onSaved,
   onReload,
 }: {
   user: User;
   isSelf: boolean;
-  roleOptions: { value: Role; label: string }[];
+  profileOptions: Option[];
+  roleOptions: Option[];
   onSaved: (user: User) => void;
   onReload: () => void;
 }) {
@@ -254,7 +258,8 @@ function UserDetailsForm({
     event.preventDefault();
     const body: UserUpdateInput = { updated_at: u.updated_at };
     if (form.name.trim() !== u.name) body.name = form.name.trim();
-    if (form.role !== u.role) body.role = form.role;
+    if (form.profile !== u.profile.id) body.profile_id = form.profile;
+    if (form.role !== (u.role?.id ?? "")) body.role_id = form.role || null;
     if (nullIfBlank(form.title) !== u.title) body.title = nullIfBlank(form.title);
     if (nullIfBlank(form.phone) !== u.phone) body.phone = nullIfBlank(form.phone);
     if (nullIfBlank(form.mara) !== u.mara_number) body.mara_number = nullIfBlank(form.mara);
@@ -265,7 +270,7 @@ function UserDetailsForm({
     save.mutate(body);
   }
 
-  const knownFields = ["name", "role", "title", "phone", "mara_number"];
+  const knownFields = ["name", "profile_id", "role_id", "title", "phone", "mara_number"];
   const generalError =
     save.isError && !conflict && !knownFields.some((f) => fieldError(save.error, f))
       ? errorMessage(save.error)
@@ -305,13 +310,28 @@ function UserDetailsForm({
         error={fieldError(save.error, "name")}
       />
       <SelectField
+        label="Profile"
+        value={form.profile}
+        disabled={isSelf}
+        hint={isSelf ? "You cannot change your own profile." : "What the user can do."}
+        onChange={(e) => set("profile")(e.target.value)}
+        error={fieldError(save.error, "profile_id")}
+      >
+        {profileOptions.map((p) => (
+          <option key={p.value} value={p.value}>
+            {p.label}
+          </option>
+        ))}
+      </SelectField>
+      <SelectField
         label="Role"
         value={form.role}
         disabled={isSelf}
-        hint={isSelf ? "You cannot change your own role." : undefined}
+        hint={isSelf ? "You cannot change your own role." : "Whose records the user sees."}
         onChange={(e) => set("role")(e.target.value)}
-        error={fieldError(save.error, "role")}
+        error={fieldError(save.error, "role_id")}
       >
+        <option value="">No role</option>
         {roleOptions.map((r) => (
           <option key={r.value} value={r.value}>
             {r.label}

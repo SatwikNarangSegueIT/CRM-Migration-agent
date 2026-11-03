@@ -46,7 +46,7 @@ export function UserMenu({ accountPath = "/account" }: { accountPath?: string })
             </span>
             <div className="min-w-0">
               <p className="truncate font-semibold text-slate-900">{me.user.name}</p>
-              <p className="truncate text-xs text-slate-500">{me.user.role_label}</p>
+              <p className="truncate text-xs text-slate-500">{me.user.profile.name}</p>
               <p className="truncate text-xs text-slate-500">{me.user.email}</p>
             </div>
           </div>

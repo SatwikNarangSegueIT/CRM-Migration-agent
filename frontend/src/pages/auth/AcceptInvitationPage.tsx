@@ -83,7 +83,7 @@ export function AcceptInvitationPage() {
   }
 
   return (
-    <AuthLayout title="Welcome to MigrateCRM" subtitle="Set a password to activate your account.">
+    <AuthLayout title="Welcome" subtitle="Set a password to activate your account.">
       {content}
     </AuthLayout>
   );

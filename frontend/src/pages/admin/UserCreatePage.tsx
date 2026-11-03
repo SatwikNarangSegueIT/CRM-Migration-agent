@@ -2,21 +2,22 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { errorMessage, fieldError } from "../../api/client";
-import type { Role } from "../../api/types";
 import { usersApi } from "../../api/users";
 import { Alert, Button, Card, PageHeader, SelectField, TextField, useToast } from "../../components/ui";
 import { nullIfBlank } from "../../lib/format";
-import { useStaffRoles } from "./useStaffRoles";
+import { useHierarchyRoles, useStaffProfiles } from "./useStaffRoles";
 
 export function UserCreatePage() {
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const roles = useStaffRoles();
+  const profiles = useStaffProfiles();
+  const roles = useHierarchyRoles();
   const [form, setForm] = useState({
     email: "",
     name: "",
-    role: "" as Role | "",
+    profile: "",
+    role: "",
     title: "",
     phone: "",
     mara: "",
@@ -28,7 +29,8 @@ export function UserCreatePage() {
       usersApi.create({
         email: form.email.trim(),
         name: form.name.trim(),
-        role: form.role as Role,
+        profile_id: form.profile,
+        role_id: form.role || null,
         title: nullIfBlank(form.title),
         phone: nullIfBlank(form.phone),
         mara_number: nullIfBlank(form.mara),
@@ -40,7 +42,7 @@ export function UserCreatePage() {
     },
   });
 
-  const knownFields = ["email", "name", "role", "title", "phone", "mara_number"];
+  const knownFields = ["email", "name", "profile_id", "role_id", "title", "phone", "mara_number"];
   const unmappedError =
     create.isError && !knownFields.some((f) => fieldError(create.error, f))
       ? errorMessage(create.error)
@@ -85,13 +87,28 @@ export function UserCreatePage() {
             error={fieldError(create.error, "email")}
           />
           <SelectField
-            label="Role"
+            label="Profile"
             required
+            hint="What the user can do."
+            value={form.profile}
+            onChange={(e) => set("profile")(e.target.value)}
+            error={fieldError(create.error, "profile_id")}
+          >
+            <option value="">Select a profile…</option>
+            {profiles.data?.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            label="Role"
+            hint="Where the user sits in the role hierarchy (whose records they see)."
             value={form.role}
             onChange={(e) => set("role")(e.target.value)}
-            error={fieldError(create.error, "role")}
+            error={fieldError(create.error, "role_id")}
           >
-            <option value="">Select a role…</option>
+            <option value="">No role</option>
             {roles.data?.map((r) => (
               <option key={r.value} value={r.value}>
                 {r.label}
@@ -124,7 +141,7 @@ export function UserCreatePage() {
             <Button
               type="submit"
               loading={create.isPending}
-              disabled={!form.name || !form.email || !form.role}
+              disabled={!form.name || !form.email || !form.profile}
             >
               Create and send invitation
             </Button>

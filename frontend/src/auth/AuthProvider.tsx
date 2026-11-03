@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role="alert"
         className="mx-auto mt-24 max-w-md rounded-lg border border-red-200 bg-white p-6 text-center"
       >
-        <h1 className="text-lg font-semibold text-slate-900">Cannot reach MigrateCRM</h1>
+        <h1 className="text-lg font-semibold text-slate-900">Cannot reach the server</h1>
         <p className="mt-2 text-sm text-slate-600">
           {query.error instanceof ApiError ? query.error.message : "The server is not responding."}
         </p>
