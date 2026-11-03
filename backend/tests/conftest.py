@@ -36,10 +36,11 @@ from sqlalchemy.orm import Session  # noqa: E402
 from app.auth.security import hash_password  # noqa: E402
 from app.core.config import Settings, get_settings  # noqa: E402
 from app.core.redis_client import get_redis  # noqa: E402
+from app.db.seeds import apply_seeds  # noqa: E402
 from app.db.session import get_sessionmaker  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models import Base, User  # noqa: E402
-from app.permissions.matrix import Role  # noqa: E402
+from app.security.seed_v1 import stable_id  # noqa: E402
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PASSWORD = "Correct-Horse-Battery-9"
@@ -69,10 +70,12 @@ def settings() -> Settings:
 
 @pytest.fixture(autouse=True)
 def _clean_state() -> None:
-    """Empty every table (TRUNCATE bypasses the audit-log row trigger) and the Redis test DB."""
+    """Empty every table (TRUNCATE bypasses the audit-log row trigger), re-apply the shipped defaults
+    (profiles, roles, metadata) and empty the Redis test DB."""
     tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
     with get_sessionmaker()() as db:
         db.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+        apply_seeds(db.connection())
         db.commit()
     get_redis().flushdb()
 
@@ -114,7 +117,8 @@ def client(settings: Settings, outbox: Outbox) -> Iterator[TestClient]:
 def make_user(
     db: Session,
     *,
-    role: Role = Role.ADMIN,
+    profile: str = "system_administrator",
+    role: str | None = None,
     email: str | None = None,
     name: str = "Test User",
     password: str | None = PASSWORD,
@@ -124,9 +128,10 @@ def make_user(
     from app.auth.security import encrypt_field
 
     user = User(
-        email=email or f"{role.value.lower()}-{uuid.uuid4().hex[:8]}@example.com",
+        email=email or f"{profile}-{uuid.uuid4().hex[:8]}@example.com",
         name=name,
-        role=role.value,
+        profile_id=stable_id("profile", profile),
+        role_id=stable_id("role", role) if role else None,
         password_hash=hash_password(password) if password else None,
         is_active=is_active,
         mfa_enabled=mfa_secret is not None,
@@ -164,14 +169,16 @@ def no_mfa(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
 
 @pytest.fixture
 def admin_client(client: TestClient, db: Session, no_mfa: None) -> TestClient:
-    admin = make_user(db, role=Role.ADMIN, email="admin@example.com", name="Ada Admin")
+    admin = make_user(db, email="admin@example.com", name="Ada Admin")
     login(client, admin.email)
     return client
 
 
-def client_as(settings: Settings, outbox: Outbox, db: Session, role: Role) -> TestClient:
-    """A separate signed-in client for `role` (call within a test using no_mfa)."""
-    user = make_user(db, role=role)
+def client_as(
+    settings: Settings, outbox: Outbox, db: Session, profile: str, role: str | None = None
+) -> TestClient:
+    """A separate signed-in client for a user with `profile` (call within a test using no_mfa)."""
+    user = make_user(db, profile=profile, role=role)
     c = TestClient(create_app(settings))
     login(c, user.email)
     return c

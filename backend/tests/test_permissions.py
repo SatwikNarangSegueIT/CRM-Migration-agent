@@ -1,143 +1,117 @@
-"""The code matrix must equal the approved plan (docs/Implementation_Plan_v2.pdf, section 7).
+"""The shipped profiles must equal the approved plan (docs/Implementation_Plan_v3.pdf, section 10).
 
-The table below is transcribed from the plan independently of app/permissions/matrix.py.
-Columns: ADMIN, PRACTICE_MANAGER, MIGRATION_AGENT, CASE_OFFICER, INTAKE_CONSULTANT, ACCOUNTS, AUDITOR, CLIENT.
-Cells: A = all records, O = own records, B = billing reports only, . = denied.
+The tables below are transcribed from the plan independently of app/security/seed_v1.py and are compared
+with what the migration actually wrote to the database (via the access policy each user gets).
 """
 
 from __future__ import annotations
 
 import pytest
+from sqlalchemy.orm import Session
 
-from app.permissions.matrix import (
-    ROLE_PERMISSIONS,
-    Permission,
-    Role,
-    can,
-    is_staff,
-    permissions_for,
-    scope_of,
-)
+from app.security.catalog import ObjectAccess, SystemPermission
+from app.security.policy import load_policy
+from tests.conftest import make_user
 
-ROLE_ORDER = [
-    Role.ADMIN,
-    Role.PRACTICE_MANAGER,
-    Role.MIGRATION_AGENT,
-    Role.CASE_OFFICER,
-    Role.INTAKE_CONSULTANT,
-    Role.ACCOUNTS,
-    Role.AUDITOR,
-    Role.CLIENT,
+PROFILES = [
+    "system_administrator",
+    "sales_manager",
+    "sales_representative",
+    "service_agent",
+    "marketing_user",
+    "finance",
+    "read_only",
+    "customer_portal",
 ]
 
-PLAN_TABLE = """
-dashboard.view          A A A A A A A .
-search.global           A A A O O A A .
-lead.read               A A A . O . A .
-lead.create             A A A . O . . .
-lead.update             A A A . O . . .
-lead.assign             A A A . . . . .
-lead.convert            A A A . O . . .
-lead.delete             A A . . . . . .
-contact.read            A A A A A A A O
-contact.create          A A A A A . . .
-contact.update          A A A A A . . .
-contact.delete          A A . . . . . .
-contact.portal_invite   A A A O . . . .
-organisation.read       A A A A A A A .
-organisation.create     A A A . A . . .
-organisation.update     A A A . A . . .
-organisation.delete     A A . . . . . .
-matter.read             A A A O . A A O
-matter.create           A A A . . . . .
-matter.update           A A A O . . . .
-matter.assign           A A A . . . . .
-matter.lodge            A A A . . . . .
-matter.override         A . . . . . . .
-matter.delete           A . . . . . . .
-task.read               A A A O O O A .
-task.create             A A A O O O . .
-task.update             A A A O O O . .
-task.delete             A A A . . . . .
-activity.create         A A A O O A . .
-document.read           A A A O . . A O
-document.upload         A A A O . . . O
-document.delete         A A A . . . . .
-message.read            A A A O . . A O
-message.send            A A A O . . . O
-agreement.read          A A A O . A A O
-agreement.manage        A A A . . . . .
-agreement.sign          . . . . . . . O
-invoice.read            A A A . . A A O
-invoice.manage          A A A . . A . .
-payment.record          A A . . . A . .
-trust.read              A A A . . A A .
-trust.manage            A A . . . A . .
-report.view             A A A . . B A .
-report.export           A A . . . B A .
-visa.manage             A A . . . . . .
-user.manage             A . . . . . . .
-settings.manage         A . . . . . . .
-audit.read              A A . . . . A .
-portal.access           . . . . . . . A
+# Plan section 10 "Object permissions" (portal "own" scoping is applied by sharing, not the profile).
+OBJECT_TABLE = """
+account              | RCED VA MA | RCED | RCE  | RE   | R    | R         | R VA | R
+contact              | RCED VA MA | RCED | RCE  | RCE  | RCE  | R         | R VA | RE
+lead                 | RCED VA MA | RCED | RCE  | -    | RCED | -         | R VA | -
+opportunity          | RCED VA MA | RCED | RCE  | R    | R    | R VA      | R VA | -
+opportunity_product  | RCED VA MA | RCED | RCE  | R    | R    | R VA      | R VA | -
+product              | RCED VA MA | R    | R    | R    | R    | RCED      | R VA | -
+price_book           | RCED VA MA | R    | R    | R    | R    | RCED      | R VA | -
+quote                | RCED VA MA | RCED | RCE  | -    | -    | R VA      | R VA | -
+invoice              | RCED VA MA | R    | R    | R    | -    | RCE VA MA | R VA | R
+payment              | RCED VA MA | R    | R    | R    | -    | RCE VA MA | R VA | R
+tax_rate             | RCED VA MA | R    | R    | -    | -    | RCED      | R VA | -
+case                 | RCED VA MA | R    | R    | RCE  | -    | R         | R VA | RC
+campaign             | RCED VA MA | R    | R    | -    | RCED | -         | R VA | -
+segment              | RCED VA MA | R    | R    | -    | RCED | -         | R VA | -
+email_template       | RCED VA MA | R    | R    | -    | RCED | -         | R VA | -
+email_send           | RCED VA MA | R    | -    | -    | RCE  | -         | R VA | -
+consent              | RCED VA MA | R    | -    | -    | RCE  | -         | R VA | -
+task                 | RCED VA MA | RCED | RCED | RCED | RCED | RCED      | R VA | -
+event                | RCED VA MA | RCED | RCED | RCED | RCED | RCED      | R VA | -
+note                 | RCED VA MA | RCED | RCED | RCED | RCED | RCED      | R VA | RC
+file                 | RCED VA MA | RCED | RCED | RCED | RCED | RCED      | R VA | RC
+report               | RCED VA MA | RCED | RC   | RC   | RCED | RCED      | R VA | -
+dashboard            | RCED VA MA | RCED | RC   | RC   | RCED | RCED      | R VA | -
 """
 
-CELL = {"A": "all", "O": "own", "B": "billing", ".": None}
+# Plan section 10 "System permissions by profile" (X = granted).
+SYSTEM_TABLE = """
+manage_users             X . . . . . . .
+customize_application    X . . . . . . .
+manage_profiles_sharing  X . . . . . . .
+manage_billing_settings  X . . . . X . .
+manage_industry_packs    X . . . . . . .
+view_setup               X . . . . . X .
+view_audit_log           X . . . . . X .
+import_data              X X . . X X . .
+export_data              X X . . X X X .
+send_mass_email          X . . . X . . .
+manage_public_reports    X X . . X X . .
+transfer_records         X X . . . . . .
+manage_portal_users      X . . X . . . .
+api_access               X . . . . . . .
+"""
 
 
-def _plan() -> dict[str, list[str | None]]:
-    rows: dict[str, list[str | None]] = {}
-    for line in PLAN_TABLE.strip().splitlines():
-        name, *cells = line.split()
-        assert len(cells) == len(ROLE_ORDER), line
-        rows[name] = [CELL[c] for c in cells]
+def _object_table() -> dict[str, list[ObjectAccess]]:
+    rows: dict[str, list[ObjectAccess]] = {}
+    for line in OBJECT_TABLE.strip().splitlines():
+        name, *cells = (c.strip() for c in line.split("|"))
+        assert len(cells) == len(PROFILES), line
+        rows[name] = [ObjectAccess.parse(c) for c in cells]
     return rows
 
 
-def test_plan_lists_every_permission_exactly_once() -> None:
-    assert set(_plan()) == {p.value for p in Permission}
+def _system_table() -> dict[str, list[bool]]:
+    rows: dict[str, list[bool]] = {}
+    for line in SYSTEM_TABLE.strip().splitlines():
+        name, *cells = line.split()
+        assert len(cells) == len(PROFILES), line
+        rows[name] = [c == "X" for c in cells]
+    return rows
 
 
-@pytest.mark.parametrize("role", ROLE_ORDER, ids=lambda r: r.value)
-def test_role_grants_match_plan(role: Role) -> None:
-    column = ROLE_ORDER.index(role)
-    expected = {perm: cells[column] for perm, cells in _plan().items() if cells[column] is not None}
-    actual = {perm.value: scope for perm, scope in ROLE_PERMISSIONS[role].items()}
-    assert actual == expected
+def test_system_table_covers_every_permission() -> None:
+    assert set(_system_table()) == {p.value for p in SystemPermission}
 
 
-def test_helpers() -> None:
-    assert can("ADMIN", Permission.USER_MANAGE)
-    assert not can("PRACTICE_MANAGER", Permission.USER_MANAGE)
-    assert scope_of("CASE_OFFICER", Permission.MATTER_READ) == "own"
-    assert scope_of("ACCOUNTS", Permission.REPORT_VIEW) == "billing"
-    assert scope_of("NOT_A_ROLE", Permission.DASHBOARD_VIEW) is None
-    assert not can("", Permission.DASHBOARD_VIEW)
-    assert permissions_for("NOT_A_ROLE") == {}
-    assert permissions_for("CLIENT")["portal.access"] == "all"
-    assert is_staff("AUDITOR") and not is_staff("CLIENT") and not is_staff("bogus")
+@pytest.mark.parametrize("profile", PROFILES)
+def test_profile_matches_plan(profile: str, db: Session) -> None:
+    column = PROFILES.index(profile)
+    policy = load_policy(db, make_user(db, profile=profile))
+    for obj, accesses in _object_table().items():
+        assert policy.object(obj) == accesses[column], f"{profile} / {obj}"
+    for perm, granted in _system_table().items():
+        assert policy.has(SystemPermission(perm)) is granted[column], f"{profile} / {perm}"
 
 
-def test_only_admin_has_admin_only_permissions() -> None:
-    for perm in (Permission.USER_MANAGE, Permission.SETTINGS_MANAGE, Permission.MATTER_DELETE):
-        assert [r for r in Role if can(r.value, perm)] == [Role.ADMIN]
+def test_read_only_profile_changes_nothing(db: Session) -> None:
+    policy = load_policy(db, make_user(db, profile="read_only"))
+    for access in policy.objects.values():
+        assert not (access.create or access.edit or access.delete or access.modify_all)
 
 
-def test_auditor_is_read_only() -> None:
-    write_words = (
-        "create",
-        "update",
-        "delete",
-        "manage",
-        "assign",
-        "convert",
-        "lodge",
-        "send",
-        "upload",
-        "record",
-        "invite",
-        "override",
-        "sign",
-    )
-    granted = permissions_for(Role.AUDITOR.value)
-    assert not [p for p in granted if any(w in p for w in write_words)]
+def test_object_access_notation_roundtrip() -> None:
+    for code in ("RCED VA MA", "RCE", "R VA", "RC", "-"):
+        assert ObjectAccess.parse(code).code() == code
+    with pytest.raises(ValueError, match="Invalid object access code"):
+        ObjectAccess.parse("RX")
+    with pytest.raises(ValueError, match="require read access"):
+        ObjectAccess(create=True).validate()

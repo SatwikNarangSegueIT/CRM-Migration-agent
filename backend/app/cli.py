@@ -15,20 +15,20 @@ from sqlalchemy import select
 from app.auth.security import hash_password, password_policy_errors
 from app.core.config import get_settings
 from app.db.session import get_sessionmaker
-from app.models import User
-from app.permissions.matrix import Role
+from app.models import Profile, User
+from app.security.policy import SYSTEM_ADMIN_KEY
 from app.services import audit
 from app.services.audit import AuditAction
 
 DEMO_PASSWORD = "Demo-Password-2026!"  # noqa: S105 - documented development-only credential
-DEMO_USERS: list[tuple[str, str, Role, str | None]] = [
-    ("admin@demo.example.com", "Alex Admin", Role.ADMIN, None),
-    ("manager@demo.example.com", "Morgan Manager", Role.PRACTICE_MANAGER, None),
-    ("agent@demo.example.com", "Riley Agent", Role.MIGRATION_AGENT, "1234567"),
-    ("officer@demo.example.com", "Casey Officer", Role.CASE_OFFICER, None),
-    ("intake@demo.example.com", "Jordan Intake", Role.INTAKE_CONSULTANT, None),
-    ("accounts@demo.example.com", "Taylor Accounts", Role.ACCOUNTS, None),
-    ("auditor@demo.example.com", "Avery Auditor", Role.AUDITOR, None),
+DEMO_USERS: list[tuple[str, str, str, str | None]] = [
+    ("admin@demo.example.com", "Alex Admin", "system_administrator", None),
+    ("manager@demo.example.com", "Morgan Manager", "sales_manager", None),
+    ("agent@demo.example.com", "Riley Agent", "sales_representative", "1234567"),
+    ("officer@demo.example.com", "Casey Officer", "service_agent", None),
+    ("intake@demo.example.com", "Jordan Intake", "service_agent", None),
+    ("accounts@demo.example.com", "Taylor Accounts", "finance", None),
+    ("auditor@demo.example.com", "Avery Auditor", "read_only", None),
 ]
 
 
@@ -47,8 +47,15 @@ def create_admin(email: str, name: str, password: str | None) -> int:
         if db.scalar(select(User.id).where(User.email == email)) is not None:
             print(f"A user with e-mail {email} already exists.", file=sys.stderr)
             return 1
+        admin_profile = db.scalar(select(Profile).where(Profile.key == SYSTEM_ADMIN_KEY))
+        if admin_profile is None:
+            print("System Administrator profile not found. Run migrations first.", file=sys.stderr)
+            return 1
         user = User(
-            email=email, name=name.strip(), role=Role.ADMIN.value, password_hash=hash_password(password)
+            email=email,
+            name=name.strip(),
+            profile_id=admin_profile.id,
+            password_hash=hash_password(password),
         )
         db.add(user)
         db.flush()
@@ -73,11 +80,20 @@ def seed_demo() -> int:
     created = 0
     password_hash = hash_password(DEMO_PASSWORD)
     with get_sessionmaker()() as db:
-        for email, name, role, mara in DEMO_USERS:
+        profiles_by_key = {p.key: p for p in db.scalars(select(Profile)).all() if p.key}
+        for email, name, profile_key, mara in DEMO_USERS:
             if db.scalar(select(User.id).where(User.email == email)) is not None:
                 continue
+            profile = profiles_by_key.get(profile_key)
+            if profile is None:
+                print(f"Profile {profile_key} not found for {email}, skipping.", file=sys.stderr)
+                continue
             user = User(
-                email=email, name=name, role=role.value, password_hash=password_hash, mara_number=mara
+                email=email,
+                name=name,
+                profile_id=profile.id,
+                password_hash=password_hash,
+                mara_number=mara,
             )
             db.add(user)
             db.flush()

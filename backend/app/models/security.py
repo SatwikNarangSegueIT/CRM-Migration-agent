@@ -196,7 +196,7 @@ class SharingRule(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         CheckConstraint(
             "(rule_type = 'owner' AND source_type IS NOT NULL AND source_id IS NOT NULL AND criteria IS NULL)"
-            " OR (rule_type = 'criteria' AND criteria IS NOT NULL AND source_type IS NULL AND source_id IS NULL)",
+            " OR (rule_type = 'criteria' AND criteria IS NOT NULL AND source_type IS NULL AND source_id IS NULL)",  # noqa: E501
             name="shape_valid",
         ),
         Index("ix_sharing_rules_object", "object_api_name"),

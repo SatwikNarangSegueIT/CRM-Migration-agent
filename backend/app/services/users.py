@@ -152,7 +152,7 @@ def create_user(db: Session, actor: AuthContext, data: UserCreate, meta: Request
 def update_user(
     db: Session, actor: AuthContext, user_id: uuid.UUID, data: UserUpdate, meta: RequestMeta
 ) -> User:
-    user = db.scalar(select(User).where(User.id == user_id).with_for_update())
+    user = db.scalar(select(User).where(User.id == user_id).with_for_update(of=User))
     if user is None:
         raise NotFoundError("User not found.")
     if user.updated_at != data.updated_at:

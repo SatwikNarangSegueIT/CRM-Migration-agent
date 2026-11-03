@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.models import AuditLog, User, UserSession
-from app.permissions.matrix import Role
+from app.security.seed_v1 import stable_id
 from tests.conftest import PASSWORD, Outbox, login, make_user, set_csrf
 
 API = "/api/v1"
@@ -38,7 +38,7 @@ def test_login_unknown_and_wrong_password_look_the_same(client: TestClient, db: 
 def test_login_is_case_insensitive_and_sets_hardened_cookies(
     client: TestClient, db: Session, no_mfa: None
 ) -> None:
-    make_user(db, email="ann@example.com", role=Role.AUDITOR)
+    make_user(db, email="ann@example.com", profile="read_only")
     r = client.post(f"{API}/auth/login", json={"email": "  ANN@Example.com ", "password": PASSWORD})
     assert r.status_code == 200
     assert r.json() == {"state": "authenticated"}
@@ -49,9 +49,12 @@ def test_login_is_case_insensitive_and_sets_hardened_cookies(
     assert "HttpOnly" not in csrf_cookie
     me = client.get(f"{API}/auth/me").json()
     assert me["user"]["email"] == "ann@example.com"
-    assert me["user"]["role_label"] == "Auditor (read-only)"
-    assert me["permissions"]["audit.read"] == "all"
-    assert "user.manage" not in me["permissions"]
+    assert me["user"]["profile"]["name"] == "Read Only (Auditor)"
+    assert "view_audit_log" in me["system_permissions"]
+    assert "manage_users" not in me["system_permissions"]
+    assert me["object_permissions"]["account"]["view_all"] is True
+    assert me["object_permissions"]["account"]["edit"] is False
+    assert me["is_system_admin"] is False
     assert actions(db) == ["LOGIN"]
 
 
@@ -99,7 +102,7 @@ def test_lockout_after_repeated_failures_and_admin_unlock(
     assert r.json()["error"]["code"] == "account_locked"
     assert "ACCOUNT_LOCKED" in actions(db)
 
-    admin = make_user(db, role=Role.ADMIN, email="admin@example.com")
+    admin = make_user(db, email="admin@example.com")
     admin_client = TestClient(client.app)
     login(admin_client, admin.email)
     assert admin_client.post(f"{API}/admin/users/{user.id}/unlock").status_code == 200
@@ -184,11 +187,11 @@ def test_cross_site_origin_rejected(client: TestClient, db: Session) -> None:
 
 
 def test_staff_must_enrol_mfa_before_using_the_app(client: TestClient, db: Session) -> None:
-    user = make_user(db, role=Role.ADMIN, email="ann@example.com")
+    user = make_user(db, email="ann@example.com")
     assert login(client, user.email) == "mfa_setup_required"
     me = client.get(f"{API}/auth/me").json()
     assert me["session"] == {**me["session"], "mfa_verified": False, "mfa_setup_required": True}
-    assert me["permissions"] == {}
+    assert me["system_permissions"] == [] and me["object_permissions"] == {}
     blocked = client.get(f"{API}/admin/users")
     assert blocked.status_code == 403
     assert blocked.json()["error"]["code"] == "mfa_required"
@@ -223,7 +226,7 @@ def test_staff_must_enrol_mfa_before_using_the_app(client: TestClient, db: Sessi
 
 def test_mfa_login_with_totp_replay_protection_and_recovery_codes(client: TestClient, db: Session) -> None:
     secret = pyotp.random_base32()
-    user = make_user(db, role=Role.MIGRATION_AGENT, email="ann@example.com", mfa_secret=secret)
+    user = make_user(db, profile="sales_representative", email="ann@example.com", mfa_secret=secret)
     totp = pyotp.TOTP(secret)
 
     assert login(client, user.email) == "mfa_required"
@@ -235,7 +238,7 @@ def test_mfa_login_with_totp_replay_protection_and_recovery_codes(client: TestCl
     r = client.post(f"{API}/auth/mfa/verify", json={"code": code})
     assert r.status_code == 200
     assert r.json()["session"]["mfa_verified"] is True
-    assert r.json()["permissions"]["matter.lodge"] == "all"
+    assert r.json()["object_permissions"]["opportunity"]["create"] is True
     set_csrf(client)
     assert client.post(f"{API}/auth/mfa/verify", json={"code": code}).status_code == 409  # already verified
 
@@ -279,10 +282,11 @@ def test_repeated_mfa_failures_lock_account(client: TestClient, db: Session, set
 
 
 def test_client_role_mfa_is_optional(client: TestClient, db: Session) -> None:
-    user = make_user(db, role=Role.CLIENT, email="client@example.com")
+    user = make_user(db, profile="customer_portal", email="client@example.com")
     assert login(client, user.email) == "authenticated"
     me = client.get(f"{API}/auth/me").json()
-    assert me["permissions"]["portal.access"] == "all"
+    assert me["system_permissions"] == []
+    assert me["object_permissions"]["case"]["create"] is True
     assert me["user"]["is_staff"] is False
     # Clients may opt in; the current session is kept.
     secret = client.post(f"{API}/auth/mfa/setup").json()["secret"]
@@ -377,11 +381,15 @@ def test_new_reset_link_invalidates_old_and_links_expire(
 
 
 def test_invitation_flow(client: TestClient, db: Session, outbox: Outbox, no_mfa: None) -> None:
-    admin = make_user(db, role=Role.ADMIN, email="admin@example.com", name="Ada Admin")
+    admin = make_user(db, email="admin@example.com", name="Ada Admin")
     login(client, admin.email)
     r = client.post(
         f"{API}/admin/users",
-        json={"email": "New.Officer@Example.com", "name": "Nia Officer", "role": "CASE_OFFICER"},
+        json={
+            "email": "New.Officer@Example.com",
+            "name": "Nia Officer",
+            "profile_id": str(stable_id("profile", "service_agent")),
+        },
     )
     assert r.status_code == 201, r.text
     assert r.json()["has_password"] is False

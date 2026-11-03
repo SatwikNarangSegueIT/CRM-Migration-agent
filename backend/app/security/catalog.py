@@ -125,7 +125,8 @@ class StandardObject:
     sharing: SharingAccess
 
 
-# Standard objects (plan v3, section 5). Metadata definitions arrive in phase 3; security references them by API name.
+# Standard objects (plan v3, section 5). Security references them by API name; the record engine (phase 3)
+# holds their full metadata.
 STANDARD_OBJECTS: Final[tuple[StandardObject, ...]] = (
     StandardObject("account", "Account", "Accounts", "sales", SharingAccess.READ),
     StandardObject("contact", "Contact", "Contacts", "sales", SharingAccess.READ),

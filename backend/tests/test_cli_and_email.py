@@ -29,7 +29,11 @@ def test_create_admin(db: Session, capsys: pytest.CaptureFixture[str]) -> None:
         == 0
     )
     user = db.scalars(select(User)).one()
-    assert (user.email, user.role, user.mfa_enabled) == ("boss@example.com", "ADMIN", False)
+    assert (user.email, user.profile.key, user.mfa_enabled) == (
+        "boss@example.com",
+        "system_administrator",
+        False,
+    )
     assert db.scalars(select(AuditLog)).one().action == "CREATE"
     # Duplicate and weak passwords are refused.
     assert (
@@ -55,8 +59,8 @@ def test_seed_demo_is_idempotent_and_dev_only(
 ) -> None:
     assert cli.main(["seed-demo"]) == 0
     assert cli.main(["seed-demo"]) == 0
-    roles = sorted(u.role for u in db.scalars(select(User)))
-    assert len(roles) == 7 and "CLIENT" not in roles
+    users = list(db.scalars(select(User)))
+    assert len(users) == 7 and not any(u.profile.is_portal for u in users)
     monkeypatch.setattr(settings, "app_env", "production")
     assert cli.main(["seed-demo"]) == 1
 

@@ -8,19 +8,25 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.models import AuditLog, RecoveryCode, User, UserSession
-from app.permissions.matrix import Role
+from app.security.seed_v1 import PROFILES, stable_id
 from tests.conftest import Outbox, client_as, login, make_user
+
+PROFILE_KEYS = [p[0] for p in PROFILES]
+READ_ONLY = str(stable_id("profile", "read_only"))
+FINANCE = str(stable_id("profile", "finance"))
+SALES_REP = str(stable_id("profile", "sales_representative"))
+PORTAL = str(stable_id("profile", "customer_portal"))
 
 API = "/api/v1"
 
 
-@pytest.mark.parametrize("role", [r for r in Role if r is not Role.ADMIN], ids=lambda r: r.value)
+@pytest.mark.parametrize("profile", [k for k in PROFILE_KEYS if k != "system_administrator"])
 def test_only_admins_manage_users(
-    role: Role, settings: Settings, outbox: Outbox, db: Session, no_mfa: None
+    profile: str, settings: Settings, outbox: Outbox, db: Session, no_mfa: None
 ) -> None:
-    c = client_as(settings, outbox, db, role)
+    c = client_as(settings, outbox, db, profile)
     assert c.get(f"{API}/admin/users").status_code == 403
-    r = c.post(f"{API}/admin/users", json={"email": "x@example.com", "name": "X", "role": "AUDITOR"})
+    r = c.post(f"{API}/admin/users", json={"email": "x@example.com", "name": "X", "profile_id": READ_ONLY})
     assert r.status_code == 403
     assert r.json()["error"]["code"] == "forbidden"
 
@@ -28,37 +34,35 @@ def test_only_admins_manage_users(
 def test_admin_endpoints_require_sign_in(client: TestClient) -> None:
     assert client.get(f"{API}/admin/users").status_code == 401
     assert client.get(f"{API}/admin/audit-logs").status_code == 401
-    assert client.get(f"{API}/meta/roles").status_code == 401
+    assert client.get(f"{API}/setup/profiles").status_code == 401
 
 
 @pytest.mark.parametrize(
-    ("role", "allowed"),
+    ("profile", "allowed"),
     [
-        (Role.ADMIN, True),
-        (Role.PRACTICE_MANAGER, True),
-        (Role.AUDITOR, True),
-        (Role.MIGRATION_AGENT, False),
-        (Role.CASE_OFFICER, False),
-        (Role.INTAKE_CONSULTANT, False),
-        (Role.ACCOUNTS, False),
-        (Role.CLIENT, False),
+        ("system_administrator", True),
+        ("read_only", True),
+        ("sales_manager", False),
+        ("sales_representative", False),
+        ("service_agent", False),
+        ("marketing_user", False),
+        ("finance", False),
+        ("customer_portal", False),
     ],
-    ids=lambda v: v.value if isinstance(v, Role) else str(v),
 )
 def test_audit_log_access(
-    role: Role, allowed: bool, settings: Settings, outbox: Outbox, db: Session, no_mfa: None
+    profile: str, allowed: bool, settings: Settings, outbox: Outbox, db: Session, no_mfa: None
 ) -> None:
-    c = client_as(settings, outbox, db, role)
+    c = client_as(settings, outbox, db, profile)
     assert c.get(f"{API}/admin/audit-logs").status_code == (200 if allowed else 403)
 
 
-def test_meta_roles_staff_only(settings: Settings, outbox: Outbox, db: Session, no_mfa: None) -> None:
-    staff = client_as(settings, outbox, db, Role.CASE_OFFICER)
-    roles = staff.get(f"{API}/meta/roles").json()
-    assert roles[0]["value"] == "ADMIN"
-    assert next(r for r in roles if r["value"] == "CLIENT")["is_staff"] is False
-    client = client_as(settings, outbox, db, Role.CLIENT)
-    assert client.get(f"{API}/meta/roles").status_code == 403
+def test_portal_users_never_reach_staff_apis(
+    settings: Settings, outbox: Outbox, db: Session, no_mfa: None
+) -> None:
+    portal = client_as(settings, outbox, db, "customer_portal")
+    assert portal.get(f"{API}/setup/profiles").status_code == 403
+    assert portal.get(f"{API}/admin/users").status_code == 403
 
 
 def test_create_user_validation(admin_client: TestClient, db: Session) -> None:
@@ -68,40 +72,49 @@ def test_create_user_validation(admin_client: TestClient, db: Session) -> None:
         json={
             "email": "agent@example.com",
             "name": " Riley Agent ",
-            "role": "MIGRATION_AGENT",
+            "profile_id": SALES_REP,
+            "role_id": str(stable_id("role", "sales_representative")),
             "mara_number": "1234567",
         },
     )
-    assert ok.status_code == 201
+    assert ok.status_code == 201, ok.text
     assert ok.json()["name"] == "Riley Agent"
-    assert ok.json()["role_label"] == "Registered Migration Agent"
+    assert ok.json()["profile"]["name"] == "Sales Representative"
+    assert ok.json()["role"]["name"] == "Sales Representative"
 
-    dup = c.post(f"{API}/admin/users", json={"email": "AGENT@example.com", "name": "Dup", "role": "AUDITOR"})
+    dup = c.post(
+        f"{API}/admin/users", json={"email": "AGENT@example.com", "name": "Dup", "profile_id": READ_ONLY}
+    )
     assert dup.status_code == 409
     assert dup.json()["error"]["fields"] == {"email": "Already in use"}
-    client_role = c.post(f"{API}/admin/users", json={"email": "c@example.com", "name": "C", "role": "CLIENT"})
-    assert client_role.status_code == 422
+    portal = c.post(f"{API}/admin/users", json={"email": "c@example.com", "name": "C", "profile_id": PORTAL})
+    assert portal.status_code == 422
     bad_mara = c.post(
         f"{API}/admin/users",
-        json={"email": "m@example.com", "name": "M", "role": "AUDITOR", "mara_number": "12"},
+        json={"email": "m@example.com", "name": "M", "profile_id": READ_ONLY, "mara_number": "12"},
     )
     assert bad_mara.status_code == 422
     assert "mara_number" in bad_mara.json()["error"]["fields"]
-    bad_role = c.post(f"{API}/admin/users", json={"email": "r@example.com", "name": "R", "role": "GOD"})
-    assert bad_role.status_code == 422
-    bad_email = c.post(f"{API}/admin/users", json={"email": "not-an-email", "name": "R", "role": "AUDITOR"})
+    bad_profile = c.post(
+        f"{API}/admin/users",
+        json={"email": "r@example.com", "name": "R", "profile_id": "00000000-0000-0000-0000-000000000000"},
+    )
+    assert bad_profile.status_code == 422
+    bad_email = c.post(
+        f"{API}/admin/users", json={"email": "not-an-email", "name": "R", "profile_id": READ_ONLY}
+    )
     assert bad_email.status_code == 422
 
 
 def test_list_users_filters_and_pagination(admin_client: TestClient, db: Session) -> None:
-    make_user(db, role=Role.AUDITOR, email="zed@example.com", name="Zed Auditor")
-    make_user(db, role=Role.ACCOUNTS, email="bea@example.com", name="Bea Accounts", is_active=False)
-    make_user(db, role=Role.ACCOUNTS, email="under_score@example.com", name="Underscore Person")
+    make_user(db, profile="read_only", email="zed@example.com", name="Zed Auditor")
+    make_user(db, profile="finance", email="bea@example.com", name="Bea Accounts", is_active=False)
+    make_user(db, profile="finance", email="under_score@example.com", name="Underscore Person")
     c = admin_client
     page = c.get(f"{API}/admin/users", params={"page_size": 2}).json()
     assert page["total"] == 4 and len(page["items"]) == 2 and page["page"] == 1
     assert [u["name"] for u in page["items"]] == ["Ada Admin", "Bea Accounts"]
-    assert c.get(f"{API}/admin/users", params={"role": "ACCOUNTS"}).json()["total"] == 2
+    assert c.get(f"{API}/admin/users", params={"profile_id": FINANCE}).json()["total"] == 2
     assert c.get(f"{API}/admin/users", params={"is_active": "false"}).json()["total"] == 1
     assert c.get(f"{API}/admin/users", params={"q": "zed"}).json()["items"][0]["email"] == "zed@example.com"
     # LIKE wildcards in the search box are treated literally.
@@ -110,25 +123,25 @@ def test_list_users_filters_and_pagination(admin_client: TestClient, db: Session
 
 
 def test_update_user_and_audit_diff(admin_client: TestClient, db: Session) -> None:
-    target = make_user(db, role=Role.CASE_OFFICER, email="t@example.com", name="Tess")
+    target = make_user(db, profile="service_agent", email="t@example.com", name="Tess")
     c = admin_client
     current = c.get(f"{API}/admin/users/{target.id}").json()
     r = c.patch(
         f"{API}/admin/users/{target.id}",
         json={
             "updated_at": current["updated_at"],
-            "role": "MIGRATION_AGENT",
+            "profile_id": SALES_REP,
             "title": "Senior agent",
             "phone": "",
         },
     )
     assert r.status_code == 200, r.text
-    assert r.json()["role"] == "MIGRATION_AGENT"
+    assert r.json()["profile"]["name"] == "Sales Representative"
     assert r.json()["title"] == "Senior agent"
 
     entry = db.scalars(select(AuditLog).where(AuditLog.action == "UPDATE")).one()
     assert entry.changes == {
-        "role": {"from": "CASE_OFFICER", "to": "MIGRATION_AGENT"},
+        "profile_id": {"from": str(stable_id("profile", "service_agent")), "to": SALES_REP},
         "title": {"from": None, "to": "Senior agent"},
     }
     assert entry.entity_id == str(target.id)
@@ -144,7 +157,7 @@ def test_update_user_and_audit_diff(admin_client: TestClient, db: Session) -> No
 def test_role_change_and_deactivation_sign_user_out(
     admin_client: TestClient, db: Session, settings: Settings, outbox: Outbox
 ) -> None:
-    target = make_user(db, role=Role.ACCOUNTS, email="t@example.com")
+    target = make_user(db, profile="finance", email="t@example.com")
     victim = TestClient(admin_client.app)
     login(victim, target.email)
     assert victim.get(f"{API}/auth/me").status_code == 200
@@ -162,7 +175,7 @@ def test_self_protection_and_last_admin(admin_client: TestClient, db: Session) -
     me = c.get(f"{API}/auth/me").json()["user"]
     current = c.get(f"{API}/admin/users/{me['id']}").json()
     r = c.patch(
-        f"{API}/admin/users/{me['id']}", json={"updated_at": current["updated_at"], "role": "AUDITOR"}
+        f"{API}/admin/users/{me['id']}", json={"updated_at": current["updated_at"], "profile_id": READ_ONLY}
     )
     assert r.status_code == 422 and r.json()["error"]["code"] == "forbidden_self_change"
     r = c.patch(
@@ -174,15 +187,15 @@ def test_self_protection_and_last_admin(admin_client: TestClient, db: Session) -
     assert r.status_code == 200
 
     # Another admin can be demoted while one active admin remains; the last one cannot.
-    other = make_user(db, role=Role.ADMIN, email="other-admin@example.com")
+    other = make_user(db, email="other-admin@example.com")
     other_now = c.get(f"{API}/admin/users/{other.id}").json()
     r = c.patch(
-        f"{API}/admin/users/{other.id}", json={"updated_at": other_now["updated_at"], "role": "AUDITOR"}
+        f"{API}/admin/users/{other.id}", json={"updated_at": other_now["updated_at"], "profile_id": READ_ONLY}
     )
     assert r.status_code == 200
 
     # Make the signed-in admin's account the only admin and try to remove it via a second admin session.
-    second = make_user(db, role=Role.ADMIN, email="second@example.com")
+    second = make_user(db, email="second@example.com")
     second_client = TestClient(c.app)
     login(second_client, second.email)
     ada = c.get(f"{API}/admin/users/{me['id']}").json()
@@ -195,7 +208,8 @@ def test_self_protection_and_last_admin(admin_client: TestClient, db: Session) -
     second_now = second_client.get(f"{API}/admin/users/{second.id}").json()
     # `second` is now the last active admin; nobody can deactivate it (self-protection applies too).
     r = second_client.patch(
-        f"{API}/admin/users/{second.id}", json={"updated_at": second_now["updated_at"], "role": "AUDITOR"}
+        f"{API}/admin/users/{second.id}",
+        json={"updated_at": second_now["updated_at"], "profile_id": READ_ONLY},
     )
     assert r.status_code == 422
 
@@ -206,13 +220,13 @@ def test_last_admin_rule_directly(db: Session, admin_client: TestClient) -> None
     from app.services.audit import RequestMeta
     from app.services.users import update_user
 
-    only_admin = db.scalars(select(User).where(User.role == "ADMIN")).one()
-    actor = make_user(db, role=Role.ADMIN, email="actor@example.com", is_active=False)
+    only_admin = db.scalars(select(User).where(User.email == "admin@example.com")).one()
+    actor = make_user(db, email="actor@example.com", is_active=False)
     session = UserSession(
         user_id=actor.id, token_hash="x" * 64, csrf_token_hash="y" * 64, expires_at=only_admin.created_at
     )
     ctx = AuthContext(user=actor, session=session)
-    with pytest.raises(Exception, match="At least one active administrator"):
+    with pytest.raises(Exception, match="At least one active System Administrator"):
         update_user(
             db,
             ctx,
@@ -223,7 +237,7 @@ def test_last_admin_rule_directly(db: Session, admin_client: TestClient) -> None
 
 
 def test_reset_mfa_unlock_revoke_and_resend(admin_client: TestClient, db: Session, outbox: Outbox) -> None:
-    secret_user = make_user(db, role=Role.AUDITOR, email="mfa@example.com", mfa_secret="JBSWY3DPEHPK3PXP")
+    secret_user = make_user(db, profile="read_only", email="mfa@example.com", mfa_secret="JBSWY3DPEHPK3PXP")
     db.add(RecoveryCode(user_id=secret_user.id, code_hash="a" * 64))
     db.commit()
     c = admin_client
@@ -240,7 +254,7 @@ def test_reset_mfa_unlock_revoke_and_resend(admin_client: TestClient, db: Sessio
     assert c.post(f"{API}/admin/users/{secret_user.id}/resend-invitation").status_code == 409
 
     invited = c.post(
-        f"{API}/admin/users", json={"email": "inv@example.com", "name": "Inv", "role": "AUDITOR"}
+        f"{API}/admin/users", json={"email": "inv@example.com", "name": "Inv", "profile_id": READ_ONLY}
     ).json()
     first = outbox.token_for("inv@example.com")
     assert c.post(f"{API}/admin/users/{invited['id']}/resend-invitation").status_code == 200
@@ -256,7 +270,7 @@ def test_reset_mfa_unlock_revoke_and_resend(admin_client: TestClient, db: Sessio
 
 def test_audit_log_listing_and_filters(admin_client: TestClient, db: Session) -> None:
     c = admin_client
-    c.post(f"{API}/admin/users", json={"email": "a1@example.com", "name": "A1", "role": "AUDITOR"})
+    c.post(f"{API}/admin/users", json={"email": "a1@example.com", "name": "A1", "profile_id": READ_ONLY})
     page = c.get(f"{API}/admin/audit-logs").json()
     assert [i["action"] for i in page["items"]] == ["CREATE", "LOGIN"]  # newest first
     created = page["items"][0]

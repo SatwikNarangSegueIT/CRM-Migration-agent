@@ -204,7 +204,7 @@ def apply(conn: Connection) -> None:
     for key, name, description, is_locked, is_portal in PROFILES:
         conn.execute(
             text(
-                "INSERT INTO profiles (id, key, name, description, is_locked, is_portal, created_at, updated_at) "
+                "INSERT INTO profiles (id, key, name, description, is_locked, is_portal, created_at, updated_at) "  # noqa: E501
                 "VALUES (:id, :key, :name, :description, :is_locked, :is_portal, now(), now()) "
                 "ON CONFLICT DO NOTHING"
             ),
@@ -230,7 +230,7 @@ def apply(conn: Connection) -> None:
         conn.execute(
             text(
                 "INSERT INTO profile_object_permissions (profile_id, object_api_name, can_read, can_create, "
-                "can_edit, can_delete, view_all, modify_all) VALUES (:profile_id, :object_api_name, :can_read, "
+                "can_edit, can_delete, view_all, modify_all) VALUES (:profile_id, :object_api_name, :can_read, "  # noqa: E501
                 ":can_create, :can_edit, :can_delete, :view_all, :modify_all) ON CONFLICT DO NOTHING"
             ),
             row,
