@@ -6,13 +6,14 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 
+from app.auth.deps import verify_origin
 from app.core.config import Settings, get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
-from app.routers import health
+from app.routers import admin_users, audit_logs, auth, health, meta
 
 API_PREFIX = "/api/v1"
 
@@ -40,8 +41,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(RequestContextMiddleware, hsts=settings.app_env in ("staging", "production"))
     register_error_handlers(app)
 
-    api = APIRouter(prefix=API_PREFIX)
+    api = APIRouter(prefix=API_PREFIX, dependencies=[Depends(verify_origin)])
     api.include_router(health.router)
+    api.include_router(auth.router)
+    api.include_router(meta.router)
+    api.include_router(admin_users.router)
+    api.include_router(audit_logs.router)
     app.include_router(api)
     return app
 

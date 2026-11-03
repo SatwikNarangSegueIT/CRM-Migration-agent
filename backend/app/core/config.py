@@ -62,6 +62,31 @@ class Settings(BaseSettings):
 
     timezone: str = "Australia/Sydney"
 
+    # ---- Web / auth ----
+    # Public URL of the SPA (used for links in e-mails and the Origin check on unsafe requests).
+    public_app_url: str = "http://localhost:5173"
+    # Extra allowed origins (comma separated), e.g. a staging domain.
+    extra_allowed_origins: str = ""
+    # None = secure cookies everywhere except development/test.
+    cookie_secure: bool | None = None
+    session_absolute_hours: int = Field(default=12, ge=1, le=72)
+    session_idle_minutes: int = Field(default=60, ge=5, le=24 * 60)
+    mfa_required_for_staff: bool = True
+    login_max_failures: int = Field(default=5, ge=3, le=20)
+    login_lockout_minutes: int = Field(default=15, ge=1, le=24 * 60)
+    password_reset_minutes: int = Field(default=30, ge=5, le=24 * 60)
+    invitation_hours: int = Field(default=72, ge=1, le=24 * 14)
+    rate_limit_enabled: bool = True
+
+    # ---- E-mail ----
+    email_backend: Literal["console", "smtp"] = "console"
+    email_from: str = "MigrateCRM <no-reply@localhost>"
+    smtp_host: str = "localhost"
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_starttls: bool = True
+
     @field_validator("database_url", mode="before")
     @classmethod
     def _normalize_database_url(cls, v: str) -> str:
@@ -79,11 +104,29 @@ class Settings(BaseSettings):
         weak_key = self.secret_key is None or len(self.secret_key.get_secret_value()) < 32
         if self.app_env in ("staging", "production") and weak_key:
             raise ValueError("SECRET_KEY of at least 32 characters is required in staging/production")
+        if self.app_env == "production" and not self.mfa_required_for_staff:
+            raise ValueError("MFA_REQUIRED_FOR_STAFF cannot be disabled in production")
+        if self.app_env == "production" and self.email_backend != "smtp":
+            raise ValueError("EMAIL_BACKEND must be 'smtp' in production")
+        if self.app_env == "production" and self.cookie_secure is False:
+            raise ValueError("COOKIE_SECURE cannot be disabled in production")
         return self
 
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def secure_cookies(self) -> bool:
+        if self.cookie_secure is not None:
+            return self.cookie_secure
+        return self.app_env not in ("development", "test")
+
+    @property
+    def allowed_origins(self) -> set[str]:
+        origins = {self.public_app_url.rstrip("/")}
+        origins |= {o.strip().rstrip("/") for o in self.extra_allowed_origins.split(",") if o.strip()}
+        return origins
 
     @property
     def migration_database_url(self) -> str:

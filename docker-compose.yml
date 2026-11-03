@@ -11,6 +11,9 @@ x-backend: &backend
     DATABASE_URL: ${DATABASE_URL:-postgresql://crm:crm@db:5432/crm}
     DATABASE_URL_DIRECT: ${DATABASE_URL_DIRECT:-}
     REDIS_URL: redis://redis:6379/0
+    PUBLIC_APP_URL: http://localhost:5173
+    MFA_REQUIRED_FOR_STAFF: "false" # local development only; enforced true in production
+    EMAIL_BACKEND: console
   volumes:
     - ./backend:/app
     - /app/.venv # keep the image's virtualenv, not the host's

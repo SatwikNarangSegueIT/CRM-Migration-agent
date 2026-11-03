@@ -56,3 +56,8 @@ def get_db() -> Iterator[Session]:
         raise
     finally:
         session.close()
+
+
+def escape_like(value: str) -> str:
+    """Escape LIKE wildcards in user input (use with escape='\\\\')."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
