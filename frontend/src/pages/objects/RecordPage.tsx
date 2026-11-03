@@ -11,6 +11,7 @@ import { ChangeOwnerDialog } from "../../components/record/ChangeOwnerDialog";
 import { FieldDisplay } from "../../components/record/FieldDisplay";
 import { ObjectIcon } from "../../components/record/ObjectIcon";
 import { Path } from "../../components/record/Path";
+import { PrivacyDialog } from "../../components/record/PrivacyDialog";
 import { RecordFormModal } from "../../components/record/RecordFormModal";
 import { ChevronDownIcon, DownloadIcon, EditIcon, PaperclipIcon, RecycleIcon } from "../../components/icons";
 import { Alert, Button, ConfirmDialog, Spinner, useToast } from "../../components/ui";
@@ -78,6 +79,7 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
   const [cloning, setCloning] = useState(false);
   const [ownerOpen, setOwnerOpen] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(false);
+  const [privacy, setPrivacy] = useState<"export" | "erase" | null>(null);
   const [confirm, setConfirm] = useState<"delete" | null>(null);
   const [action, setAction] = useState<{ name: string; label: string } | null>(null);
 
@@ -237,6 +239,27 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
                       >
                         Invite to Customer Portal
                       </MenuItem>
+                    )}
+                    {(api === "contact" || api === "lead") && can("manage_users") && (
+                      <>
+                        <MenuItem
+                          onClick={() => {
+                            close();
+                            setPrivacy("export");
+                          }}
+                        >
+                          Export Personal Data
+                        </MenuItem>
+                        <MenuItem
+                          danger
+                          onClick={() => {
+                            close();
+                            setPrivacy("erase");
+                          }}
+                        >
+                          Erase Personal Data
+                        </MenuItem>
+                      </>
                     )}
                     {record.access.delete && (
                       <MenuItem
@@ -403,6 +426,19 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
         />
       )}
       {sharingOpen && <SharingPanel object={api} record={record} onClose={() => setSharingOpen(false)} />}
+      {privacy && (
+        <PrivacyDialog
+          object={api}
+          record={record}
+          mode={privacy}
+          onClose={() => setPrivacy(null)}
+          onErased={() => {
+            setPrivacy(null);
+            toast.show("Personal data erased.");
+            refresh();
+          }}
+        />
+      )}
       <ActionDialog
         object={api}
         record={record}

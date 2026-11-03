@@ -17,9 +17,20 @@ import {
   Spinner,
   useToast,
 } from "../../components/ui";
+import { useObjects } from "../../lib/records";
 import { NotFoundPage } from "../NotFoundPage";
 
-type Kind = "text" | "textarea" | "number" | "checkbox" | "color" | "url" | "email" | "select" | "readonly";
+type Kind =
+  | "text"
+  | "textarea"
+  | "number"
+  | "checkbox"
+  | "color"
+  | "url"
+  | "email"
+  | "select"
+  | "readonly"
+  | "object_years";
 type Field = {
   key: string;
   label: string;
@@ -189,6 +200,12 @@ const SECTIONS: Record<string, { title: string; subtitle: string; groups: Group[
             kind: "number",
             hint: "Record-keeping obligations often require 7 years.",
           },
+          {
+            key: "object_years",
+            label: "Retention policies by object",
+            kind: "object_years",
+            hint: "Records not changed for this many years move to the recycle bin (a nightly job). Leave blank to keep forever.",
+          },
         ],
       },
     ],
@@ -196,6 +213,51 @@ const SECTIONS: Record<string, { title: string; subtitle: string; groups: Group[
 };
 
 type Settings = Record<string, Record<string, unknown>>;
+
+function ObjectYearsEditor({
+  label,
+  hint,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: Record<string, number>;
+  disabled: boolean;
+  onChange: (v: Record<string, number>) => void;
+}) {
+  const objects = useObjects();
+  const list = (objects.data ?? []).filter((o) => !o.is_detail_only);
+  return (
+    <fieldset>
+      <legend className="text-sm font-medium text-slate-700">{label}</legend>
+      {hint && <p className="text-xs text-slate-500">{hint}</p>}
+      <div className="mt-2 grid max-h-72 gap-x-6 gap-y-1 overflow-y-auto sm:grid-cols-2">
+        {list.map((o) => (
+          <label key={o.api_name} className="flex items-center justify-between gap-2 text-sm">
+            <span>{o.plural_label}</span>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              aria-label={`Retention for ${o.plural_label} (years)`}
+              disabled={disabled}
+              className={controlClass(false, "w-24 py-1")}
+              value={value[o.api_name] ?? ""}
+              onChange={(e) => {
+                const next = { ...value };
+                if (e.target.value) next[o.api_name] = Number(e.target.value);
+                else delete next[o.api_name];
+                onChange(next);
+              }}
+            />
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
 
 function SettingGroup({
   group,
@@ -242,6 +304,18 @@ function SettingGroup({
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {group.fields.map((f) => {
           const v = form[f.key];
+          if (f.kind === "object_years")
+            return (
+              <div key={f.key} className="sm:col-span-2">
+                <ObjectYearsEditor
+                  label={f.label}
+                  hint={f.hint}
+                  disabled={!editable}
+                  value={(v as Record<string, number> | undefined) ?? {}}
+                  onChange={(next) => setForm({ ...form, [f.key]: next })}
+                />
+              </div>
+            );
           if (f.kind === "checkbox")
             return (
               <div key={f.key} className="sm:col-span-2">

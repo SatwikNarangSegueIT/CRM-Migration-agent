@@ -814,7 +814,7 @@ DEFAULT_SETTINGS: Final[dict[str, Any]] = {
     },
     "service": {"web_queue_id": None, "web_to_case_enabled": True, "web_to_lead_enabled": True},
     "locale": {"default_locale": "en-AU", "default_time_zone": "Australia/Sydney", "currency": "AUD"},
-    "retention": {"recycle_bin_days": 30, "deleted_field_days": 15, "audit_years": 7},
+    "retention": {"recycle_bin_days": 30, "deleted_field_days": 15, "audit_years": 7, "object_years": {}},
     "marketing": {"from_name": "Meridian CRM", "from_email": "", "postal_address": "", "batch_size": 200},
     "lead_conversion": {"field_map": {}},
 }  # fmt: skip

@@ -114,7 +114,7 @@ def scheduled_reports() -> int:
 
 @celery_app.task(name="maintenance.purge")
 def purge() -> dict[str, int]:
-    """Recycle bin (30 days) and deleted custom fields (15 days)."""
+    """Recycle bin (30 days), deleted custom fields (15 days) and per-object retention policies."""
 
     def job(db: Any) -> dict[str, int]:
         from app.engine.admin import purge_deleted_fields
@@ -125,7 +125,10 @@ def purge() -> dict[str, int]:
         records = RecordService.as_system(db).purge_deleted(int(retention.get("recycle_bin_days") or 30))
         fields = purge_deleted_fields(db, int(retention.get("deleted_field_days") or 15))
         db.commit()
-        return {"records": records, "fields": fields}
+        from app.services.privacy import apply_retention
+
+        retained = apply_retention(db)
+        return {"records": records, "fields": fields, "retention": retained}
 
     result: dict[str, int] = _with_db(job)
     return result

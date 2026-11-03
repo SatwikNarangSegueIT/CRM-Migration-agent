@@ -24,6 +24,7 @@ from app.routers import (
     meta,
     org_settings,
     portal,
+    privacy,
     public,
     records,
     reports,
@@ -77,6 +78,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(portal.router)
     api.include_router(portal.staff_router)
     api.include_router(public.router)
+    api.include_router(privacy.router)
     api.include_router(packs_router.router)
     app.include_router(api)
     return app
