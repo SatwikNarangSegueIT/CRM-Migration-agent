@@ -13,7 +13,7 @@ from app.core.config import Settings, get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
-from app.routers import admin_users, audit_logs, auth, health, meta
+from app.routers import admin_users, audit_logs, auth, health, setup
 
 API_PREFIX = "/api/v1"
 
@@ -44,7 +44,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api = APIRouter(prefix=API_PREFIX, dependencies=[Depends(verify_origin)])
     api.include_router(health.router)
     api.include_router(auth.router)
-    api.include_router(meta.router)
+    api.include_router(setup.router)
     api.include_router(admin_users.router)
     api.include_router(audit_logs.router)
     app.include_router(api)

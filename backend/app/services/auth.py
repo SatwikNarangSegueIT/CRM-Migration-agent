@@ -64,12 +64,11 @@ def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
-def validate_new_password(password: str, user: User) -> None:
+def validate_new_password(password: str, user: User, *, field: str) -> None:
+    """Raise 422 `weak_password` with the error on `field` (the request's password field name)."""
     errors = security.password_policy_errors(password, email=user.email, name=user.name)
     if errors:
-        raise AppError(
-            " ".join(errors), code="weak_password", status_code=422, fields={"password": errors[0]}
-        )
+        raise AppError(" ".join(errors), code="weak_password", status_code=422, fields={field: errors[0]})
 
 
 # ---------------------------------------------------------------- sessions
@@ -305,10 +304,14 @@ def begin_mfa_setup(db: Session, auth: AuthContext) -> MfaSetup:
             code="mfa_already_enabled",
             status_code=409,
         )
-    secret = security.new_totp_secret()
-    user.mfa_secret_encrypted = security.encrypt_field(secret)
-    user.mfa_last_used_step = None
-    db.commit()
+    # Reuse a pending (not yet confirmed) secret so a repeated request shows the same QR code.
+    if user.mfa_secret_encrypted is not None:
+        secret = security.decrypt_field(user.mfa_secret_encrypted)
+    else:
+        secret = security.new_totp_secret()
+        user.mfa_secret_encrypted = security.encrypt_field(secret)
+        user.mfa_last_used_step = None
+        db.commit()
     uri = security.totp_uri(secret, user.email)
     svg = segno.make(uri, error="m").svg_inline(scale=5, border=2, dark="#0f172a", light="#ffffff")
     data_uri = "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
@@ -421,7 +424,7 @@ def change_password(db: Session, auth: AuthContext, current: str, new: str, meta
             status_code=422,
             fields={"new_password": "Same as current password"},
         )
-    validate_new_password(new, user)
+    validate_new_password(new, user, field="new_password")
     user.password_hash = security.hash_password(new)
     user.password_changed_at = utcnow()
     revoked = revoke_sessions(db, user.id, except_session_id=auth.session.id)
@@ -496,7 +499,7 @@ def request_password_reset(db: Session, email: str, meta: RequestMeta) -> tuple[
 def reset_password(db: Session, token: str, new_password: str, meta: RequestMeta) -> None:
     row = _consume_user_token(db, token, TokenPurpose.PASSWORD_RESET, mark_used=False)
     user = row.user
-    validate_new_password(new_password, user)
+    validate_new_password(new_password, user, field="new_password")
     row.used_at = utcnow()
     user.password_hash = security.hash_password(new_password)
     user.password_changed_at = utcnow()
@@ -539,7 +542,7 @@ def accept_invitation(db: Session, token: str, password: str, meta: RequestMeta)
     user = row.user
     if user.password_hash is not None:
         raise InvalidTokenError("This invitation has already been accepted. Sign in instead.")
-    validate_new_password(password, user)
+    validate_new_password(password, user, field="password")
     row.used_at = utcnow()
     user.password_hash = security.hash_password(password)
     user.password_changed_at = utcnow()

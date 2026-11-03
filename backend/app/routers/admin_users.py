@@ -10,15 +10,15 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from app.auth.deps import AuthContext, DbSession, require
 from app.core.config import get_settings
 from app.models import User
-from app.permissions.matrix import Permission, Role
 from app.schemas.common import Message, Page, PageParams
 from app.schemas.users import UserCreate, UserOut, UserUpdate
+from app.security.catalog import SystemPermission
 from app.services import users as users_service
 from app.services.audit import RequestMeta
 from app.services.email import app_link, queue_email
 
 router = APIRouter(prefix="/admin/users", tags=["admin: users"])
-Admin = Annotated[AuthContext, Depends(require(Permission.USER_MANAGE))]
+Admin = Annotated[AuthContext, Depends(require(SystemPermission.MANAGE_USERS))]
 
 
 def _send_invitation(user: User, token: str, inviter: str) -> None:
@@ -38,10 +38,13 @@ def list_users(
     _: Admin,
     params: Annotated[PageParams, Depends()],
     q: Annotated[str | None, Query(max_length=100)] = None,
-    role: Role | None = None,
+    profile_id: uuid.UUID | None = None,
+    role_id: uuid.UUID | None = None,
     is_active: bool | None = None,
 ) -> Page[UserOut]:
-    rows, total = users_service.list_users(db, params, q=q, role=role, is_active=is_active)
+    rows, total = users_service.list_users(
+        db, params, q=q, profile_id=profile_id, role_id=role_id, is_active=is_active
+    )
     return Page(
         items=[UserOut.model_validate(u) for u in rows],
         total=total,

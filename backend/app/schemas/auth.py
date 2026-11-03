@@ -6,8 +6,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints
 
-from app.permissions.matrix import Role
-
 Password = Annotated[str, Field(min_length=1, max_length=256)]
 # Sign-in identifiers are matched, not validated: any stored address must be able to sign in.
 LoginEmail = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=254)]
@@ -69,16 +67,30 @@ class InvitationAcceptRequest(BaseModel):
     password: Password
 
 
+class NamedRef(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
 class MeUser(BaseModel):
     id: uuid.UUID
     email: str
     name: str
-    role: Role
-    role_label: str
+    profile: NamedRef
+    role: NamedRef | None
     is_staff: bool
     title: str | None
     mara_number: str | None
     mfa_enabled: bool
+
+
+class ObjectAccessOut(BaseModel):
+    read: bool
+    create: bool
+    edit: bool
+    delete: bool
+    view_all: bool
+    modify_all: bool
 
 
 class MeSession(BaseModel):
@@ -91,5 +103,7 @@ class MeSession(BaseModel):
 class MeResponse(BaseModel):
     user: MeUser
     session: MeSession
-    # Empty until the session is fully authenticated.
-    permissions: dict[str, str]
+    # Both empty until the session is fully authenticated.
+    system_permissions: list[str]
+    object_permissions: dict[str, ObjectAccessOut]
+    is_system_admin: bool

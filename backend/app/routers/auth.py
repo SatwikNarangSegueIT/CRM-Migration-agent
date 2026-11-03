@@ -16,7 +16,6 @@ from app.auth.deps import (
 )
 from app.core.config import get_settings
 from app.core.rate_limit import check_rate_limit
-from app.permissions.matrix import ROLE_LABELS, Role, is_staff, permissions_for
 from app.schemas.auth import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -30,11 +29,14 @@ from app.schemas.auth import (
     MeUser,
     MfaCodeRequest,
     MfaSetupResponse,
+    NamedRef,
+    ObjectAccessOut,
     PasswordConfirmRequest,
     RecoveryCodesResponse,
     ResetPasswordRequest,
 )
 from app.schemas.common import Message
+from app.security.catalog import STANDARD_OBJECT_NAMES
 from app.services import auth as auth_service
 from app.services.audit import RequestMeta
 from app.services.auth import IssuedSession
@@ -66,16 +68,30 @@ def _clear_auth_cookies(response: Response) -> None:
 
 def _me(db: DbSession, auth: AuthContext) -> MeResponse:
     user = auth.user
-    role = Role(user.role)
     verified = auth.session.mfa_verified
+    policy = auth.policy if verified else None
+    objects: dict[str, ObjectAccessOut] = {}
+    if policy is not None:
+        names = STANDARD_OBJECT_NAMES | policy.objects.keys()
+        for name in sorted(names):
+            access = policy.object(name)
+            if access.read:
+                objects[name] = ObjectAccessOut(
+                    read=access.read,
+                    create=access.create,
+                    edit=access.edit,
+                    delete=access.delete,
+                    view_all=access.view_all,
+                    modify_all=access.modify_all,
+                )
     return MeResponse(
         user=MeUser(
             id=user.id,
             email=user.email,
             name=user.name,
-            role=role,
-            role_label=ROLE_LABELS[role],
-            is_staff=is_staff(user.role),
+            profile=NamedRef(id=user.profile.id, name=user.profile.name),
+            role=NamedRef(id=user.role.id, name=user.role.name) if user.role else None,
+            is_staff=not user.profile.is_portal,
             title=user.title,
             mara_number=user.mara_number,
             mfa_enabled=user.mfa_enabled,
@@ -88,7 +104,9 @@ def _me(db: DbSession, auth: AuthContext) -> MeResponse:
                 auth_service.remaining_recovery_codes(db, user.id) if user.mfa_enabled and verified else None
             ),
         ),
-        permissions=permissions_for(user.role) if verified else {},
+        system_permissions=policy.system_permissions() if policy else [],
+        object_permissions=objects,
+        is_system_admin=policy.is_system_admin if policy else False,
     )
 
 
@@ -121,7 +139,7 @@ def mfa_verify(
     check_rate_limit("mfa", str(auth.user.id), limit=10, window_seconds=300)
     issued = auth_service.verify_mfa(db, auth, body.code, RequestMeta.from_request(request))
     _set_auth_cookies(response, issued)
-    return _me(db, AuthContext(user=auth.user, session=issued.session))
+    return _me(db, AuthContext(user=auth.user, session=issued.session, db=db))
 
 
 @router.post("/mfa/setup", response_model=MfaSetupResponse)

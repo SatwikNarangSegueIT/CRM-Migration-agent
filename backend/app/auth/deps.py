@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -16,7 +16,8 @@ from app.core.config import get_settings
 from app.core.errors import AppError, PermissionDeniedError
 from app.db.session import get_db
 from app.models import User, UserSession
-from app.permissions.matrix import Permission, Scope, is_staff, scope_of
+from app.security.catalog import SystemPermission
+from app.security.policy import AccessPolicy, load_policy
 
 SESSION_COOKIE = "crm_session"
 CSRF_COOKIE = "crm_csrf"
@@ -47,20 +48,24 @@ class CsrfError(AppError):
 class AuthContext:
     user: User
     session: UserSession
-
-    @property
-    def role(self) -> str:
-        return self.user.role
+    db: Session | None = None
+    _policy: AccessPolicy | None = field(default=None, repr=False)
 
     @property
     def is_staff(self) -> bool:
-        return is_staff(self.user.role)
+        return not self.user.profile.is_portal
 
-    def scope(self, permission: Permission) -> Scope | None:
-        return scope_of(self.user.role, permission)
+    @property
+    def policy(self) -> AccessPolicy:
+        """Effective permissions, loaded once per request."""
+        if self._policy is None:
+            if self.db is None:
+                raise RuntimeError("AuthContext has no database session to load permissions")
+            self._policy = load_policy(self.db, self.user)
+        return self._policy
 
-    def can(self, permission: Permission) -> bool:
-        return self.scope(permission) is not None
+    def has(self, permission: SystemPermission) -> bool:
+        return self.policy.has(permission)
 
 
 def utcnow() -> datetime:
@@ -68,7 +73,7 @@ def utcnow() -> datetime:
 
 
 def mfa_setup_required(user: User) -> bool:
-    return not user.mfa_enabled and is_staff(user.role) and get_settings().mfa_required_for_staff
+    return not user.mfa_enabled and not user.profile.is_portal and get_settings().mfa_required_for_staff
 
 
 def verify_origin(request: Request) -> None:
@@ -110,7 +115,7 @@ def get_optional_auth(request: Request, db: DbSession) -> AuthContext | None:
     if now - session.last_seen_at >= _TOUCH_INTERVAL:
         session.last_seen_at = now
         db.commit()
-    return AuthContext(user=session.user, session=session)
+    return AuthContext(user=session.user, session=session, db=db)
 
 
 OptionalAuth = Annotated[AuthContext | None, Depends(get_optional_auth)]
@@ -136,18 +141,6 @@ def get_auth(auth: AnyAuth) -> AuthContext:
 Auth = Annotated[AuthContext, Depends(get_auth)]
 
 
-def require(permission: Permission) -> Callable[[AuthContext], AuthContext]:
-    """Dependency factory: fully authenticated user holding `permission` (any scope)."""
-
-    def dependency(auth: Auth) -> AuthContext:
-        if not auth.can(permission):
-            raise PermissionDeniedError("You do not have permission to perform this action.")
-        return auth
-
-    dependency.__name__ = f"require_{permission.value.replace('.', '_')}"
-    return dependency
-
-
 def require_staff(auth: Auth) -> AuthContext:
     if not auth.is_staff:
         raise PermissionDeniedError("This area is for staff only.")
@@ -155,3 +148,17 @@ def require_staff(auth: Auth) -> AuthContext:
 
 
 StaffAuth = Annotated[AuthContext, Depends(require_staff)]
+
+
+def require(*permissions: SystemPermission) -> Callable[[AuthContext], AuthContext]:
+    """Dependency factory: a fully authenticated staff user holding ANY of `permissions`."""
+    if not permissions:
+        raise ValueError("require() needs at least one permission")
+
+    def dependency(auth: StaffAuth) -> AuthContext:
+        if not any(auth.has(p) for p in permissions):
+            raise PermissionDeniedError("You do not have permission to perform this action.")
+        return auth
+
+    dependency.__name__ = "require_" + "_or_".join(p.value for p in permissions)
+    return dependency

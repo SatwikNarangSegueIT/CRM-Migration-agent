@@ -10,9 +10,7 @@ from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, In
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.permissions.matrix import Role
-
-_ROLE_VALUES = ", ".join(f"'{r.value}'" for r in Role)
+from app.models.security import Profile, Role
 
 
 class TokenPurpose(StrEnum):
@@ -22,16 +20,16 @@ class TokenPurpose(StrEnum):
 
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "users"
-    __table_args__ = (
-        CheckConstraint(f"role IN ({_ROLE_VALUES})", name="role_valid"),
-        CheckConstraint("email = lower(email)", name="email_lowercase"),
-    )
+    __table_args__ = (CheckConstraint("email = lower(email)", name="email_lowercase"),)
 
     email: Mapped[str] = mapped_column(String(254), unique=True)
     name: Mapped[str] = mapped_column(String(120))
     # NULL until an invited user accepts the invitation and sets a password.
     password_hash: Mapped[str | None] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(32))
+    # What the user can do.
+    profile_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("profiles.id", ondelete="RESTRICT"), index=True)
+    # Where the user sits in the role hierarchy (whose records they see). Optional.
+    role_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("roles.id", ondelete="RESTRICT"), index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     title: Mapped[str | None] = mapped_column(String(120))
     phone: Mapped[str | None] = mapped_column(String(40))
@@ -49,6 +47,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     sessions: Mapped[list[UserSession]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    profile: Mapped[Profile] = relationship(lazy="joined")
+    role: Mapped[Role | None] = relationship(lazy="joined")
 
     @property
     def has_password(self) -> bool:

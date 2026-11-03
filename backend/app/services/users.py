@@ -11,15 +11,15 @@ from sqlalchemy.orm import Session
 from app.auth.deps import AuthContext
 from app.core.errors import AppError, ConflictError, NotFoundError
 from app.db.session import escape_like
-from app.models import RecoveryCode, User
-from app.permissions.matrix import Role
+from app.models import Profile, RecoveryCode, Role, User
 from app.schemas.common import PageParams
 from app.schemas.users import UserCreate, UserUpdate
+from app.security.policy import SYSTEM_ADMIN_KEY
 from app.services import audit
 from app.services.audit import AuditAction, RequestMeta
 from app.services.auth import issue_invitation, revoke_sessions
 
-_AUDITED_FIELDS = ("email", "name", "role", "title", "phone", "mara_number", "is_active")
+_AUDITED_FIELDS = ("email", "name", "profile_id", "role_id", "title", "phone", "mara_number", "is_active")
 
 
 def _snapshot(user: User) -> dict[str, Any]:
@@ -34,7 +34,13 @@ def get_user(db: Session, user_id: uuid.UUID) -> User:
 
 
 def list_users(
-    db: Session, params: PageParams, *, q: str | None, role: Role | None, is_active: bool | None
+    db: Session,
+    params: PageParams,
+    *,
+    q: str | None,
+    profile_id: uuid.UUID | None,
+    role_id: uuid.UUID | None,
+    is_active: bool | None,
 ) -> tuple[list[User], int]:
     stmt = select(User)
     if q:
@@ -42,8 +48,10 @@ def list_users(
         stmt = stmt.where(
             or_(func.lower(User.name).like(pattern, escape="\\"), User.email.like(pattern, escape="\\"))
         )
-    if role is not None:
-        stmt = stmt.where(User.role == role.value)
+    if profile_id is not None:
+        stmt = stmt.where(User.profile_id == profile_id)
+    if role_id is not None:
+        stmt = stmt.where(User.role_id == role_id)
     if is_active is not None:
         stmt = stmt.where(User.is_active.is_(is_active))
     total = int(db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
@@ -54,34 +62,73 @@ def list_users(
 
 
 def _active_admin_count(db: Session, *, excluding: uuid.UUID) -> int:
+    """Active users holding the System Administrator profile, other than `excluding`."""
     return int(
         db.scalar(
             select(func.count())
             .select_from(User)
-            .where(User.role == Role.ADMIN.value, User.is_active.is_(True), User.id != excluding)
+            .join(Profile, Profile.id == User.profile_id)
+            .where(Profile.key == SYSTEM_ADMIN_KEY, User.is_active.is_(True), User.id != excluding)
         )
         or 0
     )
 
 
-def create_user(db: Session, actor: AuthContext, data: UserCreate, meta: RequestMeta) -> tuple[User, str]:
-    if data.role is Role.CLIENT:
+def _staff_profile(db: Session, profile_id: uuid.UUID) -> Profile:
+    profile = db.get(Profile, profile_id)
+    if profile is None:
         raise AppError(
-            "Client accounts are created by inviting a contact to the client portal.",
-            code="invalid_role",
+            "Profile not found.",
+            code="invalid_profile",
             status_code=422,
-            fields={"role": "Not allowed here"},
+            fields={"profile_id": "Unknown profile"},
         )
+    if profile.is_portal:
+        raise AppError(
+            "Portal users are created by inviting a contact to the customer portal.",
+            code="invalid_profile",
+            status_code=422,
+            fields={"profile_id": "Portal profiles are not allowed here"},
+        )
+    return profile
+
+
+def _role(db: Session, role_id: uuid.UUID) -> Role:
+    role = db.get(Role, role_id)
+    if role is None:
+        raise AppError(
+            "Role not found.", code="invalid_role", status_code=422, fields={"role_id": "Unknown role"}
+        )
+    return role
+
+
+def _last_admin_error(field: str) -> AppError:
+    return AppError(
+        "At least one active System Administrator is required.",
+        code="last_admin",
+        status_code=422,
+        fields={field: "Last active System Administrator"},
+    )
+
+
+def _self_change_error(field: str, message: str) -> AppError:
+    return AppError(message, code="forbidden_self_change", status_code=422, fields={field: message})
+
+
+def create_user(db: Session, actor: AuthContext, data: UserCreate, meta: RequestMeta) -> tuple[User, str]:
+    profile = _staff_profile(db, data.profile_id)
+    role = _role(db, data.role_id) if data.role_id is not None else None
     email = str(data.email).strip().lower()
     if db.scalar(select(User.id).where(User.email == email)) is not None:
         raise ConflictError("A user with this e-mail already exists.", fields={"email": "Already in use"})
     user = User(
         email=email,
         name=data.name,
-        role=data.role.value,
-        title=data.title or None,
-        phone=data.phone or None,
-        mara_number=data.mara_number or None,
+        profile_id=profile.id,
+        role_id=role.id if role else None,
+        title=data.title,
+        phone=data.phone,
+        mara_number=data.mara_number,
         is_active=True,
     )
     db.add(user)
@@ -93,11 +140,12 @@ def create_user(db: Session, actor: AuthContext, data: UserCreate, meta: Request
         entity_type="user",
         entity_id=user.id,
         actor_id=actor.user.id,
-        summary=f"Created user {user.email} ({user.role}) and sent invitation",
+        summary=f"Created user {user.email} (profile {profile.name}) and sent invitation",
         changes=audit.diff({}, _snapshot(user)),
         meta=meta,
     )
     db.commit()
+    db.refresh(user)
     return user, token
 
 
@@ -114,67 +162,51 @@ def update_user(
     fields = data.model_fields_set - {"updated_at"}
     before = _snapshot(user)
     is_self = user.id == actor.user.id
+    is_admin = user.profile.key == SYSTEM_ADMIN_KEY
 
-    if "role" in fields and data.role is not None and data.role.value != user.role:
+    if "profile_id" in fields and data.profile_id is not None and data.profile_id != user.profile_id:
         if is_self:
+            raise _self_change_error("profile_id", "You cannot change your own profile.")
+        if user.profile.is_portal:
             raise AppError(
-                "You cannot change your own role.",
-                code="forbidden_self_change",
+                "Portal users cannot be given a staff profile.",
+                code="invalid_profile",
                 status_code=422,
-                fields={"role": "Cannot change own role"},
+                fields={"profile_id": "Not allowed"},
             )
-        if data.role is Role.CLIENT or user.role == Role.CLIENT.value:
-            raise AppError(
-                "Staff and client accounts cannot be converted.",
-                code="invalid_role",
-                status_code=422,
-                fields={"role": "Not allowed"},
-            )
+        new_profile = _staff_profile(db, data.profile_id)
         if (
-            user.role == Role.ADMIN.value
+            is_admin
+            and new_profile.key != SYSTEM_ADMIN_KEY
             and user.is_active
-            and _active_admin_count(db, excluding=user.id) == 0
+            and (_active_admin_count(db, excluding=user.id) == 0)
         ):
-            raise AppError(
-                "At least one active administrator is required.",
-                code="last_admin",
-                status_code=422,
-                fields={"role": "Last active administrator"},
-            )
-        user.role = data.role.value
+            raise _last_admin_error("profile_id")
+        user.profile_id = new_profile.id
+
+    if "role_id" in fields and data.role_id != user.role_id:
+        if is_self:
+            raise _self_change_error("role_id", "You cannot change your own role.")
+        user.role_id = _role(db, data.role_id).id if data.role_id is not None else None
 
     if "is_active" in fields and data.is_active is not None and data.is_active != user.is_active:
         if is_self:
-            raise AppError(
-                "You cannot deactivate your own account.",
-                code="forbidden_self_change",
-                status_code=422,
-                fields={"is_active": "Cannot deactivate yourself"},
-            )
-        if (
-            not data.is_active
-            and user.role == Role.ADMIN.value
-            and _active_admin_count(db, excluding=user.id) == 0
-        ):
-            raise AppError(
-                "At least one active administrator is required.",
-                code="last_admin",
-                status_code=422,
-                fields={"is_active": "Last active administrator"},
-            )
+            raise _self_change_error("is_active", "You cannot deactivate your own account.")
+        if not data.is_active and is_admin and _active_admin_count(db, excluding=user.id) == 0:
+            raise _last_admin_error("is_active")
         user.is_active = data.is_active
 
     if "name" in fields and data.name is not None:
         user.name = data.name
     for optional in ("title", "phone", "mara_number"):
         if optional in fields:
-            setattr(user, optional, getattr(data, optional) or None)
+            setattr(user, optional, getattr(data, optional))
 
     changes = audit.diff(before, _snapshot(user))
     if not changes:
         return user
-    # Role or status changes take effect immediately: sign the user out everywhere.
-    if "role" in changes or "is_active" in changes:
+    # Access changes take effect immediately: sign the user out everywhere.
+    if {"profile_id", "role_id", "is_active"} & changes.keys():
         revoke_sessions(db, user.id)
     audit.record(
         db,
@@ -187,6 +219,7 @@ def update_user(
         meta=meta,
     )
     db.commit()
+    db.expire(user)
     db.refresh(user)
     return user
 

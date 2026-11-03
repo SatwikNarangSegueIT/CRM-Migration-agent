@@ -1,5 +1,12 @@
 # Neon setup
 
+**Current project (created 3 Nov 2026 via the Neon connector):** `meridian-crm` (id `icy-bar-22749704`),
+region AWS Sydney `aws-ap-southeast-2`, PostgreSQL 17, database `meridian`, owner role `meridian_owner`.
+Branches: `main` (production, schema at revision `29ed9cffa1b4`) and `staging`.
+Connection strings (with passwords) are in the Neon console → Connect; they are never committed.
+Note: this development container cannot reach Neon hosts directly (network policy), so migrations were
+applied through the connector from `alembic upgrade head --sql` output.
+
 MigrateCRM uses [Neon](https://neon.com) serverless PostgreSQL.
 
 ## 1. Create the project

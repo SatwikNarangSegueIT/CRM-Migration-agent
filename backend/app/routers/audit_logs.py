@@ -9,9 +9,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.auth.deps import AuthContext, DbSession, require
-from app.permissions.matrix import Permission
 from app.schemas.audit import AuditActor, AuditLogOut
 from app.schemas.common import Page, PageParams
+from app.security.catalog import SystemPermission
 from app.services.audit_query import list_audit_logs
 
 router = APIRouter(prefix="/admin/audit-logs", tags=["admin: audit"])
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/admin/audit-logs", tags=["admin: audit"])
 @router.get("", response_model=Page[AuditLogOut])
 def audit_logs(
     db: DbSession,
-    _: Annotated[AuthContext, Depends(require(Permission.AUDIT_READ))],
+    _: Annotated[AuthContext, Depends(require(SystemPermission.VIEW_AUDIT_LOG))],
     params: Annotated[PageParams, Depends()],
     user_id: uuid.UUID | None = None,
     action: Annotated[str | None, Query(max_length=40)] = None,
