@@ -1,0 +1,68 @@
+# Creates a Neon branch per pull request, runs migrations and the backend tests against it
+# (exercising the real pooled endpoint), and deletes the branch when the PR closes.
+# Requires repository variable NEON_PROJECT_ID, NEON_DB_USER (and optional NEON_DB_NAME)
+# and secret NEON_API_KEY. Skipped when not configured or for pull requests from forks.
+name: Neon preview branch
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+concurrency:
+  group: neon-${{ github.event.pull_request.number }}
+
+permissions:
+  contents: read
+
+jobs:
+  test-on-neon:
+    if: >-
+      github.event.action != 'closed' && vars.NEON_PROJECT_ID != '' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create Neon branch
+        id: neon
+        uses: neondatabase/create-branch-action@v5
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch_name: preview/pr-${{ github.event.pull_request.number }}
+          username: ${{ vars.NEON_DB_USER }}
+          database: ${{ vars.NEON_DB_NAME || 'neondb' }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Migrate (direct endpoint)
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
+          DATABASE_URL_DIRECT: ${{ steps.neon.outputs.db_url }}
+        run: |
+          uv sync --locked
+          uv run alembic upgrade head
+      - name: Tests (pooled endpoint)
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
+          TEST_REDIS_URL: redis://localhost:6379/15
+        run: uv run pytest
+
+  delete-branch:
+    if: >-
+      github.event.action == 'closed' && vars.NEON_PROJECT_ID != '' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: preview/pr-${{ github.event.pull_request.number }}
+          api_key: ${{ secrets.NEON_API_KEY }}

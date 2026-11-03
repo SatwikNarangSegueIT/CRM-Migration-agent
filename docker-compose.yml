@@ -1,0 +1,77 @@
+# Local development stack.
+# By default the API uses the local "db" Postgres. To develop against a Neon branch instead, export
+# DATABASE_URL (pooled) and DATABASE_URL_DIRECT before `docker compose up`.
+name: migratecrm
+
+x-backend: &backend
+  build: ./backend
+  environment:
+    APP_ENV: development
+    LOG_JSON: "false"
+    DATABASE_URL: ${DATABASE_URL:-postgresql://crm:crm@db:5432/crm}
+    DATABASE_URL_DIRECT: ${DATABASE_URL_DIRECT:-}
+    REDIS_URL: redis://redis:6379/0
+  volumes:
+    - ./backend:/app
+    - /app/.venv # keep the image's virtualenv, not the host's
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: crm
+      POSTGRES_DB: crm
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm -d crm"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    <<: *backend
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports: ["8000:8000"]
+
+  worker:
+    <<: *backend
+    command: celery -A app.worker.celery_app worker --loglevel=INFO
+    healthcheck:
+      disable: true
+
+  beat:
+    <<: *backend
+    command: celery -A app.worker.celery_app beat --loglevel=INFO --schedule /tmp/celerybeat-schedule
+    healthcheck:
+      disable: true
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npx vite --host 0.0.0.0 --port 5173"
+    environment:
+      VITE_API_PROXY_TARGET: http://api:8000
+    ports: ["5173:5173"]
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on: [api]
+
+volumes:
+  pgdata:

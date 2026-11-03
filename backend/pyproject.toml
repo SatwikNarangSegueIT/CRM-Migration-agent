@@ -1,0 +1,53 @@
+[project]
+name = "migratecrm-backend"
+version = "0.1.0"
+description = "MigrateCRM API - CRM for Australian registered migration agents"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "alembic>=1.20.1",
+    "celery[redis]>=5.6.3",
+    "fastapi>=0.162.0",
+    "psycopg[binary]>=3.3.7",
+    "pydantic-settings>=2.16.2",
+    "redis>=6.4.0",
+    "sqlalchemy>=2.0.40",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "celery-types>=0.26.0",
+    "httpx>=0.28.1",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.3",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "S", "SIM", "RUF", "C4", "PT"]
+ignore = ["S101"]  # assert is fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = ["alembic/versions/"]
+
+[[tool.mypy.overrides]]
+module = ["celery.*", "kombu.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+# Starlette suggests the newer "httpx2" package for TestClient; httpx still works.
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]

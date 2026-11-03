@@ -1,0 +1,49 @@
+"""FastAPI application factory."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import APIRouter, FastAPI
+
+from app.core.config import Settings, get_settings
+from app.core.errors import register_error_handlers
+from app.core.logging import configure_logging
+from app.core.middleware import RequestContextMiddleware
+from app.routers import health
+
+API_PREFIX = "/api/v1"
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or get_settings()
+    configure_logging(settings.log_level, settings.log_json)
+    logger = logging.getLogger("app")
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        logger.info("Starting %s", settings.app_name, extra={"environment": settings.app_env})
+        yield
+        logger.info("Shutting down %s", settings.app_name)
+
+    docs_enabled = not settings.is_production
+    app = FastAPI(
+        title=f"{settings.app_name} API",
+        version="0.1.0",
+        lifespan=lifespan,
+        docs_url=f"{API_PREFIX}/docs" if docs_enabled else None,
+        redoc_url=None,
+        openapi_url=f"{API_PREFIX}/openapi.json" if docs_enabled else None,
+    )
+    app.add_middleware(RequestContextMiddleware, hsts=settings.app_env in ("staging", "production"))
+    register_error_handlers(app)
+
+    api = APIRouter(prefix=API_PREFIX)
+    api.include_router(health.router)
+    app.include_router(api)
+    return app
+
+
+app = create_app()
