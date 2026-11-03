@@ -1,0 +1,426 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Meridian CRM – Implementation Plan v3</title>
+<style>
+  @page { size: A4; margin: 18mm 15mm 18mm 15mm; }
+  :root { --ink:#1b2333; --muted:#5b6578; --brand:#1449e1; --line:#d7dce5; --soft:#f3f6fb; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: var(--ink); font-size: 10pt; line-height: 1.45; margin: 0; }
+  h1 { font-size: 26pt; margin: 0 0 6px; color: var(--brand); }
+  h2 { font-size: 15pt; color: var(--brand); border-bottom: 2px solid var(--brand); padding-bottom: 3px; margin: 22px 0 10px; break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 14px 0 6px; break-after: avoid; }
+  p { margin: 4px 0 8px; }
+  ul { margin: 4px 0 8px; padding-left: 18px; }
+  li { margin: 2px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 9pt; }
+  th, td { border: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  tr { break-inside: avoid; }
+  code { font-family: Menlo, Consolas, monospace; font-size: 8.6pt; background: var(--soft); padding: 0 3px; border-radius: 3px; }
+  pre { font-family: Menlo, Consolas, monospace; font-size: 8.2pt; background: var(--soft); border: 1px solid var(--line); padding: 8px 10px; border-radius: 4px; white-space: pre; line-height: 1.35; break-inside: avoid; }
+  .cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; break-after: page; }
+  .cover .sub { font-size: 14pt; color: var(--muted); margin-bottom: 26px; }
+  .meta td { border: none; padding: 2px 10px 2px 0; font-size: 10.5pt; }
+  .meta td:first-child { color: var(--muted); width: 140px; }
+  .note { background: #fff8e6; border-left: 4px solid #e0a100; padding: 6px 10px; margin: 8px 0; font-size: 9pt; }
+  .matrix { font-size: 7.6pt; }
+  .matrix th, .matrix td { padding: 3px 3px; text-align: center; }
+  .matrix td:first-child, .matrix th:first-child { text-align: left; white-space: nowrap; }
+  .matrix .grp td { background: #e8eefc; font-weight: 700; text-align: left; }
+  .y { color: #127a3a; font-weight: 700; }
+  .o { color: #9a5b00; font-weight: 700; }
+  .toc li { margin: 3px 0; }
+  .pb { break-before: page; }
+  .small { font-size: 8.6pt; color: var(--muted); }
+  .diagram { width: 100%; margin: 6px 0 12px; }
+</style>
+</head>
+<body>
+
+</head><body>
+<section class="cover">
+  <h1>Meridian CRM</h1>
+  <div class="sub">Implementation Plan v3 — Configurable, multi-industry CRM platform<br>with a Migration Agency industry pack</div>
+  <table class="meta">
+    <tr><td>Version</td><td>3.0 — supersedes v2 (migration-only CRM)</td></tr>
+    <tr><td>Date</td><td>3 November 2026</td></tr>
+    <tr><td>Product name</td><td>“Meridian CRM” is a working name; the brand name, logo and colours are configurable settings</td></tr>
+    <tr><td>Backend</td><td>Python 3.12 · FastAPI · SQLAlchemy 2 · Alembic · Celery + Redis</td></tr>
+    <tr><td>Frontend</td><td>React 18 · TypeScript · Vite · TanStack Query · Tailwind CSS</td></tr>
+    <tr><td>Database</td><td>Neon serverless PostgreSQL (AWS Sydney)</td></tr>
+    <tr><td>Apps</td><td>Sales · Service · Marketing · Billing (products &amp; invoicing) · Analytics · Setup</td></tr>
+    <tr><td>Customisation</td><td>Custom fields and custom objects, full list views, configurable apps &amp; tabs</td></tr>
+    <tr><td>Industry pack</td><td>Migration Agency (Australia) — built on the same customisation engine</td></tr>
+  </table>
+  <h3 style="margin-top:24px">Contents</h3>
+  <ol class="toc">
+    <li>What changed from v2</li>
+    <li>Goals and scope</li>
+    <li>Architecture: the metadata engine</li>
+    <li>Customisation: objects, fields, relationships</li>
+    <li>Standard objects</li>
+    <li>Apps, navigation and user interface</li>
+    <li>List views, record pages, search, import/export</li>
+    <li>Business logic of the standard apps</li>
+    <li>Security model: profiles, roles and sharing</li>
+    <li>Default profiles and permission matrix</li>
+    <li>Migration Agency industry pack</li>
+    <li>Reports and dashboards</li>
+    <li>Data model and API</li>
+    <li>Platform security, compliance, performance</li>
+    <li>Testing, Neon, deployment</li>
+    <li>Delivery phases</li>
+    <li>Risks and open questions</li>
+  </ol>
+</section>
+
+<h2>1. What changed from v2</h2>
+<table>
+  <tr><th style="width:28%">Topic</th><th style="width:36%">v2</th><th>v3</th></tr>
+  <tr><td>Product</td><td>CRM built only for migration agents</td><td>General CRM for any industry. Migration agency becomes an optional <b>industry pack</b>.</td></tr>
+  <tr><td>Data model</td><td>Fixed tables per business object</td><td><b>Metadata-driven engine</b>: standard and custom objects share one engine, so custom fields, list views, reports, search and permissions work the same for every object.</td></tr>
+  <tr><td>Access control</td><td>8 fixed roles in code</td><td>Admin-configurable <b>profiles</b> (object + field + system permissions), <b>role hierarchy</b> and <b>sharing settings</b>, with 8 default profiles. The migration roles become pack profiles.</td></tr>
+  <tr><td>Apps</td><td>One app</td><td>Sales, Service, Marketing, Billing, Analytics, Setup; apps and tabs are configurable.</td></tr>
+  <tr><td>UI</td><td>Top navigation</td><td>Lightning-style layout: left app rail, global search header, app tabs, list views, record pages with a stage path.</td></tr>
+  <tr><td>Kept from phases 0–1</td><td colspan="2">Project foundations, Neon set-up, CI, sessions, CSRF, MFA, password reset, invitations, lockout, rate limiting, append-only audit log, user administration. Only the static role matrix is replaced by profiles.</td></tr>
+</table>
+
+<h2>2. Goals and scope</h2>
+<ul>
+  <li><b>Configurable platform:</b> administrators shape the CRM to their business without code: custom fields on any object, custom objects, picklists, apps, tabs, page sections, list views, reports, dashboards.</li>
+  <li><b>Complete standard apps:</b> Sales (leads → conversion → accounts, contacts, opportunities with pipeline), Billing (products, price books, quotes, invoices, payments), Service (cases, queues, SLAs, customer portal), Marketing (campaigns, segments, email templates, bulk sends, consent, analytics), Analytics (reports, dashboards).</li>
+  <li><b>Industry packs:</b> versioned bundles of objects, fields, apps, profiles, reports and server-side rules. First pack: Migration Agency (Australia).</li>
+  <li><b>Enterprise quality:</b> fine-grained security, full audit and field history, tests, typed API, reproducible deployment.</li>
+  <li><b>Out of scope (v1):</b> drag-and-drop page-layout designer, validation-rule and workflow builders, formula and roll-up fields, e-mail inbox sync, telephony, mobile apps, multi-currency, multi-tenant SaaS hosting (one deployment = one organisation). The engine leaves extension points for each.</li>
+</ul>
+
+<h2 class="pb">3. Architecture: the metadata engine</h2>
+<svg class="diagram" viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial" font-size="10.5">
+  <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5b6578"/></marker></defs>
+  <rect x="10" y="10" width="160" height="70" rx="8" fill="#eef3ff" stroke="#1449e1"/>
+  <text x="90" y="34" text-anchor="middle" font-weight="bold">React SPA</text>
+  <text x="90" y="51" text-anchor="middle">Lightning-style UI</text>
+  <text x="90" y="67" text-anchor="middle" fill="#5b6578">renders from metadata</text>
+  <rect x="230" y="10" width="250" height="230" rx="8" fill="#f8faff" stroke="#1449e1"/>
+  <text x="355" y="30" text-anchor="middle" font-weight="bold">FastAPI /api/v1</text>
+  <rect x="245" y="40" width="220" height="30" rx="5" fill="#fff" stroke="#9fb3e8"/>
+  <text x="355" y="59" text-anchor="middle">Auth · sessions · MFA · CSRF (done)</text>
+  <rect x="245" y="76" width="220" height="30" rx="5" fill="#fff" stroke="#9fb3e8"/>
+  <text x="355" y="95" text-anchor="middle">Security: profiles · FLS · sharing</text>
+  <rect x="245" y="112" width="220" height="30" rx="5" fill="#fff" stroke="#9fb3e8"/>
+  <text x="355" y="131" text-anchor="middle">Metadata service (objects, fields)</text>
+  <rect x="245" y="148" width="220" height="30" rx="5" fill="#fff" stroke="#9fb3e8"/>
+  <text x="355" y="167" text-anchor="middle">Record engine (CRUD, query, validate)</text>
+  <rect x="245" y="184" width="220" height="44" rx="5" fill="#fff" stroke="#9fb3e8"/>
+  <text x="355" y="202" text-anchor="middle">Object hooks: lead conversion, pricing,</text>
+  <text x="355" y="217" text-anchor="middle">invoicing, cases, campaigns, packs</text>
+  <rect x="540" y="10" width="170" height="60" rx="8" fill="#ecf8f0" stroke="#127a3a"/>
+  <text x="625" y="34" text-anchor="middle" font-weight="bold">Neon PostgreSQL</text>
+  <text x="625" y="51" text-anchor="middle" fill="#5b6578">metadata + records (JSONB)</text>
+  <rect x="540" y="85" width="170" height="45" rx="8" fill="#fff8e6" stroke="#e0a100"/>
+  <text x="625" y="105" text-anchor="middle" font-weight="bold">S3 (Sydney)</text>
+  <text x="625" y="120" text-anchor="middle" fill="#5b6578">files, exports, PDFs</text>
+  <rect x="540" y="145" width="170" height="45" rx="8" fill="#f3f6fb" stroke="#5b6578"/>
+  <text x="625" y="165" text-anchor="middle" font-weight="bold">Celery + Redis</text>
+  <text x="625" y="180" text-anchor="middle" fill="#5b6578">sends, imports, reports</text>
+  <rect x="540" y="200" width="170" height="40" rx="8" fill="#f3f6fb" stroke="#5b6578"/>
+  <text x="625" y="224" text-anchor="middle" font-weight="bold">SMTP / e-mail provider</text>
+  <line x1="170" y1="45" x2="228" y2="45" stroke="#5b6578" marker-end="url(#a)"/>
+  <line x1="480" y1="40" x2="538" y2="40" stroke="#5b6578" marker-end="url(#a)"/>
+  <line x1="480" y1="110" x2="538" y2="108" stroke="#5b6578" marker-end="url(#a)"/>
+  <line x1="480" y1="165" x2="538" y2="167" stroke="#5b6578" marker-end="url(#a)"/>
+  <line x1="480" y1="215" x2="538" y2="220" stroke="#5b6578" marker-end="url(#a)"/>
+</svg>
+<p><b>Decision:</b> every business object (standard or custom) is described by metadata and stored by one record engine.
+Platform tables (users, sessions, audit, profiles, metadata) stay normal relational tables.</p>
+<table>
+  <tr><th style="width:25%">Concern</th><th>Design</th></tr>
+  <tr><td>Record storage</td><td><code>records</code> table: real columns for system fields (<code>id, object_id, name, owner_id, record_number, created_at/by, updated_at/by, is_deleted, version, search_vector</code>) plus a <code>data</code> JSONB column holding field values keyed by field API name.</td></tr>
+  <tr><td>Relationships</td><td>Lookup and master-detail values live in <code>data</code> and are mirrored in <code>record_links (from_record, field_id, to_record)</code> with real foreign keys, giving referential integrity, related lists and delete rules (restrict / clear / cascade).</td></tr>
+  <tr><td>Validation</td><td>Each write is validated against field definitions (type, required, unique, length, min/max, picklist membership, lookup target object and visibility) in the API before saving.</td></tr>
+  <tr><td>Indexes</td><td>GIN index on <code>data</code>; fields marked <i>filterable / unique / external id</i> get a partial expression index (<code>(data-&gt;&gt;'field') WHERE object_id = …</code>) created by the engine with <code>CREATE INDEX CONCURRENTLY</code>; uniqueness is enforced by a partial unique index.</td></tr>
+  <tr><td>Numbers &amp; money</td><td>JSONB numbers are exact decimals in PostgreSQL; the API uses Python <code>Decimal</code>. Currency fields store amounts in the organisation currency with 2 decimals.</td></tr>
+  <tr><td>Concurrency</td><td><code>version</code> integer; updates must send the version read (409 on mismatch).</td></tr>
+  <tr><td>Recycle bin</td><td>Deletes are soft (<code>is_deleted</code>) for 30 days, restorable, then purged by a job; hard delete for admins.</td></tr>
+  <tr><td>History</td><td>Fields marked <i>track history</i> write old/new values to <code>field_history</code>; shown as a related list.</td></tr>
+  <tr><td>Business logic</td><td>Standard objects and packs register Python <b>object hooks</b> (before/after create, update, delete; custom actions such as “Convert lead”). Hooks run inside the same transaction.</td></tr>
+  <tr><td>Why not one table per object?</td><td>Runtime DDL for every custom field/object is slow, risky on a live database and complicates migrations. JSONB + expression indexes give the flexibility of Salesforce-style metadata with predictable operations. Limits: 200 custom objects, 400 fields per object, 25 indexed fields per object.</td></tr>
+</table>
+
+<h2 class="pb">4. Customisation: objects, fields, relationships</h2>
+<h3>Object definition</h3>
+<p>Label, plural label, API name (<code>invoice</code>, custom objects end in <code>__c</code>), icon and colour, description, name field (text or auto-number with format such as <code>CASE-{00000}</code>),
+record-number pattern, sharing default (section 9), feature switches: track history, allow activities, allow files, searchable, show in portal, allow reports. Standard objects cannot be deleted; their system fields cannot be removed.</p>
+<h3>Field types</h3>
+<table>
+  <tr><th style="width:22%">Type</th><th>Options</th></tr>
+  <tr><td>Text / Text area / Long text</td><td>max length, default value, required, unique, external ID</td></tr>
+  <tr><td>Email · Phone · URL</td><td>format validation; phone stored in E.164 when parseable</td></tr>
+  <tr><td>Number · Percent · Currency</td><td>precision and scale, min/max, default</td></tr>
+  <tr><td>Date · Date/time · Time</td><td>default (today / now / blank); stored in UTC, shown in the user's time zone</td></tr>
+  <tr><td>Checkbox</td><td>default true/false</td></tr>
+  <tr><td>Picklist · Multi-select picklist</td><td>ordered values with label, API value, colour, active flag, default; optional <b>path</b> flag (drives the stage path on record pages); value-to-probability mapping for opportunity stages</td></tr>
+  <tr><td>Lookup</td><td>target object, delete rule (clear value / restrict), optional filter</td></tr>
+  <tr><td>Master-detail</td><td>parent object; child inherits sharing and is deleted with the parent</td></tr>
+  <tr><td>Auto-number</td><td>format with sequence, assigned on create</td></tr>
+  <tr><td>Address</td><td>compound: street, suburb/city, state, postcode, country</td></tr>
+</table>
+<p>Every field also has: help text, field-level security per profile (section 9), <i>track history</i>, <i>filterable/sortable</i> (creates an index), <i>searchable</i> (adds to full-text search), and section placement on the record page.
+Changing a field type is allowed only between compatible types (e.g. text → long text); otherwise the admin creates a new field. Deleting a field moves it to “deleted fields” for 15 days before data is purged.</p>
+<h3>Object Manager (Setup)</h3>
+<p>Create/edit objects and fields, reorder picklist values, arrange page sections (ordered list of sections and fields — not drag-and-drop canvas in v1), choose related lists, configure compact layout (fields in the highlights panel), and list default columns.</p>
+
+<h2>5. Standard objects</h2>
+<table>
+  <tr><th style="width:18%">Object</th><th style="width:12%">App</th><th>Key standard fields</th></tr>
+  <tr><td>Account</td><td>Sales</td><td>Name, type, industry, phone, website, billing/shipping address, ABN/tax ID, annual revenue, employees, parent account, owner</td></tr>
+  <tr><td>Contact</td><td>Sales/Service</td><td>Salutation, first/last name, account, title, email, phone, mobile, mailing address, birthdate, lead source, e-mail opt-in, do-not-call, owner</td></tr>
+  <tr><td>Lead</td><td>Sales/Marketing</td><td>Name, company, title, email, phone, address, source, <b>status (path)</b>, rating, industry, campaign, owner; converted flags and links</td></tr>
+  <tr><td>Opportunity</td><td>Sales</td><td>Name, account, primary contact, <b>stage (path)</b>, probability, amount, close date, type, lead source, next step, forecast category, owner</td></tr>
+  <tr><td>Opportunity Product</td><td>Sales</td><td>Product, price-book entry, quantity, unit price, discount, line total (master-detail to opportunity)</td></tr>
+  <tr><td>Product · Price Book · Price Book Entry</td><td>Billing</td><td>Product code, name, family, active, tax code; price books (standard + custom); list price per product per price book</td></tr>
+  <tr><td>Quote · Quote Line</td><td>Billing</td><td>Number, opportunity, account, contact, status (draft/sent/accepted/rejected), expiry, lines, subtotal, discount, tax, total; PDF</td></tr>
+  <tr><td>Invoice · Invoice Line · Payment</td><td>Billing</td><td>Number, account, contact, status (draft/issued/partially paid/paid/void), issue/due date, lines, tax, total, amount paid, balance; payments with method, date, reference</td></tr>
+  <tr><td>Tax Rate</td><td>Billing</td><td>Name, rate, default flag (e.g. GST 10 %)</td></tr>
+  <tr><td>Case</td><td>Service</td><td>Number, account, contact, subject, description, <b>status (path)</b>, priority, origin (email/phone/web/portal), type, queue/owner, SLA first-response and resolution due, closed date</td></tr>
+  <tr><td>Queue</td><td>Service</td><td>Name, members, objects (cases, leads); records can be owned by a queue</td></tr>
+  <tr><td>Campaign · Campaign Member</td><td>Marketing</td><td>Name, type, status, dates, budget, expected/actual revenue, parent; members (lead or contact) with member status</td></tr>
+  <tr><td>Segment</td><td>Marketing</td><td>Saved filter over contacts or leads; live count</td></tr>
+  <tr><td>Email Template · Email Send</td><td>Marketing</td><td>Subject, HTML/text body with merge fields; send to segment or campaign, schedule, status, delivered/opened/clicked/bounced/unsubscribed counts</td></tr>
+  <tr><td>Consent</td><td>Marketing</td><td>Per contact/lead and channel: opted in/out, source, timestamp, IP; unsubscribe history</td></tr>
+  <tr><td>Task · Event</td><td>All</td><td>Subject, type, due date / start-end, status, priority, assigned to, related to (any object), who (contact/lead); calendar</td></tr>
+  <tr><td>Note · File</td><td>All</td><td>Notes and attachments on any record (if enabled on the object)</td></tr>
+  <tr><td>Report · Dashboard</td><td>Analytics</td><td>Section 12</td></tr>
+</table>
+
+<h2 class="pb">6. Apps, navigation and user interface</h2>
+<ul>
+  <li><b>Layout</b> (as in the reference screenshots, with our own branding): narrow dark left <b>app rail</b> (Home, Contacts, Accounts, Sales, Service, Marketing, Billing, Analytics, Setup — filtered by permission), white header with logo, centred <b>global search</b>, help, setup gear, notifications bell and avatar menu; under it the <b>app bar</b>: app name followed by its object tabs (active tab underlined, tab menus for recent records and list views); light grey workspace.</li>
+  <li><b>Apps are configurable</b> (Setup → Apps): name, icon, ordered tabs (standard or custom objects, Home, Calendar, Reports, Dashboards), profiles that can see it.</li>
+  <li><b>Default apps:</b> Sales (Home, Leads, Contacts, Accounts, Opportunities, Products, Price Books, Quotes, Invoices, Calendar, Reports), Service (Home, Cases, Contacts, Accounts, Queues, Reports), Marketing (Home, Campaigns, Contacts, Leads, Segments, Email Templates, Email Sends, Consent, Reports), Billing (Products, Price Books, Quotes, Invoices, Payments, Tax Rates), Analytics (Reports, Dashboards).</li>
+  <li><b>Home pages</b> per app: welcome banner with getting-started cards, then cards: My Leads, My Opportunities, My Open Cases, My Tasks (with To-Do list in the footer bar), Recent Records, key dashboard charts; marketing home: setup checklist, e-mail analytics, quick actions, e-mail history.</li>
+  <li><b>Empty states</b> on every list: illustration, heading, one-line explanation and primary action (“Add a Lead”).</li>
+  <li><b>Accessibility &amp; responsiveness:</b> WCAG 2.1 AA, keyboard navigation, rail collapses into a menu below 768 px; Australian date/number formats by default, user-selectable locale and time zone.</li>
+</ul>
+
+<h2>7. List views, record pages, search, import/export</h2>
+<h3>List views (every object, including custom)</h3>
+<ul>
+  <li>Header: object label, view name with view picker (“All Open Leads ▾”), pin as default, item count and summary line (“25 items • Sorted by Name • Filtered by Status • Updated a few seconds ago”).</li>
+  <li>Action bar: New, Import, Change Owner, Add to Campaign, Send Email, Delete (actions shown per object and permission); “Search this list…”; buttons for list settings, column chooser, refresh, sort, inline-edit mode, chart panel, filter panel.</li>
+  <li>Columns: any field the user can read (custom fields included), resizable, sortable on sortable fields, column header menus. Filters: field / operator / value with AND/OR logic, plus “My records / All records / My team / Queue”.</li>
+  <li><b>Saved views:</b> private, shared with everyone, or with chosen roles/profiles; default view per user. Bulk selection, mass update, mass delete, change owner; <b>inline edit</b> respecting field-level security; keyset pagination; Kanban view for any object with a path picklist (opportunities by stage, cases by status).</li>
+</ul>
+<h3>Record pages</h3>
+<p>Highlights panel (icon, name, compact-layout fields, actions: Edit, Delete, Clone, Change Owner, Convert, Submit…), <b>path</b> with “Mark as current/complete” for path picklists,
+tabs: <b>Details</b> (sections from the page layout, inline edit), <b>Related</b> (related lists generated from relationships, each with New and View All), <b>Activity</b> timeline (log call, new task, new event, e-mail, note), <b>History</b> (tracked fields).</p>
+<h3>Search, import, export</h3>
+<ul>
+  <li>Global search over searchable fields of every object the user can read (PostgreSQL full-text + trigram), grouped results, recent items.</li>
+  <li><b>CSV import wizard</b>: choose object, upload, map columns to fields (auto-match by label), duplicate rule (match on e-mail / external ID → skip, update or create), dry-run preview, background job with error file.</li>
+  <li><b>Export</b> of list views and reports to CSV (permission-controlled and audited).</li>
+</ul>
+
+<h2 class="pb">8. Business logic of the standard apps</h2>
+<table>
+  <tr><th style="width:18%">Area</th><th>Rules</th></tr>
+  <tr><td>Lead conversion</td><td>Creates or links Account and Contact, optionally an Opportunity; maps lead fields (including custom fields via an admin-defined mapping); copies activities and campaign memberships; marks lead converted (read-only afterwards). Duplicate check on e-mail and company name.</td></tr>
+  <tr><td>Opportunities</td><td>Stage drives probability and forecast category (editable mapping). Closed Won / Closed Lost are terminal; Closed Lost requires a reason. Amount = sum of opportunity products when products exist.</td></tr>
+  <tr><td>Pricing</td><td>Every product has a standard price-book entry; custom price books override list price; quote and opportunity lines pick an active entry of one price book.</td></tr>
+  <tr><td>Quotes → Invoices</td><td>Accepted quote can generate an invoice (lines copied). Draft invoices are editable; issuing assigns the next invoice number and locks lines. Totals: line = qty × unit price − discount; tax per line from its tax rate (GST 10 % default for Australian organisations; tax-free lines allowed); rounding half-up to the cent.</td></tr>
+  <tr><td>Payments</td><td>Recorded against issued invoices; status becomes partially paid / paid automatically; over-payment refused; void requires a reason and keeps history. Invoice and quote PDFs with tax-invoice fields (ABN, “Tax Invoice”).</td></tr>
+  <tr><td>Cases</td><td>Auto-number; assignment to queue or user; SLA due dates from priority (configurable per priority); escalation flag when overdue (scheduled job + notification); status path New → Working → Waiting on Customer → Escalated → Closed; closing requires a resolution. Web-to-case form and customer portal create cases with origin set.</td></tr>
+  <tr><td>Customer portal</td><td>Contacts can be invited as portal users: view and create their own cases, comment, upload files, view their invoices. Portal profile is limited by design (section 10).</td></tr>
+  <tr><td>Campaigns</td><td>Members from leads/contacts or segments; member status values per campaign; campaign influence on opportunities (primary campaign source); actual cost, responses, won revenue roll up by report.</td></tr>
+  <tr><td>E-mail sends</td><td>Recipients = segment or campaign members, minus anyone without e-mail <b>opt-in consent</b> (or opted out), hard-bounced or duplicated. Every e-mail has an unsubscribe link and the sender's identity (Spam Act 2003 / GDPR-style). Sent in batches by workers; open pixel and click redirects tracked; unsubscribe updates consent immediately.</td></tr>
+  <tr><td>Activities</td><td>Tasks and events attach to any activity-enabled object; reminders by notification and e-mail; calendar day/week/month views.</td></tr>
+</table>
+
+<h2 class="pb">9. Security model: profiles, roles and sharing</h2>
+<p>Access is decided in four layers, all enforced on the server for every request, list, report, search and export.</p>
+<table>
+  <tr><th style="width:22%">Layer</th><th>What it controls</th></tr>
+  <tr><td>1. Profile — system permissions</td><td>Platform-wide abilities (table below). Each user has exactly one profile.</td></tr>
+  <tr><td>2. Profile — object permissions</td><td>Per object: <b>R</b>ead, <b>C</b>reate, <b>E</b>dit, <b>D</b>elete, <b>VA</b> View All (read every record regardless of sharing), <b>MA</b> Modify All (edit every record; delete every record only when D is also granted). Custom objects start with no access except for System Administrator.</td></tr>
+  <tr><td>3. Field-level security</td><td>Per profile and field: hidden, read-only or editable. Hidden fields are removed from API responses, list views, reports, search, exports and imports.</td></tr>
+  <tr><td>4. Record sharing</td><td><b>Organisation-wide default</b> per object: Private · Public Read Only · Public Read/Write (detail objects inherit from master). Users always see records they own; the <b>role hierarchy</b> grants managers the access of their subordinates; <b>sharing rules</b> share records owned by a role/queue (or matching criteria) with another role or group (read or read/write); <b>manual sharing</b> on a record by its owner or an admin; <b>queue</b> members see queue-owned records.</td></tr>
+</table>
+<p><b>Default org-wide sharing:</b> Account, Contact: Public Read Only · Lead, Opportunity, Case, Quote, Invoice: Private · Campaign, Product, Price Book, Email Template: Public Read Only · Task/Event: Private (controlled by parent) · Custom objects: Private.</p>
+<h3>System permissions</h3>
+<table>
+  <tr><th style="width:30%">Permission</th><th>Allows</th></tr>
+  <tr><td>Manage Users</td><td>Invite, edit, deactivate users; reset MFA; unlock; assign profile and role</td></tr>
+  <tr><td>Customize Application</td><td>Object Manager (objects, fields, picklists, page sections), apps and tabs</td></tr>
+  <tr><td>Manage Profiles &amp; Sharing</td><td>Profiles, field-level security, role hierarchy, org-wide defaults, sharing rules, queues</td></tr>
+  <tr><td>Manage Billing Settings</td><td>Tax rates, invoice numbering and terms, company billing details, payment methods</td></tr>
+  <tr><td>Manage Industry Packs</td><td>Install / upgrade / disable packs</td></tr>
+  <tr><td>View Setup</td><td>Read-only access to Setup pages</td></tr>
+  <tr><td>View Audit Log</td><td>Audit trail and login history</td></tr>
+  <tr><td>Import Data · Export Data</td><td>CSV import wizard · export of list views and reports</td></tr>
+  <tr><td>Send Mass Email</td><td>Create and send e-mail sends to segments/campaigns</td></tr>
+  <tr><td>Manage Public Reports &amp; Dashboards</td><td>Create/edit shared folders, reports and dashboards</td></tr>
+  <tr><td>Transfer Records</td><td>Change owner of records the user can edit but does not own</td></tr>
+  <tr><td>Manage Portal Users</td><td>Invite contacts to the customer portal, deactivate portal users</td></tr>
+  <tr><td>API Access</td><td>Personal API tokens for integrations</td></tr>
+</table>
+
+<h2 class="pb">10. Default profiles and permission matrix</h2>
+<p>Eight default profiles ship with the product. Admins can clone and edit them (except System Administrator) and create new ones.</p>
+<table>
+  <tr><th style="width:20%">Profile</th><th>Intended for</th></tr>
+  <tr><td>System Administrator</td><td>IT / owner. Everything, including Setup. Cannot be edited; at least one active user must keep it.</td></tr>
+  <tr><td>Sales Manager</td><td>Leads the sales team; sees the team's pipeline via role hierarchy; deletes and transfers sales records.</td></tr>
+  <tr><td>Sales Representative</td><td>Works own leads, accounts, contacts, opportunities and quotes.</td></tr>
+  <tr><td>Service Agent</td><td>Works cases (own and queue), updates contacts and accounts.</td></tr>
+  <tr><td>Marketing User</td><td>Campaigns, segments, templates, e-mail sends, leads.</td></tr>
+  <tr><td>Finance</td><td>Products, price books, invoices, payments, tax rates.</td></tr>
+  <tr><td>Read Only (Auditor)</td><td>Reads all data and the audit log; changes nothing.</td></tr>
+  <tr><td>Customer Portal User</td><td>External customer contact using the portal.</td></tr>
+</table>
+<h3>Object permissions</h3>
+<p class="small">R read · C create · E edit · D delete · VA view all · MA modify all · — none. Without VA/MA, record access follows sharing (section 9). “own” = the portal user's own contact, their account's cases they created, and invoices billed to their account.</p>
+<table class="matrix">
+  <thead><tr><th>Object</th><th>Sys Admin</th><th>Sales Mgr</th><th>Sales Rep</th><th>Service Agent</th><th>Marketing</th><th>Finance</th><th>Read Only</th><th>Portal</th></tr></thead>
+  <tr><td>Account</td><td>RCED VA MA</td><td>RCED</td><td>RCE</td><td>RE</td><td>R</td><td>R</td><td>R VA</td><td>R own</td></tr>
+  <tr><td>Contact</td><td>RCED VA MA</td><td>RCED</td><td>RCE</td><td>RCE</td><td>RCE</td><td>R</td><td>R VA</td><td>RE own</td></tr>
+  <tr><td>Lead</td><td>RCED VA MA</td><td>RCED</td><td>RCE</td><td>—</td><td>RCED</td><td>—</td><td>R VA</td><td>—</td></tr>
+  <tr><td>Opportunity (+ products)</td><td>RCED VA MA</td><td>RCED</td><td>RCE</td><td>R</td><td>R</td><td>R VA</td><td>R VA</td><td>—</td></tr>
+  <tr><td>Product, Price Book</td><td>RCED VA MA</td><td>R</td><td>R</td><td>R</td><td>R</td><td>RCED</td><td>R VA</td><td>—</td></tr>
+  <tr><td>Quote</td><td>RCED VA MA</td><td>RCED</td><td>RCE</td><td>—</td><td>—</td><td>R VA</td><td>R VA</td><td>—</td></tr>
+  <tr><td>Invoice, Payment</td><td>RCED VA MA</td><td>R</td><td>R</td><td>R</td><td>—</td><td>RCE VA MA</td><td>R VA</td><td>R own</td></tr>
+  <tr><td>Tax Rate</td><td>RCED VA MA</td><td>R</td><td>R</td><td>—</td><td>—</td><td>RCED</td><td>R VA</td><td>—</td></tr>
+  <tr><td>Case</td><td>RCED VA MA</td><td>R</td><td>R</td><td>RCE</td><td>—</td><td>R</td><td>R VA</td><td>RC own</td></tr>
+  <tr><td>Campaign, Segment, Email Template</td><td>RCED VA MA</td><td>R</td><td>R</td><td>—</td><td>RCED</td><td>—</td><td>R VA</td><td>—</td></tr>
+  <tr><td>Email Send, Consent</td><td>RCED VA MA</td><td>R</td><td>—</td><td>—</td><td>RCE</td><td>—</td><td>R VA</td><td>—</td></tr>
+  <tr><td>Task, Event, Note, File</td><td>RCED VA MA</td><td>RCED</td><td>RCED</td><td>RCED</td><td>RCED</td><td>RCED</td><td>R VA</td><td>RC own (files, case comments)</td></tr>
+  <tr><td>Report, Dashboard</td><td>RCED VA MA</td><td>RCED</td><td>RC</td><td>RC</td><td>RCED</td><td>RCED</td><td>R VA</td><td>—</td></tr>
+  <tr><td>Custom objects (new)</td><td>RCED VA MA</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+</table>
+<p class="small">Notes: Sales Manager has Delete only on records they can edit through sharing (own + subordinates via role hierarchy); “RCE” never includes deleting. Finance has no Delete on invoices/payments: invoices are voided, payments reversed. Tasks/events: delete only own or subordinates' items.</p>
+<h3>System permissions by profile</h3>
+<table class="matrix">
+  <thead><tr><th>Permission</th><th>Sys Admin</th><th>Sales Mgr</th><th>Sales Rep</th><th>Service Agent</th><th>Marketing</th><th>Finance</th><th>Read Only</th><th>Portal</th></tr></thead>
+  <tr><td>Manage Users</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>Customize Application</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>Manage Profiles &amp; Sharing</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>Manage Billing Settings</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td class="y">✓</td><td></td><td></td></tr>
+  <tr><td>Manage Industry Packs</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>View Setup</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td class="y">✓</td><td></td></tr>
+  <tr><td>View Audit Log</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td class="y">✓</td><td></td></tr>
+  <tr><td>Import Data</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td class="y">✓</td><td class="y">✓</td><td></td><td></td></tr>
+  <tr><td>Export Data</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td></td></tr>
+  <tr><td>Send Mass Email</td><td class="y">✓</td><td></td><td></td><td></td><td class="y">✓</td><td></td><td></td><td></td></tr>
+  <tr><td>Manage Public Reports &amp; Dashboards</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td class="y">✓</td><td class="y">✓</td><td></td><td></td></tr>
+  <tr><td>Transfer Records</td><td class="y">✓</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>Manage Portal Users</td><td class="y">✓</td><td></td><td></td><td class="y">✓</td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>API Access</td><td class="y">✓</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+</table>
+<h3>Default field-level security</h3>
+<ul>
+  <li>All profiles: system fields read-only (created/updated by/at, record number, converted flags).</li>
+  <li>Opportunity <i>Amount</i>, <i>Probability</i>: read-only for Service Agent and Marketing. Account <i>Annual Revenue</i>: hidden for Service Agent and Portal.</li>
+  <li>Contact <i>Birthdate</i>: hidden for Marketing and Portal (other than own record). Payment <i>Reference</i>: visible only to Finance, Sales Manager, Read Only and System Administrator.</li>
+  <li>New custom fields: visible and editable to System Administrator only until the admin grants access (secure by default).</li>
+</ul>
+<h3>Default role hierarchy</h3>
+<p>CEO → Sales Director → Sales Manager → Sales Representative · CEO → Service Manager → Service Agent · CEO → Marketing Manager → Marketing User · CEO → Finance Manager → Finance Officer. Roles (who sees whose records) are separate from profiles (what a user can do); admins edit both.</p>
+<h3>Rules on top of the matrix</h3>
+<ul>
+  <li>Records the user cannot see return <b>404</b>; lookups only offer visible records; related lists, reports, search and exports apply the same filters.</li>
+  <li>Users cannot change their own profile or role, or deactivate themselves; the last active System Administrator cannot be removed.</li>
+  <li>Portal users never reach staff APIs; staff never use portal APIs.</li>
+  <li>Every permission, sharing and metadata change is audited.</li>
+</ul>
+
+<h2 class="pb">11. Migration Agency industry pack (Australia)</h2>
+<p>An installable bundle defined as data (objects, fields, picklists, apps, profiles, report templates) plus Python hooks for rules that need code. It replaces the v2 product scope and keeps all of its features.</p>
+<table>
+  <tr><th style="width:24%">Component</th><th>Contents</th></tr>
+  <tr><td>Custom objects</td><td><b>Matter</b> (visa case: auto-number <code>MAT-{YYYY}-{0000}</code>, client, sponsor account, visa type, stage path Consultation → Service Agreement → Document Collection → Preparation → Ready to Lodge → Lodged → Further Information → Decision, status, priority, onshore/offshore, responsible RMA, case officer, ImmiAccount TRN, lodgement date, decision date, outcome, grant number, visa expiry, fees); <b>Visa Type</b> (subclass, stream, category, default fees, checklist template); <b>Matter Applicant</b>; <b>Checklist Item</b>; <b>Service Agreement</b> (scope, fees, Consumer Guide provided, sent/signed with name, time, IP); <b>Client Account Transaction</b> (trust ledger: deposit, withdrawal, transfer to office).</td></tr>
+  <tr><td>Fields on standard objects</td><td>Contact: date of birth, citizenship, country of birth, passport number (encrypted, hidden by default), passport expiry, current visa and expiry, in Australia; Account: sponsor flag, sponsorship approval/expiry; User: MARA number.</td></tr>
+  <tr><td>App</td><td>“Migration Practice”: Home, Leads, Contacts, Accounts, Matters (list + Kanban), Visa Types, Invoices, Client Account, Calendar, Reports.</td></tr>
+  <tr><td>Hooks (code)</td><td>Checklist generated from visa type; stage gate: past Service Agreement only with a signed agreement (admin override, audited); moving to Lodged/Further Information/Decision or recording outcome needs custom permission <i>Lodge Applications</i>; client-account balance can never go negative (row-locked); transfer to office only against an issued invoice; visa/passport/sponsorship expiry reminders.</td></tr>
+  <tr><td>Profiles (pack)</td><td>Practice Manager (≈ Sales Manager + Finance read + Matter VA), Registered Migration Agent (Matter RCE + VA, <i>Lodge Applications</i>, agreements), Case Officer (Matter RE via sharing: matters where they are case officer/RMA, documents, checklist), Intake Consultant (Leads RCE own, Contacts RCE, conversion), Accounts (Finance + Client Account RCE), Auditor (Read Only). Portal clients see their own matters, checklist, documents, agreements (sign) and invoices.</td></tr>
+  <tr><td>Compliance support</td><td>Code of Conduct workflow (written service agreement, Consumer Guide flag, fee estimates), client-money ledger with statements and reconciliation report, 7-year retention setting, Privacy Act consent fields, data in Sydney. (Supports compliance; the principal confirms against current OMARA guidance.)</td></tr>
+  <tr><td>Reports</td><td>Matters by stage/visa/outcome, grant rate, processing time, client-account balances, upcoming expiries, agent workload.</td></tr>
+</table>
+
+<h2>12. Reports and dashboards</h2>
+<ul>
+  <li><b>Report types:</b> any reportable object, optionally with a related object (Accounts with Opportunities, Cases with Contacts, Campaigns with Members, custom objects). Custom fields included automatically.</li>
+  <li><b>Builder:</b> pick columns, filters (with relative dates such as THIS QUARTER), grouping by up to 2 rows (summary) or rows × columns (matrix), aggregates (count, sum, average, min, max), sort, chart (bar, column, line, donut, funnel, KPI). Run-time security: users only see rows and fields they may see.</li>
+  <li><b>Folders:</b> private, public, shared with roles/profiles. <b>Dashboards:</b> grid of report charts and KPIs with a “view as” running user and date filter; refresh on demand or scheduled.</li>
+  <li><b>Export &amp; schedules:</b> CSV export (Export Data permission, audited); scheduled e-mail delivery of reports (Celery beat).</li>
+  <li><b>Standard reports:</b> pipeline by stage, forecast, win rate, lead conversion by source, campaign ROI, e-mail engagement, case volume/SLA compliance, aged receivables, revenue by month.</li>
+</ul>
+
+<h2 class="pb">13. Data model and API</h2>
+<h3>Platform tables</h3>
+<table>
+  <tr><th style="width:28%">Group</th><th>Tables</th></tr>
+  <tr><td>Identity (done)</td><td>users, user_sessions, user_tokens, mfa_recovery_codes, audit_logs</td></tr>
+  <tr><td>Security</td><td>profiles, profile_system_permissions, profile_object_permissions, profile_field_permissions, roles (tree), sharing_defaults, sharing_rules, groups, group_members, queues, queue_members, record_shares</td></tr>
+  <tr><td>Metadata</td><td>object_definitions, field_definitions, picklist_values, page_layouts (sections JSON), compact_layouts, related_list_configs, apps, app_tabs, packs, pack_installations</td></tr>
+  <tr><td>Records</td><td>records, record_links, field_history, record_files, files (S3 keys), activities index, sequences</td></tr>
+  <tr><td>User experience</td><td>list_views, user_preferences (default views, pinned, recent items), notifications</td></tr>
+  <tr><td>Analytics</td><td>report_folders, reports (definition JSON), dashboards, dashboard_components, report_schedules</td></tr>
+  <tr><td>Marketing delivery</td><td>email_send_jobs, email_deliveries (per recipient status, open/click events), unsubscribe_tokens</td></tr>
+  <tr><td>Imports</td><td>import_jobs, import_job_errors</td></tr>
+</table>
+<h3>API (REST, <code>/api/v1</code>)</h3>
+<table>
+  <tr><th style="width:30%">Group</th><th>Endpoints</th></tr>
+  <tr><td>Metadata (read)</td><td>GET /meta/objects, /meta/objects/{api}, /meta/apps — returns only what the user may see (fields filtered by FLS)</td></tr>
+  <tr><td>Records</td><td>GET/POST /objects/{api}/records · GET/PATCH/DELETE /objects/{api}/records/{id} · POST …/{id}/restore · GET …/{id}/related/{relationship} · GET …/{id}/history · POST /objects/{api}/records/query (filters, columns, sort, cursor) · POST /objects/{api}/records/bulk (update owner/fields, delete)</td></tr>
+  <tr><td>Actions</td><td>POST /objects/lead/records/{id}/convert · /quote/{id}/create-invoice · /invoice/{id}/issue · /invoice/{id}/void · /payment · /case/{id}/close · /email-send/{id}/schedule · pack actions (e.g. /matter/{id}/lodge)</td></tr>
+  <tr><td>List views</td><td>CRUD /objects/{api}/list-views, GET …/{id}/results</td></tr>
+  <tr><td>Search, files, import/export</td><td>GET /search?q= · POST /files · GET /files/{id} · POST /imports (+ status, errors) · POST /exports</td></tr>
+  <tr><td>Reports</td><td>CRUD /reports, POST /reports/{id}/run, GET /reports/{id}/export.csv, CRUD /dashboards</td></tr>
+  <tr><td>Setup</td><td>/setup/objects, /setup/objects/{api}/fields, /setup/picklists, /setup/layouts, /setup/apps, /setup/profiles, /setup/roles, /setup/sharing, /setup/queues, /setup/packs, /admin/users (done), /admin/audit-logs (done)</td></tr>
+  <tr><td>Portal</td><td>/portal/me, /portal/cases, /portal/invoices, /portal/files (+ pack resources)</td></tr>
+  <tr><td>Public</td><td>/public/web-to-lead, /public/web-to-case (CAPTCHA + rate limit), /public/unsubscribe/{token}, /public/e/{tracking}</td></tr>
+</table>
+
+<h2>14. Platform security, compliance, performance</h2>
+<ul>
+  <li>Phase 1 controls stay: hashed opaque sessions, CSRF token + Origin check, Argon2id, lockout, rate limits, TOTP MFA (mandatory for staff in production), append-only audit, security headers.</li>
+  <li><b>Query safety:</b> the record engine builds SQL only from validated metadata (field API names whitelisted, values bound as parameters); user-supplied filters are parsed into an AST, never concatenated.</li>
+  <li><b>Data protection:</b> encrypted field type for sensitive values (Fernet, key from secrets manager), S3 server-side encryption, private bucket and short-lived signed URLs, malware-scan hook for uploads.</li>
+  <li><b>Compliance:</b> Privacy Act 1988 / APPs and GDPR-style features — consent records, data export per person, erasure (anonymise) workflow, retention policies per object, audit and field history.</li>
+  <li><b>Performance targets:</b> list view p95 &lt; 400 ms for 1 million records per object at 50 concurrent users (k6 load test); keyset pagination; expression indexes; report queries with statement timeout and row limits; heavy exports/imports in workers.</li>
+</ul>
+
+<h2 class="pb">15. Testing, Neon, deployment</h2>
+<ul>
+  <li><b>Tests:</b> pytest unit + API tests for every engine rule (field validation for each type, sharing calculation, FLS stripping, list-view query builder, lead conversion, pricing and tax maths, invoice states, case SLAs, consent filtering); a generated test matrix checks each default profile × object × operation against section 10; Vitest component tests; Playwright end-to-end journeys per app; load and security (OWASP ZAP) scans.</li>
+  <li><b>Neon:</b> unchanged from v2 — Sydney project, pooled endpoint for the app, direct endpoint for migrations, branch per pull request in CI. The Neon connector is connected to this workspace; no Neon project exists yet (to be created on approval).</li>
+  <li><b>Deployment:</b> Docker images (API/worker/beat, nginx SPA), GitHub Actions CI/CD, staging → production with manual approval, AWS Sydney hosting recommended.</li>
+</ul>
+
+<h2>16. Delivery phases</h2>
+<table>
+  <tr><th style="width:5%">#</th><th style="width:25%">Phase</th><th>Deliverables</th><th style="width:11%">Estimate</th></tr>
+  <tr><td>0</td><td>Foundations</td><td>Done.</td><td>—</td></tr>
+  <tr><td>1</td><td>Identity &amp; audit</td><td>Done (backend); login/MFA/admin UI finishing — restyled to the new layout.</td><td>—</td></tr>
+  <tr><td>2</td><td>Security model</td><td>Profiles, object/field/system permissions, roles, org-wide defaults, sharing rules, queues; migrate phase-1 roles to profiles; profile-matrix tests.</td><td>2 weeks</td></tr>
+  <tr><td>3</td><td>Metadata &amp; record engine</td><td>Object/field definitions, all field types, validation, record CRUD, links, history, recycle bin, query builder, indexes, Object Manager API.</td><td>3 weeks</td></tr>
+  <tr><td>4</td><td>Lightning UI</td><td>App rail, header, apps &amp; tabs, list views (columns, filters, saved views, inline edit, Kanban), record pages (highlights, path, details, related, activity), Object Manager &amp; Setup UI, global search.</td><td>3–4 weeks</td></tr>
+  <tr><td>5</td><td>Sales app</td><td>Accounts, contacts, leads + conversion, opportunities + products, tasks/events/calendar, notes/files, import/export.</td><td>2–3 weeks</td></tr>
+  <tr><td>6</td><td>Billing</td><td>Products, price books, quotes, invoices, payments, tax rates, PDFs.</td><td>2 weeks</td></tr>
+  <tr><td>7</td><td>Service</td><td>Cases, queues, SLAs/escalation, web-to-case, customer portal.</td><td>2 weeks</td></tr>
+  <tr><td>8</td><td>Marketing</td><td>Campaigns, segments, templates, consent, e-mail sends with tracking, marketing home.</td><td>2–3 weeks</td></tr>
+  <tr><td>9</td><td>Analytics</td><td>Report builder, charts, dashboards, folders, schedules, standard reports.</td><td>2–3 weeks</td></tr>
+  <tr><td>10</td><td>Migration Agency pack</td><td>Pack framework + migration pack (objects, hooks, app, profiles, portal, reports).</td><td>2 weeks</td></tr>
+  <tr><td>11</td><td>Hardening</td><td>Load and security testing, accessibility audit, backups and retention jobs, documentation, UAT.</td><td>2 weeks</td></tr>
+</table>
+<p class="small">Estimates assume a small team (1 backend, 1 frontend developer, part-time QA). Each phase ends with a demo and passing CI.</p>
+
+<h2>17. Risks and open questions</h2>
+<table>
+  <tr><th style="width:35%">Item</th><th>Mitigation / decision needed</th></tr>
+  <tr><td>Scope is large (5 apps + customisation engine)</td><td>Engine first (phases 2–4) so every app reuses it; each app ships independently.</td></tr>
+  <tr><td>JSONB query performance at scale</td><td>Indexed-field limits, expression indexes, load tests in phase 4 and 11.</td></tr>
+  <tr><td>E-mail deliverability for marketing sends</td><td>Use a provider with SPF/DKIM/DMARC and bounce webhooks (choice needed: SES, SendGrid, Postmark…).</td></tr>
+  <tr><td>Sharing calculations cost</td><td>Pre-computed role ancestry, indexed record_shares, query-time predicates tested for every list/report path.</td></tr>
+  <tr><td>Open questions</td><td>(1) Product name and branding. (2) E-mail provider. (3) Single organisation per deployment (assumed) or multi-tenant SaaS later? (4) Currency: AUD only in v1 (assumed). (5) Need for Xero/MYOB sync. (6) Should Neon project be created now in Sydney?</td></tr>
+</table>
+
+</body></html>
