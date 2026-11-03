@@ -66,10 +66,26 @@ export type RequestOptions = {
   acceptStatuses?: number[];
 };
 
+export const CSRF_COOKIE = "crm_csrf";
+export const CSRF_HEADER = "X-CSRF-Token";
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+export function readCookie(name: string): string | null {
+  for (const part of document.cookie.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) return decodeURIComponent(rest.join("="));
+  }
+  return null;
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, signal, acceptStatuses = [] } = options;
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (UNSAFE_METHODS.has(method)) {
+    const csrf = readCookie(CSRF_COOKIE);
+    if (csrf) headers[CSRF_HEADER] = csrf;
+  }
 
   let response: Response;
   try {
@@ -90,4 +106,25 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
+}
+
+/** Field-level error message for a form field, if the API returned one. */
+export function fieldError(error: unknown, field: string): string | undefined {
+  return error instanceof ApiError ? error.fields[field] : undefined;
+}
+
+/** User-facing message for any thrown value. */
+export function errorMessage(error: unknown, fallback = "Something went wrong. Please try again."): string {
+  if (error instanceof ApiError) return error.message;
+  return fallback;
+}
+
+export function toQueryString(params: Record<string, string | number | boolean | null | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    search.set(key, String(value));
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
 }

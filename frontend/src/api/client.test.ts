@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { jsonResponse } from "../test/utils";
-import { ApiError, apiRequest } from "./client";
+import { ApiError, apiRequest, toQueryString } from "./client";
 
 describe("apiRequest", () => {
   it("returns parsed JSON on success and sends same-origin credentials", async () => {
@@ -63,5 +63,44 @@ describe("apiRequest", () => {
     await expect(apiRequest("/health/ready", { acceptStatuses: [503] })).resolves.toEqual({
       status: "error",
     });
+  });
+});
+
+describe("CSRF header", () => {
+  function clearCookies() {
+    for (const c of document.cookie.split(";")) {
+      const name = c.split("=")[0]?.trim();
+      if (name) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+    }
+  }
+
+  it("sends the crm_csrf cookie value on unsafe methods only", async () => {
+    clearCookies();
+    document.cookie = "other=1; path=/";
+    document.cookie = "crm_csrf=tok%3Den123; path=/";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => jsonResponse({}));
+    await apiRequest("/x", { method: "POST", body: {} });
+    await apiRequest("/x");
+    const postHeaders = fetchMock.mock.calls[0]![1]!.headers as Record<string, string>;
+    const getHeaders = fetchMock.mock.calls[1]![1]!.headers as Record<string, string>;
+    expect(postHeaders["X-CSRF-Token"]).toBe("tok=en123");
+    expect(getHeaders["X-CSRF-Token"]).toBeUndefined();
+    clearCookies();
+  });
+
+  it("omits the header when there is no CSRF cookie", async () => {
+    clearCookies();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({}));
+    await apiRequest("/x", { method: "DELETE" });
+    expect((fetchMock.mock.calls[0]![1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBeUndefined();
+  });
+});
+
+describe("toQueryString", () => {
+  it("skips empty values", () => {
+    expect(toQueryString({ a: 1, b: "", c: undefined, d: null, e: false, q: "a b" })).toBe(
+      "?a=1&e=false&q=a+b",
+    );
+    expect(toQueryString({})).toBe("");
   });
 });
