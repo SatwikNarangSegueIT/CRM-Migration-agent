@@ -180,9 +180,7 @@ class StoredFile(UUIDPrimaryKeyMixin, Base):
 class ImportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "import_jobs"
     __table_args__ = (
-        CheckConstraint(
-            "status IN ('pending', 'running', 'completed', 'failed')", name="status_valid"
-        ),
+        CheckConstraint("status IN ('pending', 'running', 'completed', 'failed')", name="status_valid"),
         CheckConstraint("duplicate_action IN ('skip', 'update', 'create')", name="duplicate_action_valid"),
     )
 

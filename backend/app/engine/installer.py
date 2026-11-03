@@ -197,7 +197,9 @@ def install_list_view(conn: Connection, view: dict[str, Any]) -> None:
     )
 
 
-def install_field_security(conn: Connection, profile_id: uuid.UUID, obj: str, field: str, access: str) -> None:
+def install_field_security(
+    conn: Connection, profile_id: uuid.UUID, obj: str, field: str, access: str
+) -> None:
     conn.execute(
         text(
             "INSERT INTO profile_field_permissions (profile_id, object_api_name, field_api_name, access) "
@@ -207,7 +209,9 @@ def install_field_security(conn: Connection, profile_id: uuid.UUID, obj: str, fi
     )
 
 
-def install_object_permission(conn: Connection, profile_id: uuid.UUID, obj: str, flags: dict[str, bool]) -> None:
+def install_object_permission(
+    conn: Connection, profile_id: uuid.UUID, obj: str, flags: dict[str, bool]
+) -> None:
     conn.execute(
         text(
             "INSERT INTO profile_object_permissions (profile_id, object_api_name, can_read, can_create, can_edit, "
@@ -240,7 +244,9 @@ def install_record(conn: Connection, key: str, obj: str, name: str, data: dict[s
     return rid
 
 
-def install_link(conn: Connection, from_id: uuid.UUID, field: str, to_id: uuid.UUID, from_object: str, is_master: bool) -> None:
+def install_link(
+    conn: Connection, from_id: uuid.UUID, field: str, to_id: uuid.UUID, from_object: str, is_master: bool
+) -> None:
     conn.execute(
         text(
             "INSERT INTO record_links (from_record_id, field_api_name, to_record_id, from_object, is_master) "
@@ -273,9 +279,92 @@ def install_bundle(conn: Connection, bundle: dict[str, Any], pack_key: str | Non
     for obj in bundle.get("objects", []):
         install_object(conn, obj, pack_key)
     for field in bundle.get("fields", []):
-        install_field(conn, field["object"], field, order=field.get("sort_order", 500), pack_key=pack_key, standard=pack_key is None)
+        install_field(
+            conn,
+            field["object"],
+            field,
+            order=field.get("sort_order", 500),
+            pack_key=pack_key,
+            standard=pack_key is None,
+        )
     for app in bundle.get("apps", []):
         install_app(conn, app, pack_key)
     for view in bundle.get("list_views", []):
         install_list_view(conn, view)
     bump_revision(conn)
+
+
+def install_folder(conn: Connection, key: str, name: str) -> uuid.UUID:
+    fid = stable_id("report_folder", key)
+    conn.execute(
+        text(
+            "INSERT INTO report_folders (id, name, key, owner_id, visibility, shared_profile_ids, shared_role_ids, "
+            "created_at, updated_at) VALUES (:id, :name, :key, NULL, 'public', '[]'::jsonb, '[]'::jsonb, now(), now()) "
+            "ON CONFLICT DO NOTHING"
+        ),
+        {"id": fid, "name": name, "key": key},
+    )
+    return fid
+
+
+def install_report(
+    conn: Connection,
+    key: str,
+    folder_key: str,
+    name: str,
+    obj: str,
+    definition: dict[str, Any],
+    description: str | None = None,
+    pack_key: str | None = None,
+) -> uuid.UUID:
+    rid = stable_id("report", key)
+    conn.execute(
+        text(
+            "INSERT INTO reports (id, name, key, description, folder_id, owner_id, object_api_name, definition, pack_key, "
+            "created_at, updated_at) VALUES (:id, :name, :key, :description, :folder, NULL, :obj, CAST(:definition AS jsonb), "
+            ":pack, now(), now()) ON CONFLICT DO NOTHING"
+        ),
+        {
+            "id": rid,
+            "name": name,
+            "key": key,
+            "description": description,
+            "folder": stable_id("report_folder", folder_key),
+            "obj": obj,
+            "definition": _j(definition),
+            "pack": pack_key,
+        },
+    )
+    return rid
+
+
+def install_dashboard(
+    conn: Connection,
+    key: str,
+    folder_key: str,
+    name: str,
+    components: list[dict[str, Any]],
+    description: str | None = None,
+    pack_key: str | None = None,
+) -> uuid.UUID:
+    did = stable_id("dashboard", key)
+    comps = [{**c, "report_id": str(stable_id("report", c["report"]))} for c in components]
+    for c in comps:
+        c.pop("report", None)
+    conn.execute(
+        text(
+            "INSERT INTO dashboards (id, name, key, description, folder_id, owner_id, running_user_id, components, pack_key, "
+            "created_at, updated_at) VALUES (:id, :name, :key, :description, :folder, NULL, NULL, CAST(:components AS jsonb), "
+            ":pack, now(), now()) ON CONFLICT DO NOTHING"
+        ),
+        {
+            "id": did,
+            "name": name,
+            "key": key,
+            "description": description,
+            "folder": stable_id("report_folder", folder_key),
+            "components": _j(comps),
+            "pack": pack_key,
+        },
+    )
+    return did

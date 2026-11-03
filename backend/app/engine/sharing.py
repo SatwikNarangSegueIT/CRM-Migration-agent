@@ -55,9 +55,12 @@ def criteria_to_filter(criteria: dict[str, Any]) -> dict[str, Any]:
     return {
         "logic": criteria.get("logic", "and"),
         "conditions": [
-            {**c, "op": _CRITERIA_OPS.get(str(c.get("op")), c.get("op"))} for c in criteria.get("conditions", [])
+            {**c, "op": _CRITERIA_OPS.get(str(c.get("op")), c.get("op"))}
+            for c in criteria.get("conditions", [])
         ],
     }
+
+
 MAX_PARENT_DEPTH = 3
 
 
@@ -194,7 +197,9 @@ class SharingContext:
                 clauses.append(compile_filter(meta, criteria_to_filter(rule.criteria), r, ctx=None))
         return or_(*clauses)
 
-    def _parent_access(self, obj: ObjectMeta, r: RecordAlias, *, edit: bool, depth: int) -> ColumnElement[bool]:
+    def _parent_access(
+        self, obj: ObjectMeta, r: RecordAlias, *, edit: bool, depth: int
+    ) -> ColumnElement[bool]:
         """Detail records follow their master; activities follow the record they relate to."""
         parent_field = obj.master_field
         if parent_field is None:
@@ -211,12 +216,12 @@ class SharingContext:
             conditions: list[ColumnElement[bool]] = [
                 link.from_record_id == r.id,
                 link.field_api_name == parent_field.api_name,
-                parent.id == link.to_record_id,
                 parent.object_api_name == target,
             ]
             if pred is not None:
                 conditions.append(pred)
-            options.append(exists().where(*conditions))
+            joined = select(literal(1)).select_from(link).join(parent, parent.id == link.to_record_id)
+            options.append(exists(joined.where(*conditions)))
         # Records without a parent (e.g. a personal task) fall back to ownership.
         options.append(self._private_access(obj.api_name, r, edit=edit, depth=depth))
         return or_(*options)
@@ -245,19 +250,25 @@ class SharingContext:
                 clauses.append(
                     and_(
                         visible_to_portal,
-                        exists().where(
-                            link.from_record_id == r.id,
-                            link.field_api_name == parent_field.api_name,
-                            parent.id == link.to_record_id,
-                            parent.object_api_name == target,
-                            parent.is_deleted.is_(False),
-                            parent_pred,
+                        exists(
+                            select(literal(1))
+                            .select_from(link)
+                            .join(parent, parent.id == link.to_record_id)
+                            .where(
+                                link.from_record_id == r.id,
+                                link.field_api_name == parent_field.api_name,
+                                parent.object_api_name == target,
+                                parent.is_deleted.is_(False),
+                                parent_pred,
+                            )
                         ),
                     )
                 )
         return or_(*clauses)
 
-    def _predicate(self, obj: str, r: RecordAlias, *, edit: bool, depth: int = 0) -> ColumnElement[bool] | None:
+    def _predicate(
+        self, obj: str, r: RecordAlias, *, edit: bool, depth: int = 0
+    ) -> ColumnElement[bool] | None:
         access = self.policy.object(obj)
         if not access.read or (edit and not access.edit):
             return false()

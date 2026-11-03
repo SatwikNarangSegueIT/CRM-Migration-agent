@@ -20,7 +20,14 @@ from app.engine.meta import FieldMeta
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 ADDRESS_PARTS = ("street", "city", "state", "postcode", "country")
-DEFAULT_MAX_LENGTH = {"text": 255, "textarea": 4000, "long_text": 32000, "email": 254, "phone": 40, "url": 1000}
+DEFAULT_MAX_LENGTH = {
+    "text": 255,
+    "textarea": 4000,
+    "long_text": 32000,
+    "email": 254,
+    "phone": 40,
+    "url": 1000,
+}
 DEFAULT_SCALE = {"number": 0, "percent": 2, "currency": 2}
 MAX_DIGITS = 15  # exact round-trip through JSON numbers
 
@@ -51,7 +58,8 @@ def money(value: Any) -> Decimal:
 
 def decimal_to_json(value: Decimal) -> int | float:
     """JSON number with the decimal's exact digits (PostgreSQL stores JSONB numbers as numeric)."""
-    if value == value.to_integral_value() and value.as_tuple().exponent >= 0:
+    exponent = value.as_tuple().exponent
+    if value == value.to_integral_value() and isinstance(exponent, int) and exponent >= 0:
         return int(value)
     return float(value)  # repr() of a float is the shortest string that round-trips (<= 15 digits)
 
@@ -168,14 +176,14 @@ def normalize(f: FieldMeta, value: Any) -> Any:
             raise FieldValueError(f"{s!r} is not a valid value.")
         return s
     if t == "multi_picklist":
-        items = value if isinstance(value, list) else [v for v in str(value).split(";")]
+        items = value if isinstance(value, list) else str(value).split(";")
         cleaned = [str(v).strip() for v in items if str(v).strip()]
         allowed = set(f.active_values())
         bad = [v for v in cleaned if v not in allowed]
         if bad:
             raise FieldValueError(f"{bad[0]!r} is not a valid value.")
         return list(dict.fromkeys(cleaned)) or None
-    if t in ("lookup", "master_detail"):
+    if t in ("lookup", "master_detail", "user"):
         try:
             return str(uuid.UUID(str(value)))
         except ValueError as exc:
@@ -201,7 +209,7 @@ def present(f: FieldMeta, stored: Any) -> Any:
         if isinstance(stored, dict) and "enc" in stored:
             try:
                 return decrypt_field(str(stored["enc"]))
-            except Exception:  # noqa: BLE001 - key rotation or corruption must not break the page
+            except Exception:
                 return None
         return None
     return stored

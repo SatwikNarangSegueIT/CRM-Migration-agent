@@ -15,6 +15,9 @@ logger = logging.getLogger("app.worker")
 
 def _with_db(fn: Callable[..., Any], *args: Any) -> Any:
     import app.apps  # noqa: F401 - registers object hooks
+    from app import packs
+
+    packs.available()
     from app.db.session import get_sessionmaker
 
     with get_sessionmaker()() as db:
@@ -62,8 +65,10 @@ def enqueue_email_send(send_id: uuid.UUID) -> None:
     """Called after the scheduling transaction; the beat job also picks up anything missed."""
     try:
         process_email_send_task.apply_async((str(send_id),), countdown=2)
-    except Exception:  # noqa: BLE001 - broker down: the every-minute job will send it
-        logger.warning("Could not enqueue e-mail send; the scheduler will retry", extra={"send_id": str(send_id)})
+    except Exception:
+        logger.warning(
+            "Could not enqueue e-mail send; the scheduler will retry", extra={"send_id": str(send_id)}
+        )
 
 
 @celery_app.task(name="marketing.dispatch_due")

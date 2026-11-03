@@ -8,8 +8,8 @@ from fastapi import APIRouter, Query
 from sqlalchemy import func, or_, select
 
 from app.db.session import escape_like
-from app.engine.describe import describe_object, object_summary, readable_objects, visible_apps
 from app.engine.deps import Records
+from app.engine.describe import describe_object, object_summary, readable_objects, visible_apps
 from app.models import Profile, Queue, Setting, User
 
 router = APIRouter(prefix="/meta", tags=["metadata"])
@@ -44,7 +44,9 @@ def users(
     )
     if q:
         pattern = f"%{escape_like(q.strip().lower())}%"
-        stmt = stmt.where(or_(func.lower(User.name).like(pattern, escape="\\"), User.email.like(pattern, escape="\\")))
+        stmt = stmt.where(
+            or_(func.lower(User.name).like(pattern, escape="\\"), User.email.like(pattern, escape="\\"))
+        )
     rows = svc.db.execute(stmt.order_by(func.lower(User.name)).limit(limit)).all()
     return [{"id": str(r.id), "name": r.name, "email": r.email, "title": r.title} for r in rows]
 

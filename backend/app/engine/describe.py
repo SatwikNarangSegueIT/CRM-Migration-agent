@@ -84,18 +84,30 @@ def visible_list_views(svc: RecordService, object_api: str) -> list[ListView]:
     views = svc.db.scalars(stmt.order_by(ListView.key.is_(None), ListView.name)).all()
     out: list[ListView] = []
     for v in views:
-        if v.visibility == "public" or v.owner_id == uid:
-            out.append(v)
-        elif v.visibility == "shared" and (
-            str(svc.policy.profile_id) in (v.shared_profile_ids or [])
-            or (svc.policy.role_id is not None and str(svc.policy.role_id) in (v.shared_role_ids or []))
+        if (
+            v.visibility == "public"
+            or v.owner_id == uid
+            or (
+                v.visibility == "shared"
+                and (
+                    str(svc.policy.profile_id) in (v.shared_profile_ids or [])
+                    or (
+                        svc.policy.role_id is not None
+                        and str(svc.policy.role_id) in (v.shared_role_ids or [])
+                    )
+                )
+            )
         ):
             out.append(v)
     return out
 
 
 def describe_object(svc: RecordService, meta: ObjectMeta) -> dict[str, Any]:
-    fields = {f.api_name: describe_field(svc, meta, f) for f in meta.fields.values() if svc.field_access(meta, f) is not FieldAccess.HIDDEN}
+    fields = {
+        f.api_name: describe_field(svc, meta, f)
+        for f in meta.fields.values()
+        if svc.field_access(meta, f) is not FieldAccess.HIDDEN
+    }
     layout = []
     for section in meta.page_layout:
         names = [n for n in section.get("fields", []) if n in fields]
@@ -111,12 +123,27 @@ def describe_object(svc: RecordService, meta: ObjectMeta) -> dict[str, Any]:
         lookup = child.fields.get(item.get("field", ""))
         if lookup is None or svc.field_access(child, lookup) is FieldAccess.HIDDEN:
             continue
-        cols = [c for c in item.get("columns", []) if c in child.fields and svc.field_access(child, child.fields[c]) is not FieldAccess.HIDDEN]
-        related.append({**item, "columns": cols or ["name"], "object_label": child.plural_label, "can_create": svc.system or svc.policy.object(child.api_name).create})
+        cols = [
+            c
+            for c in item.get("columns", [])
+            if c in child.fields and svc.field_access(child, child.fields[c]) is not FieldAccess.HIDDEN
+        ]
+        related.append(
+            {
+                **item,
+                "columns": cols or ["name"],
+                "object_label": child.plural_label,
+                "can_create": svc.system or svc.policy.object(child.api_name).create,
+            }
+        )
     activity_objects = []
     for api in ("task", "event", "note", "file"):
         child = svc.registry.objects.get(api)
-        if child is None or "related_to" not in child.fields or meta.api_name not in child.fields["related_to"].targets:
+        if (
+            child is None
+            or "related_to" not in child.fields
+            or meta.api_name not in child.fields["related_to"].targets
+        ):
             continue
         acc = svc.policy.object(api)
         if svc.system or acc.read:
@@ -161,12 +188,19 @@ def describe_object(svc: RecordService, meta: ObjectMeta) -> dict[str, Any]:
 
 def visible_apps(svc: RecordService) -> list[dict[str, Any]]:
     apps = svc.db.scalars(
-        select(App).where(App.is_active.is_(True), or_(App.pack_key.is_(None), App.pack_key.in_(svc.enabled_packs or {""})))
+        select(App)
+        .where(
+            App.is_active.is_(True), or_(App.pack_key.is_(None), App.pack_key.in_(svc.enabled_packs or {""}))
+        )
         .order_by(App.sort_order, App.label)
     ).all()
     out = []
     for app in apps:
-        if app.profile_ids and str(svc.policy.profile_id) not in app.profile_ids and not svc.policy.is_system_admin:
+        if (
+            app.profile_ids
+            and str(svc.policy.profile_id) not in app.profile_ids
+            and not svc.policy.is_system_admin
+        ):
             continue
         tabs = []
         for t in app.tabs:
@@ -176,7 +210,15 @@ def visible_apps(svc: RecordService) -> list[dict[str, Any]]:
                     continue
                 if not svc.policy.object(meta.api_name).read:
                     continue
-                tabs.append({"kind": "object", "object": meta.api_name, "label": meta.plural_label, "icon": meta.icon, "color": meta.color})
+                tabs.append(
+                    {
+                        "kind": "object",
+                        "object": meta.api_name,
+                        "label": meta.plural_label,
+                        "icon": meta.icon,
+                        "color": meta.color,
+                    }
+                )
             elif t["kind"] in ("reports", "dashboards"):
                 if svc.policy.object("report" if t["kind"] == "reports" else "dashboard").read:
                     tabs.append({"kind": t["kind"], "label": t["kind"].capitalize()})
@@ -189,8 +231,15 @@ def visible_apps(svc: RecordService) -> list[dict[str, Any]]:
                 tabs.append({"kind": t["kind"], "label": "Home"})
         if not tabs:
             continue
-        out.append({
-            "id": str(app.id), "key": app.key, "label": app.label, "description": app.description,
-            "icon": app.icon, "color": app.color, "tabs": tabs,
-        })
+        out.append(
+            {
+                "id": str(app.id),
+                "key": app.key,
+                "label": app.label,
+                "description": app.description,
+                "icon": app.icon,
+                "color": app.color,
+                "tabs": tabs,
+            }
+        )
     return out

@@ -39,7 +39,9 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("records.id", ondelete="SET NULL", use_alter=True), index=True
     )
     locale: Mapped[str] = mapped_column(String(10), default="en-AU", server_default="en-AU")
-    time_zone: Mapped[str] = mapped_column(String(40), default="Australia/Sydney", server_default="Australia/Sydney")
+    time_zone: Mapped[str] = mapped_column(
+        String(40), default="Australia/Sydney", server_default="Australia/Sydney"
+    )
 
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     # Fernet-encrypted TOTP secret. Set (with mfa_enabled = false) while enrolment is pending.

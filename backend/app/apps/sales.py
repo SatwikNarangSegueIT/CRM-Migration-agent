@@ -54,12 +54,24 @@ def _find_duplicates(svc: RecordService, lead: Record) -> dict[str, list[dict[st
     out: dict[str, list[dict[str, Any]]] = {"accounts": [], "contacts": []}
     company = (lead.data.get("company") or "").strip()
     if company and svc.policy.object("account").read:
-        res = svc.query("account", filters={"logic": "and", "conditions": [{"field": "name", "op": "equals", "value": company}]}, limit=5, count=False)
+        res = svc.query(
+            "account",
+            filters={"logic": "and", "conditions": [{"field": "name", "op": "equals", "value": company}]},
+            limit=5,
+            count=False,
+        )
         out["accounts"] = [{"id": str(r.id), "name": r.name} for r in res.records]
     email = lead.data.get("email")
     if email and svc.policy.object("contact").read:
-        res = svc.query("contact", filters={"logic": "and", "conditions": [{"field": "email", "op": "equals", "value": email}]}, limit=5, count=False)
-        out["contacts"] = [{"id": str(r.id), "name": r.name, "account": r.data.get("account")} for r in res.records]
+        res = svc.query(
+            "contact",
+            filters={"logic": "and", "conditions": [{"field": "email", "op": "equals", "value": email}]},
+            limit=5,
+            count=False,
+        )
+        out["contacts"] = [
+            {"id": str(r.id), "name": r.name, "account": r.data.get("account")} for r in res.records
+        ]
     return out
 
 
@@ -90,8 +102,12 @@ def _repoint_activities(svc: RecordService, from_id: uuid.UUID, to_id: uuid.UUID
     sys = svc.elevated()
     for obj in ("task", "event", "note", "file"):
         rows = sys.db.scalars(
-            select(Record).join(RecordLink, RecordLink.from_record_id == Record.id).where(
-                RecordLink.to_record_id == from_id, RecordLink.field_api_name == "related_to", RecordLink.from_object == obj
+            select(Record)
+            .join(RecordLink, RecordLink.from_record_id == Record.id)
+            .where(
+                RecordLink.to_record_id == from_id,
+                RecordLink.field_api_name == "related_to",
+                RecordLink.from_object == obj,
             )
         ).all()
         for r in rows:
@@ -136,38 +152,53 @@ def convert_lead(svc: RecordService, lead: Record, payload: dict[str, Any]) -> d
     opportunity = None
     if payload.get("create_opportunity"):
         values = _mapped(svc, lead, "opportunity", {"lead_source": "lead_source", "campaign": "campaign"})
-        values.update({
-            "name": str(payload.get("opportunity_name") or f"{account.name} -").strip(),
-            "account": str(account.id),
-            "primary_contact": str(contact.id),
-            "close_date": (date.today() + timedelta(days=30)).isoformat(),
-        })
+        values.update(
+            {
+                "name": str(payload.get("opportunity_name") or f"{account.name} -").strip(),
+                "account": str(account.id),
+                "primary_contact": str(contact.id),
+                "close_date": (date.today() + timedelta(days=30)).isoformat(),
+            }
+        )
         opportunity = svc.create("opportunity", values, owner_id=owner_id)
 
     _repoint_activities(svc, lead.id, contact.id)
     sys = svc.elevated()
     for member in sys.db.scalars(
-        select(Record).join(RecordLink, RecordLink.from_record_id == Record.id).where(
-            RecordLink.to_record_id == lead.id, RecordLink.field_api_name == "lead", RecordLink.from_object == "campaign_member"
+        select(Record)
+        .join(RecordLink, RecordLink.from_record_id == Record.id)
+        .where(
+            RecordLink.to_record_id == lead.id,
+            RecordLink.field_api_name == "lead",
+            RecordLink.from_object == "campaign_member",
         )
     ).all():
         if not member.data.get("contact"):
             sys.update("campaign_member", member.id, {"contact": str(contact.id)}, record=member)
     for consent in sys.db.scalars(
-        select(Record).join(RecordLink, RecordLink.from_record_id == Record.id).where(
-            RecordLink.to_record_id == lead.id, RecordLink.field_api_name == "lead", RecordLink.from_object == "consent"
+        select(Record)
+        .join(RecordLink, RecordLink.from_record_id == Record.id)
+        .where(
+            RecordLink.to_record_id == lead.id,
+            RecordLink.field_api_name == "lead",
+            RecordLink.from_object == "consent",
         )
     ).all():
         if not consent.data.get("contact"):
             sys.update("consent", consent.id, {"contact": str(contact.id)}, record=consent)
-    sys.update("lead", lead.id, {
-        "is_converted": True,
-        "status": "Qualified",
-        "converted_date": date.today().isoformat(),
-        "converted_account": str(account.id),
-        "converted_contact": str(contact.id),
-        "converted_opportunity": str(opportunity.id) if opportunity else None,
-    }, record=lead)
+    sys.update(
+        "lead",
+        lead.id,
+        {
+            "is_converted": True,
+            "status": "Qualified",
+            "converted_date": date.today().isoformat(),
+            "converted_account": str(account.id),
+            "converted_contact": str(contact.id),
+            "converted_opportunity": str(opportunity.id) if opportunity else None,
+        },
+        record=lead,
+    )
     return {
         "account_id": str(account.id),
         "contact_id": str(contact.id),
@@ -264,7 +295,9 @@ def recompute_opportunity_amount(svc: RecordService, opportunity_id: uuid.UUID) 
     if opp is None or opp.is_deleted:
         return
     totals = sys.db.execute(
-        select(func.count(), func.coalesce(func.sum(Record.data["line_total"].astext.cast(sys_numeric())), 0)).where(
+        select(
+            func.count(), func.coalesce(func.sum(Record.data["line_total"].astext.cast(sys_numeric())), 0)
+        ).where(
             Record.object_api_name == "opportunity_product",
             Record.is_deleted.is_(False),
             Record.data["opportunity"].astext == str(opportunity_id),
@@ -312,7 +345,9 @@ def stamp_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-def ensure_unique(svc: RecordService, obj: str, conditions: dict[str, str], exclude: uuid.UUID | None, message: str) -> None:
+def ensure_unique(
+    svc: RecordService, obj: str, conditions: dict[str, str], exclude: uuid.UUID | None, message: str
+) -> None:
     stmt = select(Record.id).where(Record.object_api_name == obj, Record.is_deleted.is_(False))
     for k, v in conditions.items():
         stmt = stmt.where(Record.data[k].astext == v)

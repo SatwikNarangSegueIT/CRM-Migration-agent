@@ -1,4 +1,4 @@
-"""Filter AST -> SQL (plan v3, section 14: "user-supplied filters are parsed into an AST, never concatenated").
+"""Filter AST -> SQL (plan v3, section 14: user-supplied filters are parsed into an AST, never concatenated).
 
 AST:   {"logic": "and" | "or", "conditions": [Condition | AST, ...]}
        Condition = {"field": api_name, "op": operator, "value": any}
@@ -15,6 +15,7 @@ import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
+from typing import cast as cast_type
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import (
@@ -81,6 +82,10 @@ class FilterError(AppError):
     code = "invalid_filter"
 
 
+def _bool(clause: Any) -> ColumnElement[bool]:
+    return cast_type(ColumnElement[bool], clause)
+
+
 def _sort_type(f: FieldMeta) -> str:
     if f.type in ("number", "percent", "currency"):
         return "numeric"
@@ -130,24 +135,24 @@ def sort_expr(f: FieldMeta, r: Any) -> Any:
     return expr
 
 
-def _period(token: str, today: date) -> tuple[date, date] | None:
-    """Inclusive date range for a relative token."""
-    token = token.upper()
-    if token == "TODAY":
+def _period(keyword: str, today: date) -> tuple[date, date] | None:
+    """Inclusive date range for a relative keyword."""
+    keyword = keyword.upper()
+    if keyword == "TODAY":
         return today, today
-    if token == "YESTERDAY":
+    if keyword == "YESTERDAY":
         d = today - timedelta(days=1)
         return d, d
-    if token == "TOMORROW":
+    if keyword == "TOMORROW":
         d = today + timedelta(days=1)
         return d, d
-    m = _RELATIVE_N.match(token)
+    m = _RELATIVE_N.match(keyword)
     if m:
         n = int(m.group(2))
         if m.group(1) == "LAST":
             return today - timedelta(days=n), today
         return today, today + timedelta(days=n)
-    parts = token.split("_", 1)
+    parts = keyword.split("_", 1)
     if len(parts) != 2 or parts[0] not in ("THIS", "LAST", "NEXT"):
         return None
     shift = {"THIS": 0, "LAST": -1, "NEXT": 1}[parts[0]]
@@ -246,10 +251,11 @@ class _Compiler:
             raise FilterError(f"{f.label} cannot be used in filters.")
         if op not in OPERATORS:
             raise FilterError(f"Unknown filter operator {op!r}.")
-        expr = field_expr(f, self.r)
+        expr: ColumnElement[Any] = field_expr(f, self.r)
         kind = _sort_type(f)
 
         if op in ("is_null", "is_not_null"):
+            blank: ColumnElement[bool]
             if f.is_system:
                 blank = getattr(self.r, SYSTEM_COLUMNS[name]).is_(None)
             else:
@@ -271,7 +277,9 @@ class _Compiler:
             if not values:
                 return false() if op == "in" else true()
             lits = [self._literal(f, v) for v in values]
-            clause = (func.lower(expr).in_([str(v).lower() for v in lits]) if kind == "text" else expr.in_(lits))
+            clause = (
+                func.lower(expr).in_([str(v).lower() for v in lits]) if kind == "text" else expr.in_(lits)
+            )
             return clause if op == "in" else or_(not_(clause), expr.is_(None))
 
         if op in ("contains", "not_contains", "starts_with"):
@@ -296,13 +304,13 @@ class _Compiler:
             if op == "not_equals":
                 return or_(expr < start, expr >= end, expr.is_(None))
             if op == "gt":
-                return expr >= end
+                return _bool(expr >= end)
             if op == "gte":
-                return expr >= start
+                return _bool(expr >= start)
             if op == "lt":
-                return expr < start
+                return _bool(expr < start)
             if op == "lte":
-                return expr < end
+                return _bool(expr < end)
             raise FilterError(f"{f.label} does not support '{op}'.")
 
         if value is None:
@@ -314,14 +322,14 @@ class _Compiler:
             if op == "not_equals":
                 return or_(func.lower(expr) != str(lit).lower(), expr.is_(None))
         if op == "equals":
-            return expr == lit
+            return _bool(expr == lit)
         if op == "not_equals":
             return or_(expr != lit, expr.is_(None))
         if kind == "bool" or kind == "id":
             raise FilterError(f"{f.label} does not support '{op}'.")
         ops = {"gt": expr > lit, "gte": expr >= lit, "lt": expr < lit, "lte": expr <= lit}
         if op in ops:
-            return ops[op]
+            return _bool(ops[op])
         raise FilterError(f"{f.label} does not support '{op}'.")
 
     def node(self, node: dict[str, Any], depth: int = 0) -> ColumnElement[bool]:

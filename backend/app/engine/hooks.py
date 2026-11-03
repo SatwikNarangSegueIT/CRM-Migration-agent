@@ -64,6 +64,8 @@ class Action:
     # Shown on the record page when this returns True (UI hint only; the handler re-checks).
     visible: Callable[[Record], bool] | None = None
     pack_key: str | None = None
+    # Customer-portal users may run it on records they can see (e.g. signing an agreement).
+    portal: bool = False
 
 
 _hooks: dict[tuple[str, Event], list[tuple[str | None, Hook]]] = {}
@@ -88,12 +90,13 @@ def action(
     guard: Callable[[RecordService, Record], str | None] | None = None,
     visible: Callable[[Record], bool] | None = None,
     pack_key: str | None = None,
+    portal: bool = False,
 ) -> Callable[[Callable[[RecordService, Record, dict[str, Any]], dict[str, Any]]], Any]:
     def decorator(
         fn: Callable[[RecordService, Record, dict[str, Any]], dict[str, Any]],
     ) -> Callable[[RecordService, Record, dict[str, Any]], dict[str, Any]]:
         _actions[(object_api_name, name)] = Action(
-            object_api_name, name, label, fn, requires_edit, guard, visible, pack_key
+            object_api_name, name, label, fn, requires_edit, guard, visible, pack_key, portal
         )
         return fn
 
@@ -101,7 +104,9 @@ def action(
 
 
 def hooks_for(object_api_name: str, event: Event, enabled_packs: frozenset[str]) -> list[Hook]:
-    return [fn for pack, fn in _hooks.get((object_api_name, event), []) if pack is None or pack in enabled_packs]
+    return [
+        fn for pack, fn in _hooks.get((object_api_name, event), []) if pack is None or pack in enabled_packs
+    ]
 
 
 def get_action(object_api_name: str, name: str) -> Action | None:

@@ -49,6 +49,7 @@ FIELD_TYPES = (
     "auto_number",
     "address",
     "encrypted_text",
+    "user",
 )
 
 

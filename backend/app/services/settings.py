@@ -11,7 +11,15 @@ from sqlalchemy.orm import Session
 from app.models import Setting
 
 EDITABLE_KEYS = (
-    "branding", "company", "billing", "case_sla", "service", "locale", "retention", "marketing", "lead_conversion",
+    "branding",
+    "company",
+    "billing",
+    "case_sla",
+    "service",
+    "locale",
+    "retention",
+    "marketing",
+    "lead_conversion",
 )
 
 

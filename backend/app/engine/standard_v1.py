@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Final
 
-from sqlalchemy import Connection
+from sqlalchemy import Connection, text
 
 from app.engine.installer import (
     install_bundle,
@@ -39,10 +39,7 @@ def F(api: str, label: str, type_: str, **kw: Any) -> dict[str, Any]:
 def _values(values: list[Any], default: str | None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for v in values:
-        if isinstance(v, dict):
-            item = dict(v)
-        else:
-            item = {"value": v, "label": v}
+        item = dict(v) if isinstance(v, dict) else {"value": v, "label": v}
         item.setdefault("active", True)
         if default is not None and item["value"] == default:
             item["default"] = True
@@ -65,7 +62,16 @@ def related(obj: str, field: str, label: str, columns: list[str]) -> dict[str, A
 SYSTEM_SECTION = section("System Information", ["created_by_id", "created_at", "updated_by_id", "updated_at"])
 
 SALUTATIONS = ["Mr.", "Ms.", "Mrs.", "Mx.", "Dr.", "Prof."]
-LEAD_SOURCES = ["Web", "Phone Inquiry", "Partner Referral", "Purchased List", "Event", "Advertisement", "Social Media", "Other"]
+LEAD_SOURCES = [
+    "Web",
+    "Phone Inquiry",
+    "Partner Referral",
+    "Purchased List",
+    "Event",
+    "Advertisement",
+    "Social Media",
+    "Other",
+]
 INDUSTRIES = [
     "Agriculture", "Construction", "Education", "Finance", "Government", "Healthcare", "Hospitality",
     "Manufacturing", "Media", "Not For Profit", "Professional Services", "Retail", "Technology", "Transport", "Other",
@@ -81,7 +87,7 @@ STAGES = [
 ]
 LINE_COLUMNS = ["product", "quantity", "unit_price", "discount", "line_total"]
 
-ACCOUNT: Final = {
+ACCOUNT: Final[dict[str, Any]] = {
     "api_name": "account", "label": "Account", "plural_label": "Accounts", "icon": "account", "color": "#5867e8",
     "sharing": "read",
     "fields": [
@@ -117,7 +123,7 @@ ACCOUNT: Final = {
     ],
 }  # fmt: skip
 
-CONTACT: Final = {
+CONTACT: Final[dict[str, Any]] = {
     "api_name": "contact", "label": "Contact", "plural_label": "Contacts", "icon": "contact", "color": "#8b5cf6",
     "sharing": "read", "show_in_portal": True,
     "fields": [
@@ -158,7 +164,7 @@ CONTACT: Final = {
     ],
 }  # fmt: skip
 
-LEAD: Final = {
+LEAD: Final[dict[str, Any]] = {
     "api_name": "lead", "label": "Lead", "plural_label": "Leads", "icon": "lead", "color": "#f97316",
     "sharing": "private", "allow_queues": True,
     "fields": [
@@ -210,7 +216,7 @@ LEAD: Final = {
     ],
 }  # fmt: skip
 
-OPPORTUNITY: Final = {
+OPPORTUNITY: Final[dict[str, Any]] = {
     "api_name": "opportunity", "label": "Opportunity", "plural_label": "Opportunities", "icon": "opportunity",
     "color": "#f59e0b", "sharing": "private",
     "fields": [
@@ -248,7 +254,7 @@ OPPORTUNITY: Final = {
     ],
 }  # fmt: skip
 
-OPPORTUNITY_PRODUCT: Final = {
+OPPORTUNITY_PRODUCT: Final[dict[str, Any]] = {
     "api_name": "opportunity_product", "label": "Opportunity Product", "plural_label": "Opportunity Products",
     "icon": "product", "color": "#f59e0b", "is_detail_only": True, "allow_activities": False, "allow_files": False,
     "allow_notes": False, "searchable": False, "sharing": "controlled_by_parent",
@@ -266,7 +272,7 @@ OPPORTUNITY_PRODUCT: Final = {
     "list_columns": LINE_COLUMNS,
 }  # fmt: skip
 
-PRODUCT: Final = {
+PRODUCT: Final[dict[str, Any]] = {
     "api_name": "product", "label": "Product", "plural_label": "Products", "icon": "product", "color": "#0ea5e9",
     "sharing": "read",
     "fields": [
@@ -288,7 +294,7 @@ PRODUCT: Final = {
     "related_lists": [related("price_book_entry", "product", "Price Book Entries", ["price_book", "list_price", "is_active"])],
 }  # fmt: skip
 
-PRICE_BOOK: Final = {
+PRICE_BOOK: Final[dict[str, Any]] = {
     "api_name": "price_book", "label": "Price Book", "plural_label": "Price Books", "icon": "pricebook",
     "color": "#0ea5e9", "sharing": "read",
     "fields": [
@@ -302,7 +308,7 @@ PRICE_BOOK: Final = {
     "related_lists": [related("price_book_entry", "price_book", "Entries", ["product", "list_price", "is_active"])],
 }  # fmt: skip
 
-PRICE_BOOK_ENTRY: Final = {
+PRICE_BOOK_ENTRY: Final[dict[str, Any]] = {
     "api_name": "price_book_entry", "label": "Price Book Entry", "plural_label": "Price Book Entries",
     "icon": "pricebook", "color": "#0ea5e9", "is_detail_only": True, "allow_activities": False, "allow_files": False,
     "allow_notes": False, "searchable": False, "sharing": "controlled_by_parent",
@@ -346,7 +352,7 @@ def _line_object(api: str, label: str, plural: str, parent: str, parent_label: s
     }  # fmt: skip
 
 
-QUOTE: Final = {
+QUOTE: Final[dict[str, Any]] = {
     "api_name": "quote", "label": "Quote", "plural_label": "Quotes", "icon": "quote", "color": "#14b8a6",
     "sharing": "private", "name_field_type": "auto_number", "name_label": "Quote Number", "name_format": "Q-{00000}",
     "fields": [
@@ -374,7 +380,7 @@ QUOTE: Final = {
     "related_lists": [related("quote_line", "quote", "Quote Lines", ["product", "quantity", "unit_price", "discount", "tax_amount", "line_total"])],
 }  # fmt: skip
 
-INVOICE: Final = {
+INVOICE: Final[dict[str, Any]] = {
     "api_name": "invoice", "label": "Invoice", "plural_label": "Invoices", "icon": "invoice", "color": "#10b981",
     "sharing": "private", "name_label": "Invoice", "show_in_portal": True, "portal_fields": ["account", "contact"],
     "fields": [
@@ -411,7 +417,7 @@ INVOICE: Final = {
     ],
 }  # fmt: skip
 
-PAYMENT: Final = {
+PAYMENT: Final[dict[str, Any]] = {
     "api_name": "payment", "label": "Payment", "plural_label": "Payments", "icon": "payment", "color": "#10b981",
     "sharing": "controlled_by_parent", "name_field_type": "auto_number", "name_label": "Payment Number",
     "name_format": "PAY-{000000}", "allow_activities": False, "show_in_portal": True,
@@ -429,7 +435,7 @@ PAYMENT: Final = {
     "list_columns": ["name", "invoice", "payment_date", "amount", "method", "status"],
 }  # fmt: skip
 
-TAX_RATE: Final = {
+TAX_RATE: Final[dict[str, Any]] = {
     "api_name": "tax_rate", "label": "Tax Rate", "plural_label": "Tax Rates", "icon": "tax", "color": "#64748b",
     "sharing": "read", "allow_activities": False, "allow_files": False, "allow_notes": False,
     "fields": [
@@ -443,7 +449,7 @@ TAX_RATE: Final = {
     "list_columns": ["name", "rate", "is_default", "is_active"],
 }  # fmt: skip
 
-CASE: Final = {
+CASE: Final[dict[str, Any]] = {
     "api_name": "case", "label": "Case", "plural_label": "Cases", "icon": "case", "color": "#ec4899",
     "sharing": "private", "name_field_type": "auto_number", "name_label": "Case Number", "name_format": "CASE-{00000}",
     "allow_queues": True, "show_in_portal": True, "portal_fields": ["contact"],
@@ -481,7 +487,7 @@ CASE: Final = {
     "list_columns": ["name", "subject", "status", "priority", "contact", "owner_id"],
 }  # fmt: skip
 
-CAMPAIGN: Final = {
+CAMPAIGN: Final[dict[str, Any]] = {
     "api_name": "campaign", "label": "Campaign", "plural_label": "Campaigns", "icon": "campaign", "color": "#f43f5e",
     "sharing": "read",
     "fields": [
@@ -512,7 +518,7 @@ CAMPAIGN: Final = {
     ],
 }  # fmt: skip
 
-CAMPAIGN_MEMBER: Final = {
+CAMPAIGN_MEMBER: Final[dict[str, Any]] = {
     "api_name": "campaign_member", "label": "Campaign Member", "plural_label": "Campaign Members", "icon": "member",
     "color": "#f43f5e", "is_detail_only": True, "allow_activities": False, "allow_files": False, "allow_notes": False,
     "searchable": False, "sharing": "controlled_by_parent",
@@ -528,7 +534,7 @@ CAMPAIGN_MEMBER: Final = {
     "list_columns": ["name", "campaign", "status", "has_responded"],
 }  # fmt: skip
 
-SEGMENT: Final = {
+SEGMENT: Final[dict[str, Any]] = {
     "api_name": "segment", "label": "Segment", "plural_label": "Segments", "icon": "segment", "color": "#f43f5e",
     "sharing": "read", "allow_activities": False,
     "fields": [
@@ -543,7 +549,7 @@ SEGMENT: Final = {
     "list_columns": ["name", "target_object", "member_count", "owner_id"],
 }  # fmt: skip
 
-EMAIL_TEMPLATE: Final = {
+EMAIL_TEMPLATE: Final[dict[str, Any]] = {
     "api_name": "email_template", "label": "Email Template", "plural_label": "Email Templates", "icon": "template",
     "color": "#f43f5e", "sharing": "read", "allow_activities": False,
     "fields": [
@@ -558,7 +564,7 @@ EMAIL_TEMPLATE: Final = {
     "list_columns": ["name", "subject", "category", "is_active"],
 }  # fmt: skip
 
-EMAIL_SEND: Final = {
+EMAIL_SEND: Final[dict[str, Any]] = {
     "api_name": "email_send", "label": "Email Send", "plural_label": "Email Sends", "icon": "send", "color": "#f43f5e",
     "sharing": "private", "allow_activities": False,
     "fields": [
@@ -593,7 +599,7 @@ EMAIL_SEND: Final = {
     "list_columns": ["name", "subject", "status", "scheduled_at", "sent_at", "recipients_count"],
 }  # fmt: skip
 
-CONSENT: Final = {
+CONSENT: Final[dict[str, Any]] = {
     "api_name": "consent", "label": "Consent", "plural_label": "Consents", "icon": "consent", "color": "#f43f5e",
     "sharing": "controlled_by_parent", "allow_activities": False, "allow_files": False, "searchable": False,
     "name_field_type": "auto_number", "name_label": "Consent Number", "name_format": "CON-{000000}",
@@ -611,7 +617,7 @@ CONSENT: Final = {
     "list_columns": ["name", "contact", "lead", "channel", "status", "source", "captured_at"],
 }  # fmt: skip
 
-TASK: Final = {
+TASK: Final[dict[str, Any]] = {
     "api_name": "task", "label": "Task", "plural_label": "Tasks", "icon": "task", "color": "#22c55e",
     "name_label": "Subject", "sharing": "controlled_by_parent", "allow_activities": False, "allow_files": False,
     "allow_notes": False,
@@ -632,7 +638,7 @@ TASK: Final = {
     "list_columns": ["name", "status", "priority", "due_date", "related_to", "owner_id"],
 }  # fmt: skip
 
-EVENT: Final = {
+EVENT: Final[dict[str, Any]] = {
     "api_name": "event", "label": "Event", "plural_label": "Events", "icon": "event", "color": "#06b6d4",
     "name_label": "Subject", "sharing": "controlled_by_parent", "allow_activities": False, "allow_files": False,
     "allow_notes": False,
@@ -653,7 +659,7 @@ EVENT: Final = {
     "list_columns": ["name", "start_at", "end_at", "location", "related_to", "owner_id"],
 }  # fmt: skip
 
-NOTE: Final = {
+NOTE: Final[dict[str, Any]] = {
     "api_name": "note", "label": "Note", "plural_label": "Notes", "icon": "note", "color": "#eab308",
     "name_label": "Title", "sharing": "controlled_by_parent", "allow_activities": False, "allow_files": False,
     "allow_notes": False, "show_in_portal": True,
@@ -666,7 +672,7 @@ NOTE: Final = {
     "list_columns": ["name", "related_to", "created_at", "owner_id"],
 }  # fmt: skip
 
-FILE: Final = {
+FILE: Final[dict[str, Any]] = {
     "api_name": "file", "label": "File", "plural_label": "Files", "icon": "file", "color": "#64748b",
     "name_label": "File Name", "sharing": "controlled_by_parent", "allow_activities": False, "allow_files": False,
     "allow_notes": False, "show_in_portal": True,
@@ -682,7 +688,7 @@ FILE: Final = {
     "list_columns": ["name", "related_to", "content_type", "size", "created_at"],
 }  # fmt: skip
 
-OBJECTS: Final = [
+OBJECTS: Final[list[dict[str, Any]]] = [
     ACCOUNT, CONTACT, LEAD, OPPORTUNITY, OPPORTUNITY_PRODUCT, PRODUCT, PRICE_BOOK, PRICE_BOOK_ENTRY, QUOTE,
     _line_object("quote_line", "Quote Line", "Quote Lines", "quote", "Quote"),
     INVOICE,
@@ -696,7 +702,7 @@ def _tab(kind: str, obj: str | None = None) -> dict[str, Any]:
     return {"kind": kind, "object": obj} if obj else {"kind": kind}
 
 
-APPS: Final = [
+APPS: Final[list[dict[str, Any]]] = [
     {"key": "sales", "label": "Sales", "icon": "sales", "color": "#0176d3", "sort_order": 10, "description": "Leads, accounts, contacts, opportunities and quotes.",
      "tabs": [_tab("home"), _tab("object", "lead"), _tab("object", "contact"), _tab("object", "account"), _tab("object", "opportunity"),
               _tab("object", "product"), _tab("object", "price_book"), _tab("object", "quote"), _tab("object", "invoice"),
@@ -727,8 +733,23 @@ def _views() -> list[dict[str, Any]]:
         if obj.get("is_detail_only"):
             continue
         api = obj["api_name"]
-        views.append({"key": f"{api}_all", "object": api, "name": f"All {obj['plural_label']}", "columns": obj["list_columns"]})
-        views.append({"key": f"{api}_mine", "object": api, "name": f"My {obj['plural_label']}", "scope": "mine", "columns": obj["list_columns"]})
+        views.append(
+            {
+                "key": f"{api}_all",
+                "object": api,
+                "name": f"All {obj['plural_label']}",
+                "columns": obj["list_columns"],
+            }
+        )
+        views.append(
+            {
+                "key": f"{api}_mine",
+                "object": api,
+                "name": f"My {obj['plural_label']}",
+                "scope": "mine",
+                "columns": obj["list_columns"],
+            }
+        )
     views += [
         {"key": "lead_open", "object": "lead", "name": "All Open Leads", "filters": _OPEN_LEAD, "columns": LEAD["list_columns"]},
         {"key": "lead_my_open", "object": "lead", "name": "My Open Leads", "scope": "mine", "filters": _OPEN_LEAD, "columns": LEAD["list_columns"]},
@@ -803,14 +824,45 @@ def apply(conn: Connection) -> None:
     install_bundle(conn, {"objects": OBJECTS, "apps": APPS, "list_views": _views()})
     for profile, obj, field, access in FIELD_SECURITY:
         install_field_security(conn, security_id("profile", profile), obj, field, access)
-    gst = install_record(conn, "tax_rate.gst", "tax_rate", "GST 10%", {"rate": 10, "is_default": True, "is_active": True, "description": "Australian Goods and Services Tax"})
-    install_record(conn, "tax_rate.gst_free", "tax_rate", "GST-free", {"rate": 0, "is_default": False, "is_active": True, "description": "GST-free supply"})
-    install_record(conn, "price_book.standard", "price_book", "Standard Price Book", {"is_active": True, "is_standard": True})
+    gst = install_record(
+        conn,
+        "tax_rate.gst",
+        "tax_rate",
+        "GST 10%",
+        {
+            "rate": 10,
+            "is_default": True,
+            "is_active": True,
+            "description": "Australian Goods and Services Tax",
+        },
+    )
+    install_record(
+        conn,
+        "tax_rate.gst_free",
+        "tax_rate",
+        "GST-free",
+        {"rate": 0, "is_default": False, "is_active": True, "description": "GST-free supply"},
+    )
+    install_record(
+        conn,
+        "price_book.standard",
+        "price_book",
+        "Standard Price Book",
+        {"is_active": True, "is_standard": True},
+    )
     _ = gst
+    conn.execute(
+        text(
+            "INSERT INTO queues (id, name, email, object_api_names, created_at, updated_at) VALUES (:id, 'Customer Support', "
+            "NULL, CAST(:objs AS jsonb), now(), now()) ON CONFLICT DO NOTHING"
+        ),
+        {"id": SUPPORT_QUEUE_ID, "objs": '["case", "lead"]'},
+    )
     for key, value in DEFAULT_SETTINGS.items():
         set_setting(conn, key, value)
 
 
 STANDARD_PRICE_BOOK_ID: Final = stable_id("record", "price_book.standard")
+SUPPORT_QUEUE_ID: Final = stable_id("queue", "customer_support")
 GST_TAX_RATE_ID: Final = stable_id("record", "tax_rate.gst")
 __all__ = ["APPS", "GST_TAX_RATE_ID", "OBJECTS", "STANDARD_PRICE_BOOK_ID", "apply", "install_link"]

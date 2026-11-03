@@ -37,8 +37,8 @@ from app.auth.security import hash_password  # noqa: E402
 from app.core.config import Settings, get_settings  # noqa: E402
 from app.core.redis_client import get_redis  # noqa: E402
 from app.db.seeds import apply_seeds  # noqa: E402
-from app.engine.meta import invalidate_cache  # noqa: E402
 from app.db.session import get_sessionmaker  # noqa: E402
+from app.engine.meta import invalidate_cache  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models import Base, User  # noqa: E402
 from app.security.seed_v1 import stable_id  # noqa: E402
@@ -107,6 +107,7 @@ def outbox(monkeypatch: pytest.MonkeyPatch) -> Outbox:
     box = Outbox()
     monkeypatch.setattr("app.routers.auth.queue_email", box.send)
     monkeypatch.setattr("app.routers.admin_users.queue_email", box.send)
+    monkeypatch.setattr("app.routers.portal.queue_email", box.send)
     return box
 
 

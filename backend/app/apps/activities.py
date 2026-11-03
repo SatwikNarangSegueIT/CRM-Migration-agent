@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -43,12 +44,14 @@ def send_due_reminders(db: Session, now: datetime | None = None) -> int:
     now = now or datetime.now(UTC)
     svc = RecordService.as_system(db)
     rows = db.scalars(
-        select(Record).where(
+        select(Record)
+        .where(
             Record.object_api_name.in_(("task", "event")),
             Record.is_deleted.is_(False),
             Record.data["reminder_at"].astext.is_not(None),
             Record.data["reminder_sent"].astext.is_distinct_from("true"),
-        ).with_for_update(skip_locked=True)
+        )
+        .with_for_update(skip_locked=True)
     ).all()
     emails: list[tuple[str, str, str]] = []
     count = 0
@@ -62,13 +65,14 @@ def send_due_reminders(db: Session, now: datetime | None = None) -> int:
         notify(db, r.owner_id, f"Reminder: {r.name}", f"Due {when}".strip(), link, r.id)
         owner = db.get(User, r.owner_id)
         if owner is not None and owner.is_active:
-            emails.append((owner.email, f"Reminder: {r.name}", f"{r.name}\nDue: {when}\n\n{app_link(link)}\n"))
+            emails.append(
+                (owner.email, f"Reminder: {r.name}", f"{r.name}\nDue: {when}\n\n{app_link(link)}\n")
+            )
         svc.update(r.object_api_name, r.id, {"reminder_sent": True}, record=r)
         count += 1
     db.commit()
     for to, subject, body in emails:
-        try:
+        # The in-app notification is already stored; a broker outage must not fail the job.
+        with contextlib.suppress(Exception):
             queue_email(to, subject, body)
-        except Exception:  # noqa: BLE001, S110 - the in-app notification is already stored
-            pass
     return count

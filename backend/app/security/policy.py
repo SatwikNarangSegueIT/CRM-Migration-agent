@@ -39,6 +39,10 @@ class AccessPolicy:
     def has(self, permission: SystemPermission) -> bool:
         return self.is_system_admin or permission.value in self.system
 
+    def has_custom(self, name: str) -> bool:
+        """Custom permission defined by an industry pack, stored as "pack:<key>:<name>"."""
+        return self.is_system_admin or name in self.system
+
     def object(self, object_api_name: str) -> ObjectAccess:
         """Object permissions. System Administrator implicitly has full access to every object."""
         if self.is_system_admin:

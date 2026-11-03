@@ -17,8 +17,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.errors import AppError, NotFoundError, PermissionDeniedError
 from app.engine import hooks
-from app.engine.describe import visible_list_views
 from app.engine.deps import Records
+from app.engine.describe import visible_list_views
 from app.engine.filters import FilterError, compile_filter
 from app.engine.records import QueryResult, RecordService
 from app.models import ListView, RecentItem, Record, UserPreference
@@ -92,7 +92,9 @@ class ListViewIn(BaseModel):
     kanban_field: str | None = None
 
 
-def _page(svc: RecordService, api_name: str, result: QueryResult, columns: list[str] | None) -> dict[str, Any]:
+def _page(
+    svc: RecordService, api_name: str, result: QueryResult, columns: list[str] | None
+) -> dict[str, Any]:
     return {
         "items": svc.serialize_many(api_name, result.records, columns=columns),
         "next_cursor": result.next_cursor,
@@ -126,12 +128,26 @@ def _run_query(svc: RecordService, api_name: str, body: QueryIn) -> dict[str, An
         columns = columns or (view.columns or None)
     if body.deleted:
         # Recycle bin for this object: only records the user deleted, unless they have Modify All.
-        result = svc.query(api_name, filters=filters, search=body.search, sort=sort, cursor=body.cursor,
-                           limit=body.limit, deleted=True,
-                           extra=[] if svc.policy.object(api_name).modify_all else [Record.deleted_by_id == svc.user_id])
+        result = svc.query(
+            api_name,
+            filters=filters,
+            search=body.search,
+            sort=sort,
+            cursor=body.cursor,
+            limit=body.limit,
+            deleted=True,
+            extra=[] if svc.policy.object(api_name).modify_all else [Record.deleted_by_id == svc.user_id],
+        )
     else:
-        result = svc.query(api_name, filters=filters, scope=scope, search=body.search, sort=sort,
-                           cursor=body.cursor, limit=body.limit)
+        result = svc.query(
+            api_name,
+            filters=filters,
+            scope=scope,
+            search=body.search,
+            sort=sort,
+            cursor=body.cursor,
+            limit=body.limit,
+        )
     return _page(svc, api_name, result, columns)
 
 
@@ -148,7 +164,11 @@ def list_records(
     scope: Scope = "all",
 ) -> dict[str, Any]:
     body = QueryIn(
-        view_id=view_id, search=q, cursor=cursor, limit=limit, scope=scope,
+        view_id=view_id,
+        search=q,
+        cursor=cursor,
+        limit=limit,
+        scope=scope,
         sort=[SortSpec(field=sort, direction=direction)] if sort else None,
     )
     return _run_query(svc, api_name, body)
@@ -172,11 +192,19 @@ def create_record(api_name: str, body: RecordIn, svc: Records) -> dict[str, Any]
 @router.get("/records/{record_id}")
 def get_record(api_name: str, record_id: uuid.UUID, svc: Records, track: bool = True) -> dict[str, Any]:
     record = svc.get(api_name, record_id, include_deleted=True)
-    if record.is_deleted and not (svc.policy.object(api_name).modify_all or record.deleted_by_id == svc.user_id):
+    if record.is_deleted and not (
+        svc.policy.object(api_name).modify_all or record.deleted_by_id == svc.user_id
+    ):
         raise NotFoundError("Record not found.")
     if track and svc.user_id is not None and not record.is_deleted:
-        stmt = pg_insert(RecentItem).values(user_id=svc.user_id, record_id=record.id, viewed_at=datetime.now(UTC))
-        svc.db.execute(stmt.on_conflict_do_update(index_elements=["user_id", "record_id"], set_={"viewed_at": stmt.excluded.viewed_at}))
+        stmt = pg_insert(RecentItem).values(
+            user_id=svc.user_id, record_id=record.id, viewed_at=datetime.now(UTC)
+        )
+        svc.db.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["user_id", "record_id"], set_={"viewed_at": stmt.excluded.viewed_at}
+            )
+        )
         svc.db.commit()
     out = svc.serialize(record)
     out["actions"] = [
@@ -220,7 +248,11 @@ def change_owner(api_name: str, record_id: uuid.UUID, body: OwnerIn, svc: Record
 
 @router.post("/records/bulk")
 def bulk(api_name: str, body: BulkIn, svc: Records) -> dict[str, Any]:
-    payload: dict[str, Any] = {"values": body.values or {}, "owner_id": body.owner_id, "queue_id": body.queue_id}
+    payload: dict[str, Any] = {
+        "values": body.values or {},
+        "owner_id": body.owner_id,
+        "queue_id": body.queue_id,
+    }
     result = svc.bulk(api_name, body.ids, body.operation, payload)
     svc.db.commit()
     return result
@@ -247,12 +279,18 @@ def activities(api_name: str, record_id: uuid.UUID, svc: Records) -> dict[str, A
     out: dict[str, Any] = {}
     for child in ("task", "event", "note", "file"):
         meta = svc.registry.objects.get(child)
-        if meta is None or "related_to" not in meta.fields or api_name not in meta.fields["related_to"].targets:
+        if (
+            meta is None
+            or "related_to" not in meta.fields
+            or api_name not in meta.fields["related_to"].targets
+        ):
             continue
         if not svc.policy.object(child).read:
             continue
         sort = {"task": "due_date", "event": "start_at"}.get(child, "created_at")
-        result = svc.related(api_name, record_id, child, "related_to", limit=50, sort=[{"field": sort, "direction": "desc"}])
+        result = svc.related(
+            api_name, record_id, child, "related_to", limit=50, sort=[{"field": sort, "direction": "desc"}]
+        )
         out[child] = svc.serialize_many(child, result.records)
     return out
 
@@ -265,7 +303,13 @@ def history(api_name: str, record_id: uuid.UUID, svc: Records) -> list[dict[str,
 @router.get("/records/{record_id}/shares")
 def list_shares(api_name: str, record_id: uuid.UUID, svc: Records) -> list[dict[str, Any]]:
     return [
-        {"id": str(s.id), "principal_type": s.principal_type, "principal_id": str(s.principal_id), "access": s.access, "created_at": s.created_at}
+        {
+            "id": str(s.id),
+            "principal_type": s.principal_type,
+            "principal_id": str(s.principal_id),
+            "access": s.access,
+            "created_at": s.created_at,
+        }
         for s in svc.shares(api_name, record_id)
     ]
 
@@ -274,7 +318,12 @@ def list_shares(api_name: str, record_id: uuid.UUID, svc: Records) -> list[dict[
 def add_share(api_name: str, record_id: uuid.UUID, body: ShareIn, svc: Records) -> dict[str, Any]:
     share = svc.add_share(api_name, record_id, body.principal_type, body.principal_id, body.access)
     svc.db.commit()
-    return {"id": str(share.id), "principal_type": share.principal_type, "principal_id": str(share.principal_id), "access": share.access}
+    return {
+        "id": str(share.id),
+        "principal_type": share.principal_type,
+        "principal_id": str(share.principal_id),
+        "access": share.access,
+    }
 
 
 @router.delete("/records/{record_id}/shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -285,7 +334,9 @@ def remove_share(api_name: str, record_id: uuid.UUID, share_id: uuid.UUID, svc: 
 
 
 @router.post("/records/{record_id}/actions/{action_name}")
-def run_action(api_name: str, record_id: uuid.UUID, action_name: str, svc: Records, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def run_action(
+    api_name: str, record_id: uuid.UUID, action_name: str, svc: Records, payload: dict[str, Any] | None = None
+) -> dict[str, Any]:
     action = hooks.get_action(api_name, action_name)
     if action is None or (action.pack_key and action.pack_key not in svc.enabled_packs):
         raise NotFoundError("Action not found.")
@@ -317,14 +368,20 @@ def lookup(
         recent = (
             select(Record)
             .join(RecentItem, RecentItem.record_id == Record.id)
-            .where(RecentItem.user_id == svc.user_id, Record.object_api_name == api_name, Record.is_deleted.is_(False),
-                   svc.sharing.where_readable(api_name))
+            .where(
+                RecentItem.user_id == svc.user_id,
+                Record.object_api_name == api_name,
+                Record.is_deleted.is_(False),
+                svc.sharing.where_readable(api_name),
+            )
             .order_by(RecentItem.viewed_at.desc())
             .limit(limit)
         )
         records = list(svc.db.scalars(recent))
         if len(records) < limit:
-            more = svc.query(api_name, limit=limit, count=False, sort=[{"field": "updated_at", "direction": "desc"}]).records
+            more = svc.query(
+                api_name, limit=limit, count=False, sort=[{"field": "updated_at", "direction": "desc"}]
+            ).records
             seen = {r.id for r in records}
             records += [r for r in more if r.id not in seen][: limit - len(records)]
     sub = meta.compact_layout[:1]
@@ -333,7 +390,9 @@ def lookup(
         detail = None
         if sub:
             f = sub[0]
-            detail = (item["display"].get(f) or {}).get("name") if f in item["display"] else item["fields"].get(f)
+            detail = (
+                (item["display"].get(f) or {}).get("name") if f in item["display"] else item["fields"].get(f)
+            )
         out.append({"id": item["id"], "name": item["name"], "detail": detail})
     return out
 
@@ -364,21 +423,40 @@ def kanban(
         if not value.get("active", True):
             continue
         cond: dict[str, Any] = {"field": field, "op": "equals", "value": value["value"]}
-        combined = {"logic": "and", "conditions": [filters, cond]} if filters else {"logic": "and", "conditions": [cond]}
-        result = svc.query(api_name, filters=combined, scope=scope, search=q, limit=per_column,
-                           sort=[{"field": "updated_at", "direction": "desc"}])
+        combined = (
+            {"logic": "and", "conditions": [filters, cond]}
+            if filters
+            else {"logic": "and", "conditions": [cond]}
+        )
+        result = svc.query(
+            api_name,
+            filters=combined,
+            scope=scope,
+            search=q,
+            limit=per_column,
+            sort=[{"field": "updated_at", "direction": "desc"}],
+        )
         total_amount = None
         if amount_field and svc.field_access(meta, meta.fields[amount_field]).value != "hidden":
-            stmt = svc.base_query(meta, scope=scope).where(compile_filter(meta, combined, Record, None, user_id=svc.user_id))
+            stmt = svc.base_query(meta, scope=scope).where(
+                compile_filter(meta, combined, Record, None, user_id=svc.user_id)
+            )
             if q:
                 stmt = stmt.where(svc.search_clause(meta, q))
             sub = stmt.subquery()
-            total_amount = svc.db.scalar(select(func.coalesce(func.sum(sub.c.data[amount_field].astext.cast(Numeric)), 0)))
-        columns.append({
-            "value": value["value"], "label": value.get("label", value["value"]), "color": value.get("color"),
-            "total": result.total, "amount": float(total_amount) if total_amount is not None else None,
-            "items": svc.serialize_many(api_name, result.records),
-        })
+            total_amount = svc.db.scalar(
+                select(func.coalesce(func.sum(sub.c.data[amount_field].astext.cast(Numeric)), 0))
+            )
+        columns.append(
+            {
+                "value": value["value"],
+                "label": value.get("label", value["value"]),
+                "color": value.get("color"),
+                "total": result.total,
+                "amount": float(total_amount) if total_amount is not None else None,
+                "items": svc.serialize_many(api_name, result.records),
+            }
+        )
     return {"field": field, "columns": columns}
 
 
@@ -399,18 +477,31 @@ def _check_view(svc: RecordService, api_name: str, body: ListViewIn) -> None:
         svc.check_readable_fields(meta, filter_fields(body.filters))
         compile_filter(meta, body.filters, Record, None, user_id=svc.user_id)
     if body.visibility != "private" and not (
-        svc.policy.has(SystemPermission.MANAGE_PUBLIC_REPORTS) or svc.policy.has(SystemPermission.CUSTOMIZE_APPLICATION)
+        svc.policy.has(SystemPermission.MANAGE_PUBLIC_REPORTS)
+        or svc.policy.has(SystemPermission.CUSTOMIZE_APPLICATION)
     ):
-        raise PermissionDeniedError("Sharing list views needs the Manage Public Reports & Dashboards permission.")
+        raise PermissionDeniedError(
+            "Sharing list views needs the Manage Public Reports & Dashboards permission."
+        )
 
 
 def _view_out(view: ListView, svc: RecordService) -> dict[str, Any]:
     return {
-        "id": str(view.id), "object_api_name": view.object_api_name, "name": view.name, "key": view.key,
-        "visibility": view.visibility, "shared_profile_ids": view.shared_profile_ids, "shared_role_ids": view.shared_role_ids,
-        "scope": view.scope, "columns": view.columns, "filters": view.filters, "sort": view.sort,
-        "kanban_field": view.kanban_field, "is_mine": view.owner_id == svc.user_id,
-        "can_edit": view.owner_id == svc.user_id or (view.owner_id is None and svc.policy.has(SystemPermission.CUSTOMIZE_APPLICATION)),
+        "id": str(view.id),
+        "object_api_name": view.object_api_name,
+        "name": view.name,
+        "key": view.key,
+        "visibility": view.visibility,
+        "shared_profile_ids": view.shared_profile_ids,
+        "shared_role_ids": view.shared_role_ids,
+        "scope": view.scope,
+        "columns": view.columns,
+        "filters": view.filters,
+        "sort": view.sort,
+        "kanban_field": view.kanban_field,
+        "is_mine": view.owner_id == svc.user_id,
+        "can_edit": view.owner_id == svc.user_id
+        or (view.owner_id is None and svc.policy.has(SystemPermission.CUSTOMIZE_APPLICATION)),
     }
 
 
@@ -419,7 +510,10 @@ def list_views(api_name: str, svc: Records) -> dict[str, Any]:
     svc.object(api_name)
     pref = svc.db.get(UserPreference, svc.user_id)
     default = ((pref.data if pref else {}).get("default_views") or {}).get(api_name)
-    return {"default_view_id": default, "views": [_view_out(v, svc) for v in visible_list_views(svc, api_name)]}
+    return {
+        "default_view_id": default,
+        "views": [_view_out(v, svc) for v in visible_list_views(svc, api_name)],
+    }
 
 
 @router.get("/list-views/{view_id}")
@@ -431,23 +525,40 @@ def get_list_view(api_name: str, view_id: uuid.UUID, svc: Records) -> dict[str, 
 def create_list_view(api_name: str, body: ListViewIn, svc: Records) -> dict[str, Any]:
     _check_view(svc, api_name, body)
     view = ListView(
-        object_api_name=api_name, name=body.name.strip(), owner_id=svc.user_id, visibility=body.visibility,
-        shared_profile_ids=[str(i) for i in body.shared_profile_ids], shared_role_ids=[str(i) for i in body.shared_role_ids],
-        scope=body.scope, columns=body.columns, filters=body.filters, sort=[s.model_dump() for s in body.sort],
+        object_api_name=api_name,
+        name=body.name.strip(),
+        owner_id=svc.user_id,
+        visibility=body.visibility,
+        shared_profile_ids=[str(i) for i in body.shared_profile_ids],
+        shared_role_ids=[str(i) for i in body.shared_role_ids],
+        scope=body.scope,
+        columns=body.columns,
+        filters=body.filters,
+        sort=[s.model_dump() for s in body.sort],
         kanban_field=body.kanban_field,
     )
     svc.db.add(view)
     svc.db.flush()
-    audit.record(svc.db, action=AuditAction.CREATE, entity_type="list_view", entity_id=view.id,
-                 summary=f"Created list view {view.name}", actor_id=svc.user_id, meta=svc.request_meta)
+    audit.record(
+        svc.db,
+        action=AuditAction.CREATE,
+        entity_type="list_view",
+        entity_id=view.id,
+        summary=f"Created list view {view.name}",
+        actor_id=svc.user_id,
+        meta=svc.request_meta,
+    )
     svc.db.commit()
     return _view_out(view, svc)
 
 
 def _editable_view(svc: RecordService, api_name: str, view_id: uuid.UUID) -> ListView:
     view = _view(svc, api_name, view_id)
-    if not (view.owner_id == svc.user_id or (view.owner_id is None and svc.policy.has(SystemPermission.CUSTOMIZE_APPLICATION))
-            or svc.policy.is_system_admin):
+    if not (
+        view.owner_id == svc.user_id
+        or (view.owner_id is None and svc.policy.has(SystemPermission.CUSTOMIZE_APPLICATION))
+        or svc.policy.is_system_admin
+    ):
         raise PermissionDeniedError("You can't change this list view.")
     return view
 
@@ -465,8 +576,15 @@ def update_list_view(api_name: str, view_id: uuid.UUID, body: ListViewIn, svc: R
     view.filters = body.filters
     view.sort = [s.model_dump() for s in body.sort]
     view.kanban_field = body.kanban_field
-    audit.record(svc.db, action=AuditAction.UPDATE, entity_type="list_view", entity_id=view.id,
-                 summary=f"Updated list view {view.name}", actor_id=svc.user_id, meta=svc.request_meta)
+    audit.record(
+        svc.db,
+        action=AuditAction.UPDATE,
+        entity_type="list_view",
+        entity_id=view.id,
+        summary=f"Updated list view {view.name}",
+        actor_id=svc.user_id,
+        meta=svc.request_meta,
+    )
     svc.db.commit()
     return _view_out(view, svc)
 
@@ -477,8 +595,15 @@ def delete_list_view(api_name: str, view_id: uuid.UUID, svc: Records) -> Respons
     if view.key is not None:
         raise AppError("Standard list views can't be deleted.", status_code=422)
     svc.db.execute(delete(ListView).where(ListView.id == view.id))
-    audit.record(svc.db, action=AuditAction.DELETE, entity_type="list_view", entity_id=view.id,
-                 summary=f"Deleted list view {view.name}", actor_id=svc.user_id, meta=svc.request_meta)
+    audit.record(
+        svc.db,
+        action=AuditAction.DELETE,
+        entity_type="list_view",
+        entity_id=view.id,
+        summary=f"Deleted list view {view.name}",
+        actor_id=svc.user_id,
+        meta=svc.request_meta,
+    )
     svc.db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -497,4 +622,3 @@ def pin_list_view(api_name: str, view_id: uuid.UUID, svc: Records) -> dict[str, 
     pref.data = data
     svc.db.commit()
     return {"default_view_id": str(view_id)}
-

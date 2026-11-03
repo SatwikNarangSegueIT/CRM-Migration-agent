@@ -12,7 +12,7 @@ import json
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import (
@@ -36,7 +36,6 @@ from app.engine.filters import (
     FilterError,
     coerce_cursor_value,
     compile_filter,
-    field_expr,
     filter_fields,
     sort_expr,
 )
@@ -118,11 +117,7 @@ def format_number(db: Session, key: str, fmt: str, now: datetime | None = None) 
     out = fmt.replace("{YYYY}", f"{now.year:04d}").replace("{YY}", f"{now.year % 100:02d}")
     out = out.replace("{MM}", f"{now.month:02d}")
     m = _NUM_TOKEN.search(out)
-    if m:
-        out = out[: m.start()] + str(n).zfill(len(m.group(1))) + out[m.end() :]
-    else:
-        out = f"{out}{n}"
-    return out
+    return out[: m.start()] + str(n).zfill(len(m.group(1))) + out[m.end() :] if m else f"{out}{n}"
 
 
 def _encode_cursor(value: Any, record_id: uuid.UUID) -> str:
@@ -167,19 +162,27 @@ class RecordService:
     # ------------------------------------------------------------------ construction
 
     @classmethod
-    def for_user(cls, db: Session, user: User, policy: AccessPolicy, meta: RequestMeta | None = None) -> RecordService:
+    def for_user(
+        cls, db: Session, user: User, policy: AccessPolicy, meta: RequestMeta | None = None
+    ) -> RecordService:
         svc = cls(db, policy, meta=meta)
         svc.time_zone = user.time_zone or "Australia/Sydney"
         return svc
 
     @classmethod
-    def as_system(cls, db: Session, user_id: uuid.UUID | None = None, meta: RequestMeta | None = None) -> RecordService:
+    def as_system(
+        cls, db: Session, user_id: uuid.UUID | None = None, meta: RequestMeta | None = None
+    ) -> RecordService:
         return cls(db, system_policy(user_id or uuid.UUID(int=0)), meta=meta, system=True)
 
     def elevated(self) -> RecordService:
         """Same user and transaction, without sharing/FLS checks (for hooks)."""
         svc = RecordService(
-            self.db, system_policy(self.policy.user_id), meta=self.request_meta, system=True, registry=self.registry
+            self.db,
+            system_policy(self.policy.user_id),
+            meta=self.request_meta,
+            system=True,
+            registry=self.registry,
         )
         svc.time_zone = self.time_zone
         svc._packs = self._packs
@@ -287,7 +290,9 @@ class RecordService:
 
     # ------------------------------------------------------------------ reads
 
-    def get(self, api_name: str, record_id: uuid.UUID, *, include_deleted: bool = False, lock: bool = False) -> Record:
+    def get(
+        self, api_name: str, record_id: uuid.UUID, *, include_deleted: bool = False, lock: bool = False
+    ) -> Record:
         meta = self.object(api_name)
         stmt = select(Record).where(
             Record.id == record_id,
@@ -325,7 +330,9 @@ class RecordService:
 
     # ------------------------------------------------------------------ serialisation
 
-    def _lookup_labels(self, metas_records: list[tuple[ObjectMeta, Record]]) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    def _lookup_labels(
+        self, metas_records: list[tuple[ObjectMeta, Record]]
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
         """Names for lookup values (only records the user can read) and for users."""
         ids_by_object: dict[str, set[uuid.UUID]] = {}
         raw_ids: set[uuid.UUID] = set()
@@ -340,10 +347,18 @@ class RecordService:
             for uid in (rec.owner_id, rec.created_by_id, rec.updated_by_id):
                 if uid:
                     user_ids.add(uid)
+            for f in meta.data_fields:
+                if f.type == "user" and rec.data.get(f.api_name):
+                    try:
+                        user_ids.add(uuid.UUID(str(rec.data[f.api_name])))
+                    except ValueError:
+                        continue
         records: dict[str, dict[str, Any]] = {}
         if raw_ids:
             rows = self.db.execute(
-                select(Record.id, Record.object_api_name, Record.name, Record.is_deleted).where(Record.id.in_(raw_ids))
+                select(Record.id, Record.object_api_name, Record.name, Record.is_deleted).where(
+                    Record.id.in_(raw_ids)
+                )
             ).all()
             for rid, obj, _, deleted in rows:
                 if not deleted:
@@ -354,12 +369,12 @@ class RecordService:
                     visible |= self.visible_ids(obj, list(ids))
             for rid, obj, name, _ in rows:
                 if rid in visible:
-                    meta = self.registry.objects.get(obj)
+                    target_meta = self.registry.objects.get(obj)
                     records[str(rid)] = {
                         "id": str(rid),
                         "name": name,
                         "object": obj,
-                        "object_label": meta.label if meta else obj,
+                        "object_label": target_meta.label if target_meta else obj,
                     }
         users: dict[str, str] = {}
         if user_ids:
@@ -368,7 +383,12 @@ class RecordService:
         return records, users
 
     def serialize_many(
-        self, api_name: str, records: list[Record], *, columns: list[str] | None = None, with_access: bool = True
+        self,
+        api_name: str,
+        records: list[Record],
+        *,
+        columns: list[str] | None = None,
+        with_access: bool = True,
     ) -> list[dict[str, Any]]:
         meta = self.registry.get(api_name)
         readable = {f.api_name: f for f in self.readable_fields(meta)}
@@ -377,7 +397,9 @@ class RecordService:
         queue_names: dict[str, str] = {}
         queue_ids = {r.queue_id for r in records if r.queue_id}
         if queue_ids:
-            for qid, qname in self.db.execute(select(Queue.id, Queue.name).where(Queue.id.in_(queue_ids))).all():
+            for qid, qname in self.db.execute(
+                select(Queue.id, Queue.name).where(Queue.id.in_(queue_ids))
+            ).all():
                 queue_names[str(qid)] = qname
         editable = self.editable_ids(api_name, [r.id for r in records]) if with_access else set()
         can_delete_obj = self.system or self.policy.object(api_name).delete
@@ -395,6 +417,15 @@ class RecordService:
                     values[name] = str(stored) if info else None
                     if info:
                         display[name] = info
+                    continue
+                if f.type == "user" and stored is not None:
+                    values[name] = str(stored)
+                    display[name] = {
+                        "id": str(stored),
+                        "name": users.get(str(stored), ""),
+                        "object": "user",
+                        "object_label": "User",
+                    }
                     continue
                 values[name] = present(f, stored)
             owner: dict[str, Any] | None = None
@@ -489,6 +520,11 @@ class RecordService:
         for name in changed:
             f = meta.fields[name]
             value = data.get(name)
+            if f.type == "user" and value is not None:
+                user = self.db.get(User, uuid.UUID(str(value)))
+                if user is None or not user.is_active or user.profile.is_portal:
+                    errors[name] = "Choose an active user."
+                continue
             if not f.is_lookup or value is None:
                 continue
             target_id = uuid.UUID(str(value))
@@ -504,7 +540,8 @@ class RecordService:
                 target_meta = self.registry.get(target.object_api_name)
                 ok = self.db.scalar(
                     select(literal(True)).where(
-                        Record.id == target_id, compile_filter(target_meta, flt, Record, None, user_id=self.user_id)
+                        Record.id == target_id,
+                        compile_filter(target_meta, flt, Record, None, user_id=self.user_id),
                     )
                 )
                 if not ok:
@@ -512,7 +549,9 @@ class RecordService:
         if errors:
             raise RecordValidationError("Some fields are invalid.", fields=errors)
 
-    def _check_unique(self, meta: ObjectMeta, data: dict[str, Any], changed: set[str], exclude: uuid.UUID | None) -> None:
+    def _check_unique(
+        self, meta: ObjectMeta, data: dict[str, Any], changed: set[str], exclude: uuid.UUID | None
+    ) -> None:
         errors: dict[str, str] = {}
         for name in changed:
             f = meta.fields[name]
@@ -555,7 +594,9 @@ class RecordService:
             if f is None or not f.is_lookup:
                 continue
             self.db.execute(
-                delete(RecordLink).where(RecordLink.from_record_id == record.id, RecordLink.field_api_name == name)
+                delete(RecordLink).where(
+                    RecordLink.from_record_id == record.id, RecordLink.field_api_name == name
+                )
             )
             value = record.data.get(name)
             if value is not None:
@@ -591,19 +632,27 @@ class RecordService:
         for fn in hooks.hooks_for(object_api_name, event, self.enabled_packs):
             fn(change)
 
-    def _resolve_owner(self, meta: ObjectMeta, owner_id: Any, queue_id: Any, *, creating: bool) -> tuple[uuid.UUID | None, uuid.UUID | None]:
+    def _resolve_owner(
+        self, meta: ObjectMeta, owner_id: Any, queue_id: Any, *, creating: bool
+    ) -> tuple[uuid.UUID | None, uuid.UUID | None]:
         if queue_id:
             if not meta.allow_queues:
-                raise RecordValidationError("Queues can't own these records.", fields={"owner_id": "Queues not allowed"})
+                raise RecordValidationError(
+                    "Queues can't own these records.", fields={"owner_id": "Queues not allowed"}
+                )
             q = self.db.get(Queue, uuid.UUID(str(queue_id)))
             if q is None or meta.api_name not in (q.object_api_names or []):
-                raise RecordValidationError("Choose a valid queue.", fields={"owner_id": "Choose a valid queue"})
+                raise RecordValidationError(
+                    "Choose a valid queue.", fields={"owner_id": "Choose a valid queue"}
+                )
             return None, q.id
         if owner_id:
             uid = uuid.UUID(str(owner_id))
             user = self.db.get(User, uid)
             if user is None or not user.is_active or user.profile.is_portal:
-                raise RecordValidationError("Choose an active user.", fields={"owner_id": "Choose an active user"})
+                raise RecordValidationError(
+                    "Choose an active user.", fields={"owner_id": "Choose an active user"}
+                )
             return uid, None
         return (self.user_id if creating else None), None
 
@@ -628,15 +677,17 @@ class RecordService:
         name_field = meta.fields["name"]
         if meta.name_field_type == "text" and name_value is not None:
             if self.field_access(meta, name_field) is not FieldAccess.EDIT:
-                raise RecordValidationError("Some fields are invalid.", fields={"name": "This field is read-only."})
+                raise RecordValidationError(
+                    "Some fields are invalid.", fields={"name": "This field is read-only."}
+                )
             try:
                 name_value = normalize(name_field, name_value)
             except FieldValueError as exc:
                 raise RecordValidationError("Some fields are invalid.", fields={"name": str(exc)}) from exc
         owner, queue = self._resolve_owner(meta, owner_id, queue_id, creating=True)
-        if (owner and owner != self.user_id or queue) and not self.system:
-            if not (self.policy.has(SystemPermission.TRANSFER_RECORDS) or queue):
-                raise PermissionDeniedError("You can't create records owned by someone else.")
+        other_owner = owner is not None and owner != self.user_id and queue is None
+        if other_owner and not self.system and not self.policy.has(SystemPermission.TRANSFER_RECORDS):
+            raise PermissionDeniedError("You can't create records owned by someone else.")
         change = Change(
             svc=self,
             object_api_name=api_name,
@@ -657,7 +708,9 @@ class RecordService:
             record_number = format_number(self.db, meta.api_name, meta.name_format or "{00000}")
             name = record_number
         if not name:
-            raise RecordValidationError("Some fields are invalid.", fields={"name": "This field is required."})
+            raise RecordValidationError(
+                "Some fields are invalid.", fields={"name": "This field is required."}
+            )
         now = utcnow()
         record = Record(
             id=uuid.uuid4(),
@@ -675,7 +728,9 @@ class RecordService:
         )
         self.db.add(record)
         self.db.flush()
-        self._sync_links(meta, record, {f.api_name for f in meta.data_fields if f.is_lookup and data.get(f.api_name)})
+        self._sync_links(
+            meta, record, {f.api_name for f in meta.data_fields if f.is_lookup and data.get(f.api_name)}
+        )
         self._refresh_search(meta, record)
         self._run(api_name, Event.AFTER_CREATE, Change(self, api_name, record, record.data, changed=changed))
         audit.record(
@@ -696,7 +751,9 @@ class RecordService:
             return
         parent = self.db.get(Record, uuid.UUID(str(data[master.api_name])))
         if parent is None or not self.can_edit(parent):
-            raise PermissionDeniedError(f"You need edit access to the {master.label} to change its {meta.plural_label}.")
+            raise PermissionDeniedError(
+                f"You need edit access to the {master.label} to change its {meta.plural_label}."
+            )
 
     def update(
         self,
@@ -710,7 +767,9 @@ class RecordService:
         meta = self.object(api_name, need="edit")
         record = record or self.get(api_name, record_id, lock=True)
         if version is not None and version != record.version:
-            raise ConflictError("This record was changed by someone else. Reload it and try again.", code="stale_version")
+            raise ConflictError(
+                "This record was changed by someone else. Reload it and try again.", code="stale_version"
+            )
         if not self.can_edit(record):
             raise PermissionDeniedError("You don't have permission to edit this record.")
         values = dict(values)
@@ -718,7 +777,9 @@ class RecordService:
         owner_value = values.pop("owner_id", None)
         values.pop("queue_id", None)
         if owner_value is not None:
-            raise RecordValidationError("Use Change Owner to transfer records.", fields={"owner_id": "Use Change Owner"})
+            raise RecordValidationError(
+                "Use Change Owner to transfer records.", fields={"owner_id": "Use Change Owner"}
+            )
         old = dict(record.data)
         data, changed = self._normalize_values(meta, values, existing=old)
         system: dict[str, Any] = {}
@@ -730,9 +791,13 @@ class RecordService:
                 raise RecordValidationError("Some fields are invalid.", fields={"name": str(exc)}) from exc
             if normalized_name != record.name:
                 if self.field_access(meta, name_field) is not FieldAccess.EDIT:
-                    raise RecordValidationError("Some fields are invalid.", fields={"name": "This field is read-only."})
+                    raise RecordValidationError(
+                        "Some fields are invalid.", fields={"name": "This field is read-only."}
+                    )
                 if not normalized_name:
-                    raise RecordValidationError("Some fields are invalid.", fields={"name": "This field is required."})
+                    raise RecordValidationError(
+                        "Some fields are invalid.", fields={"name": "This field is required."}
+                    )
                 system["name"] = normalized_name
         merged = {**old, **data}
         change = Change(
@@ -753,7 +818,7 @@ class RecordService:
         self._check_unique(meta, merged, changed, record.id)
         self._check_master_edit(meta, merged)
         self._write_history(meta, record, old, merged, changed, change.system.get("name"))
-        if "name" in change.system and change.system["name"]:
+        if change.system.get("name"):
             record.name = str(change.system["name"])[:255]
         record.data = merged
         record.version += 1
@@ -762,7 +827,9 @@ class RecordService:
         self.db.flush()
         self._sync_links(meta, record, changed)
         self._refresh_search(meta, record)
-        self._run(api_name, Event.AFTER_UPDATE, Change(self, api_name, record, merged, old=old, changed=changed))
+        self._run(
+            api_name, Event.AFTER_UPDATE, Change(self, api_name, record, merged, old=old, changed=changed)
+        )
         audit_changes = {
             k: {"from": old.get(k), "to": merged.get(k)}
             for k in sorted(changed)
@@ -820,20 +887,28 @@ class RecordService:
                 )
             )
 
-    def change_owner(self, api_name: str, record_id: uuid.UUID, owner_id: Any = None, queue_id: Any = None) -> Record:
+    def change_owner(
+        self, api_name: str, record_id: uuid.UUID, owner_id: Any = None, queue_id: Any = None
+    ) -> Record:
         meta = self.object(api_name, need="edit")
         record = self.get(api_name, record_id, lock=True)
         if not self.can_edit(record):
             raise PermissionDeniedError("You don't have permission to edit this record.")
         owner, queue = self._resolve_owner(meta, owner_id, queue_id, creating=False)
-        taking_from_queue = record.queue_id is not None and record.queue_id in self.sharing.queue_ids and owner == self.user_id
+        taking_from_queue = (
+            record.queue_id is not None
+            and record.queue_id in self.sharing.queue_ids
+            and owner == self.user_id
+        )
         if (
             not self.system
             and record.owner_id != self.user_id
             and not taking_from_queue
             and not self.policy.has(SystemPermission.TRANSFER_RECORDS)
         ):
-            raise PermissionDeniedError("Transferring records you don't own needs the Transfer Records permission.")
+            raise PermissionDeniedError(
+                "Transferring records you don't own needs the Transfer Records permission."
+            )
         if owner is None and queue is None:
             raise RecordValidationError("Choose a new owner.", fields={"owner_id": "Choose a new owner"})
         if (record.owner_id, record.queue_id) == (owner, queue):
@@ -844,7 +919,9 @@ class RecordService:
                 FieldHistory(
                     record_id=record.id,
                     field_api_name="owner_id",
-                    old_value=str(record.owner_id or record.queue_id) if (record.owner_id or record.queue_id) else None,
+                    old_value=str(record.owner_id or record.queue_id)
+                    if (record.owner_id or record.queue_id)
+                    else None,
                     new_value=str(owner or queue),
                     changed_by_id=self.user_id,
                 )
@@ -853,8 +930,12 @@ class RecordService:
         record.version += 1
         record.updated_at = utcnow()
         record.updated_by_id = self.user_id
-        # Manual shares are removed when ownership changes (as in other CRMs).
-        self.db.execute(delete(RecordShare).where(RecordShare.record_id == record.id))
+        # Manual shares are removed when ownership changes (as in other CRMs); system shares stay.
+        self.db.execute(
+            delete(RecordShare).where(
+                RecordShare.record_id == record.id, RecordShare.created_by_id.is_not(None)
+            )
+        )
         audit.record(
             self.db,
             action=AuditAction.UPDATE,
@@ -873,11 +954,19 @@ class RecordService:
         record = self.get(api_name, record_id, lock=True)
         if not self.can_delete(record):
             raise PermissionDeniedError("You don't have permission to delete this record.")
-        self._run(api_name, Event.BEFORE_DELETE, Change(self, api_name, record, dict(record.data), old=dict(record.data)))
+        self._run(
+            api_name,
+            Event.BEFORE_DELETE,
+            Change(self, api_name, record, dict(record.data), old=dict(record.data)),
+        )
         self._check_restrict(record)
         now = utcnow()
         self._soft_delete_tree(record, now)
-        self._run(api_name, Event.AFTER_DELETE, Change(self, api_name, record, dict(record.data), old=dict(record.data)))
+        self._run(
+            api_name,
+            Event.AFTER_DELETE,
+            Change(self, api_name, record, dict(record.data), old=dict(record.data)),
+        )
         audit.record(
             self.db,
             action=AuditAction.DELETE,
@@ -931,7 +1020,9 @@ class RecordService:
         if not record.is_deleted:
             return record
         if not self.system and not (
-            record.deleted_by_id == self.user_id or self.policy.object(api_name).modify_all or self.can_delete(record)
+            record.deleted_by_id == self.user_id
+            or self.policy.object(api_name).modify_all
+            or self.can_delete(record)
         ):
             raise PermissionDeniedError("You can't restore this record.")
         master = meta.master_field
@@ -980,7 +1071,9 @@ class RecordService:
         for child in children:
             self.hard_delete(child)
         refs = self.db.execute(
-            select(RecordLink.from_record_id, RecordLink.field_api_name).where(RecordLink.to_record_id == record.id)
+            select(RecordLink.from_record_id, RecordLink.field_api_name).where(
+                RecordLink.to_record_id == record.id
+            )
         ).all()
         for from_id, field_name in refs:
             ref_rec = self.db.get(Record, from_id)
@@ -1018,12 +1111,16 @@ class RecordService:
             team: list[Any] = [Record.owner_id == uid]
             if self.policy.role_path:
                 subs = (
-                    select(User.id).join(Role, Role.id == User.role_id).where(Role.path.like(self.policy.role_path + "%"))
+                    select(User.id)
+                    .join(Role, Role.id == User.role_id)
+                    .where(Role.path.like(self.policy.role_path + "%"))
                 )
                 team.append(Record.owner_id.in_(subs))
             stmt = stmt.where(or_(*team))
         elif scope == "queue":
-            stmt = stmt.where(Record.queue_id.in_(select(QueueMember.queue_id).where(QueueMember.user_id == uid)))
+            stmt = stmt.where(
+                Record.queue_id.in_(select(QueueMember.queue_id).where(QueueMember.user_id == uid))
+            )
         return stmt
 
     def search_clause(self, meta: ObjectMeta, term: str) -> ColumnElement[bool]:
@@ -1058,7 +1155,9 @@ class RecordService:
         self.check_readable_fields(meta, filter_fields(filters))
         stmt = self.base_query(meta, scope=scope, deleted=deleted)
         if filters:
-            stmt = stmt.where(compile_filter(meta, filters, Record, None, user_id=self.user_id, tz=self.time_zone))
+            stmt = stmt.where(
+                compile_filter(meta, filters, Record, None, user_id=self.user_id, tz=self.time_zone)
+            )
         if search:
             stmt = stmt.where(self.search_clause(meta, search))
         for clause in extra or []:
@@ -1067,7 +1166,14 @@ class RecordService:
         total = 0
         capped = False
         if count:
-            n = int(self.db.scalar(select(func.count()).select_from(stmt.with_only_columns(Record.id).limit(COUNT_CAP + 1).subquery())) or 0)
+            n = int(
+                self.db.scalar(
+                    select(func.count()).select_from(
+                        stmt.with_only_columns(Record.id).limit(COUNT_CAP + 1).subquery()
+                    )
+                )
+                or 0
+            )
             capped = n > COUNT_CAP
             total = min(n, COUNT_CAP)
 
@@ -1100,7 +1206,7 @@ class RecordService:
             rows = rows[:limit]
             last_rec = rows[-1]
             value = self.db.scalar(select(expr).where(Record.id == last_rec.id))
-            if hasattr(value, "isoformat"):
+            if isinstance(value, datetime | date):
                 value = value.isoformat()
             elif value is not None and not isinstance(value, str | int | float | bool):
                 value = str(value)
@@ -1125,13 +1231,10 @@ class RecordService:
             raise NotFoundError("Related list not found.")
         if self.field_access(child, f) is FieldAccess.HIDDEN:
             raise NotFoundError("Related list not found.")
-        link_exists = (
-            select(RecordLink.from_record_id)
-            .where(
-                RecordLink.to_record_id == record_id,
-                RecordLink.field_api_name == field_name,
-                RecordLink.from_object == child_object,
-            )
+        link_exists = select(RecordLink.from_record_id).where(
+            RecordLink.to_record_id == record_id,
+            RecordLink.field_api_name == field_name,
+            RecordLink.from_object == child_object,
         )
         return self.query(
             child_object,
@@ -1171,7 +1274,9 @@ class RecordService:
 
     # ------------------------------------------------------------------ bulk
 
-    def bulk(self, api_name: str, ids: list[uuid.UUID], operation: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def bulk(
+        self, api_name: str, ids: list[uuid.UUID], operation: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         """Mass update / change owner / delete. Each record succeeds or fails on its own."""
         if len(ids) > MAX_PAGE:
             raise AppError(f"Select at most {MAX_PAGE} records.", status_code=422)
@@ -1190,7 +1295,11 @@ class RecordService:
                 results.append({"id": str(rid), "ok": True})
             except AppError as exc:
                 results.append({"id": str(rid), "ok": False, "error": exc.message, "fields": exc.fields})
-        return {"succeeded": sum(1 for r in results if r["ok"]), "failed": sum(1 for r in results if not r["ok"]), "results": results}
+        return {
+            "succeeded": sum(1 for r in results if r["ok"]),
+            "failed": sum(1 for r in results if not r["ok"]),
+            "results": results,
+        }
 
     # ------------------------------------------------------------------ sharing (manual)
 
@@ -1198,7 +1307,9 @@ class RecordService:
         self.get(api_name, record_id)
         return list(self.db.scalars(select(RecordShare).where(RecordShare.record_id == record_id)))
 
-    def add_share(self, api_name: str, record_id: uuid.UUID, principal_type: str, principal_id: uuid.UUID, access: str) -> RecordShare:
+    def add_share(
+        self, api_name: str, record_id: uuid.UUID, principal_type: str, principal_id: uuid.UUID, access: str
+    ) -> RecordShare:
         record = self.get(api_name, record_id)
         if not self.system and not (
             record.owner_id == self.user_id
@@ -1206,7 +1317,12 @@ class RecordService:
             or self.policy.has(SystemPermission.MANAGE_PROFILES_SHARING)
         ):
             raise PermissionDeniedError("Only the owner or an administrator can share this record.")
-        if access not in ("read", "read_write") or principal_type not in ("user", "group", "role", "role_and_subordinates"):
+        if access not in ("read", "read_write") or principal_type not in (
+            "user",
+            "group",
+            "role",
+            "role_and_subordinates",
+        ):
             raise RecordValidationError("Invalid share.", fields={"access": "Invalid"})
         share = RecordShare(
             record_id=record.id,
@@ -1223,7 +1339,10 @@ class RecordService:
             entity_id=record.id,
             summary=f"Shared {record.name} with {principal_type} ({access})",
             actor_id=self.user_id,
-            changes={"principal_id": {"from": None, "to": str(principal_id)}, "access": {"from": None, "to": access}},
+            changes={
+                "principal_id": {"from": None, "to": str(principal_id)},
+                "access": {"from": None, "to": access},
+            },
             meta=self.request_meta,
         )
         self.db.flush()

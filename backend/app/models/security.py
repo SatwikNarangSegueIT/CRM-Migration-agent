@@ -50,7 +50,8 @@ class ProfileSystemPermission(Base):
     profile_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True
     )
-    permission: Mapped[str] = mapped_column(String(40), primary_key=True)
+    # System permission value, or "pack:<pack key>:<name>" for an industry pack's custom permission.
+    permission: Mapped[str] = mapped_column(String(80), primary_key=True)
 
     profile: Mapped[Profile] = relationship(back_populates="system_permissions")
 

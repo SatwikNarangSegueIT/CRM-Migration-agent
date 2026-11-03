@@ -63,9 +63,7 @@ class Dashboard(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class ReportSchedule(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "report_schedules"
-    __table_args__ = (
-        CheckConstraint("frequency IN ('daily', 'weekly', 'monthly')", name="frequency_valid"),
-    )
+    __table_args__ = (CheckConstraint("frequency IN ('daily', 'weekly', 'monthly')", name="frequency_valid"),)
 
     report_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("reports.id", ondelete="CASCADE"), index=True)
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
@@ -80,9 +78,7 @@ class EmailDelivery(UUIDPrimaryKeyMixin, Base):
 
     __tablename__ = "email_deliveries"
     __table_args__ = (
-        CheckConstraint(
-            "status IN ('queued', 'sent', 'failed', 'bounced', 'skipped')", name="status_valid"
-        ),
+        CheckConstraint("status IN ('queued', 'sent', 'failed', 'bounced', 'skipped')", name="status_valid"),
         Index("ix_email_deliveries_send", "send_record_id", "status"),
     )
 

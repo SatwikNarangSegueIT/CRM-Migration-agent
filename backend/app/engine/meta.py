@@ -15,7 +15,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.errors import NotFoundError
-from app.models import FieldDefinition, MetadataRevision, ObjectDefinition
+from app.models import MetadataRevision, ObjectDefinition
 from app.security.catalog import FieldAccess
 
 # System fields exist on every object as real columns of `records`.
@@ -281,9 +281,18 @@ def load_registry(db: Session) -> Registry:
 
 def bump_revision(db: Session) -> None:
     """Call in the same transaction as any metadata change."""
-    result = db.execute(update(MetadataRevision).where(MetadataRevision.id == 1).values(revision=MetadataRevision.revision + 1))
+    result = db.execute(
+        update(MetadataRevision)
+        .where(MetadataRevision.id == 1)
+        .values(revision=MetadataRevision.revision + 1)
+    )
     if getattr(result, "rowcount", 0) == 0:
-        db.execute(text("INSERT INTO metadata_revision (id, revision) VALUES (1, 2) ON CONFLICT (id) DO UPDATE SET revision = metadata_revision.revision + 1"))
+        db.execute(
+            text(
+                "INSERT INTO metadata_revision (id, revision) VALUES (1, 2) "
+                "ON CONFLICT (id) DO UPDATE SET revision = metadata_revision.revision + 1"
+            )
+        )
     db.flush()
 
 

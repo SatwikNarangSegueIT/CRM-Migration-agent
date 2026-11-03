@@ -21,7 +21,11 @@ CLOSED = "Closed"
 
 def _sla(svc: RecordService, priority: str | None) -> dict[str, float]:
     table = get_setting(svc.db, "case_sla") or {}
-    return table.get(priority or "Medium") or table.get("Medium") or {"first_response_hours": 8, "resolution_hours": 72}
+    return (
+        table.get(priority or "Medium")
+        or table.get("Medium")
+        or {"first_response_hours": 8, "resolution_hours": 72}
+    )
 
 
 def _due(start: datetime, hours: float) -> str:
@@ -42,6 +46,9 @@ def case_defaults(change: Change) -> None:
     data["first_response_due"] = _due(now, sla["first_response_hours"])
     data["resolution_due"] = _due(now, sla["resolution_hours"])
     if svc.policy.is_portal:
+        # Customers never own records: portal cases go to the support queue.
+        change.system["owner_id"] = None
+        change.system["queue_id"] = support_queue_id(svc.db)
         data["origin"] = "Portal"
         user_contact = svc.sharing.contact_id
         if user_contact is not None:
@@ -65,12 +72,18 @@ def case_rules(change: Change) -> None:
             data["first_responded_at"] = stamp_now()
         if data.get("status") == CLOSED:
             if not data.get("resolution"):
-                raise BusinessRuleError("Enter a resolution to close the case.", fields={"resolution": "Required to close"})
+                raise BusinessRuleError(
+                    "Enter a resolution to close the case.", fields={"resolution": "Required to close"}
+                )
             data["closed_at"] = stamp_now()
         elif old.get("status") == CLOSED:
             data["closed_at"] = None
             data["is_escalated"] = False
-        if data.get("status") != "Escalated" and old.get("status") == "Escalated" and data.get("status") != CLOSED:
+        if (
+            data.get("status") != "Escalated"
+            and old.get("status") == "Escalated"
+            and data.get("status") != CLOSED
+        ):
             data["is_escalated"] = bool(data.get("is_escalated"))
 
 
@@ -78,7 +91,9 @@ def case_rules(change: Change) -> None:
 def close_case(svc: RecordService, case: Record, payload: dict[str, Any]) -> dict[str, Any]:
     resolution = str(payload.get("resolution") or case.data.get("resolution") or "").strip()
     if not resolution:
-        raise BusinessRuleError("Enter a resolution to close the case.", fields={"resolution": "Required to close"})
+        raise BusinessRuleError(
+            "Enter a resolution to close the case.", fields={"resolution": "Required to close"}
+        )
     svc.update("case", case.id, {"status": CLOSED, "resolution": resolution}, record=case)
     return svc.serialize(case)
 
@@ -100,7 +115,24 @@ def accept_case(svc: RecordService, case: Record, payload: dict[str, Any]) -> di
     return svc.serialize(case)
 
 
-def notify(db: Session, user_id: uuid.UUID, title: str, body: str | None, link: str | None, record_id: uuid.UUID | None) -> None:
+def support_queue_id(db: Session) -> uuid.UUID | None:
+    configured = (get_setting(db, "service") or {}).get("web_queue_id")
+    if configured:
+        return uuid.UUID(str(configured))
+    from app.engine.standard_v1 import SUPPORT_QUEUE_ID
+    from app.models import Queue
+
+    return SUPPORT_QUEUE_ID if db.get(Queue, SUPPORT_QUEUE_ID) is not None else None
+
+
+def notify(
+    db: Session,
+    user_id: uuid.UUID,
+    title: str,
+    body: str | None,
+    link: str | None,
+    record_id: uuid.UUID | None,
+) -> None:
     db.add(Notification(user_id=user_id, title=title[:200], body=body, link=link, record_id=record_id))
 
 
@@ -109,13 +141,15 @@ def escalate_overdue_cases(db: Session, now: datetime | None = None) -> int:
     now = now or datetime.now(UTC)
     svc = RecordService.as_system(db)
     rows = db.scalars(
-        select(Record).where(
+        select(Record)
+        .where(
             Record.object_api_name == "case",
             Record.is_deleted.is_(False),
             Record.data["status"].astext != CLOSED,
             Record.data["is_escalated"].astext.is_distinct_from("true"),
             Record.data["resolution_due"].astext.is_not(None),
-        ).with_for_update(skip_locked=True)
+        )
+        .with_for_update(skip_locked=True)
     ).all()
     count = 0
     for case in rows:
@@ -127,9 +161,18 @@ def escalate_overdue_cases(db: Session, now: datetime | None = None) -> int:
         if case.owner_id:
             recipients.append(case.owner_id)
         elif case.queue_id:
-            recipients += list(db.scalars(select(QueueMember.user_id).where(QueueMember.queue_id == case.queue_id)))
+            recipients += list(
+                db.scalars(select(QueueMember.user_id).where(QueueMember.queue_id == case.queue_id))
+            )
         for uid in recipients:
-            notify(db, uid, f"Case {case.name} is overdue", case.data.get("subject"), f"/o/case/{case.id}", case.id)
+            notify(
+                db,
+                uid,
+                f"Case {case.name} is overdue",
+                case.data.get("subject"),
+                f"/o/case/{case.id}",
+                case.id,
+            )
         count += 1
     db.commit()
     return count
@@ -145,15 +188,24 @@ def web_to_case(db: Session, payload: dict[str, Any]) -> Record:
         "origin": "Web",
         "supplied_name": payload.get("name"),
         "supplied_email": email or None,
-        "type": payload.get("type") if payload.get("type") in ("Question", "Problem", "Feature Request", "Billing", "Other") else None,
+        "type": payload.get("type")
+        if payload.get("type") in ("Question", "Problem", "Feature Request", "Billing", "Other")
+        else None,
     }
     if email:
-        contact = db.scalar(select(Record).where(
-            Record.object_api_name == "contact", Record.is_deleted.is_(False), Record.data["email"].astext == email
-        ).limit(1))
+        contact = db.scalar(
+            select(Record)
+            .where(
+                Record.object_api_name == "contact",
+                Record.is_deleted.is_(False),
+                Record.data["email"].astext == email,
+            )
+            .limit(1)
+        )
         if contact is not None:
             values["contact"] = str(contact.id)
-    queue_id = (get_setting(db, "service") or {}).get("web_queue_id")
-    record = svc.create("case", {k: v for k, v in values.items() if v is not None}, queue_id=queue_id)
+    record = svc.create(
+        "case", {k: v for k, v in values.items() if v is not None}, queue_id=support_queue_id(db)
+    )
     db.commit()
     return record

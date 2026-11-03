@@ -20,7 +20,15 @@ from app.core.errors import AppError, ConflictError, NotFoundError
 from app.engine import installer
 from app.engine.indexes import MAX_INDEXED_FIELDS, drop_statements, index_statements
 from app.engine.meta import SYSTEM_FIELDS, bump_revision, load_registry
-from app.models import App, FieldDefinition, ListView, ObjectDefinition, ProfileObjectPermission, Record, SharingDefault
+from app.models import (
+    App,
+    FieldDefinition,
+    ListView,
+    ObjectDefinition,
+    ProfileObjectPermission,
+    Record,
+    SharingDefault,
+)
 from app.models.metadata import FIELD_TYPES
 from app.services import audit
 from app.services.audit import AuditAction, RequestMeta
@@ -29,7 +37,15 @@ MAX_CUSTOM_OBJECTS = 200
 MAX_FIELDS = 400
 DELETED_FIELD_DAYS = 15
 API_RE = re.compile(r"^[a-z][a-z0-9_]{0,76}$")
-RESERVED = set(SYSTEM_FIELDS) | {"queue_id", "data", "version", "is_deleted", "deleted_at", "search_vector", "object"}
+RESERVED = set(SYSTEM_FIELDS) | {
+    "queue_id",
+    "data",
+    "version",
+    "is_deleted",
+    "deleted_at",
+    "search_vector",
+    "object",
+}
 COMPATIBLE_TYPES: dict[str, set[str]] = {
     "text": {"textarea", "long_text", "email", "phone", "url", "picklist"},
     "textarea": {"long_text", "text"},
@@ -73,10 +89,26 @@ def _api(name: str, *, custom: bool) -> str:
     return f"{api}__c" if custom else api
 
 
-def _audit(db: Session, actor_id: uuid.UUID | None, action: AuditAction, entity: str, entity_id: Any, summary: str,
-           changes: dict[str, Any] | None, meta: RequestMeta) -> None:
-    audit.record(db, action=action, entity_type=entity, entity_id=str(entity_id), summary=summary,
-                 actor_id=actor_id, changes=changes, meta=meta)
+def _audit(
+    db: Session,
+    actor_id: uuid.UUID | None,
+    action: AuditAction,
+    entity: str,
+    entity_id: Any,
+    summary: str,
+    changes: dict[str, Any] | None,
+    meta: RequestMeta,
+) -> None:
+    audit.record(
+        db,
+        action=action,
+        entity_type=entity,
+        entity_id=str(entity_id),
+        summary=summary,
+        actor_id=actor_id,
+        changes=changes,
+        meta=meta,
+    )
 
 
 def get_object(db: Session, api_name: str) -> ObjectDefinition:
@@ -89,23 +121,36 @@ def get_object(db: Session, api_name: str) -> ObjectDefinition:
 # ---------------------------------------------------------------- objects
 
 
-def create_object(db: Session, actor_id: uuid.UUID | None, data: dict[str, Any], meta: RequestMeta, *, pack_key: str | None = None) -> ObjectDefinition:
+def create_object(
+    db: Session,
+    actor_id: uuid.UUID | None,
+    data: dict[str, Any],
+    meta: RequestMeta,
+    *,
+    pack_key: str | None = None,
+) -> ObjectDefinition:
     label = str(data.get("label") or "").strip()
     plural = str(data.get("plural_label") or "").strip() or (label + "s")
     if not label:
         raise MetadataError("Enter a label.", fields={"label": "Required"})
     api = _api(str(data.get("api_name") or label), custom=True)
-    count = int(db.scalar(select(func.count()).select_from(ObjectDefinition).where(ObjectDefinition.is_custom)) or 0)
+    count = int(
+        db.scalar(select(func.count()).select_from(ObjectDefinition).where(ObjectDefinition.is_custom)) or 0
+    )
     if count >= MAX_CUSTOM_OBJECTS:
         raise MetadataError(f"An organisation can have at most {MAX_CUSTOM_OBJECTS} custom objects.")
     if db.scalar(select(ObjectDefinition.id).where(ObjectDefinition.api_name == api)) is not None:
-        raise ConflictError("An object with this API name already exists.", fields={"api_name": "Already in use"})
+        raise ConflictError(
+            "An object with this API name already exists.", fields={"api_name": "Already in use"}
+        )
     name_type = data.get("name_field_type", "text")
     if name_type not in ("text", "auto_number"):
         raise MetadataError("Invalid name field type.", fields={"name_field_type": "Invalid"})
     name_format = data.get("name_format") if name_type == "auto_number" else None
     if name_type == "auto_number" and not (name_format and re.search(r"\{0+\}", str(name_format))):
-        raise MetadataError("Auto-number format needs a number such as {0000}.", fields={"name_format": "e.g. ITEM-{0000}"})
+        raise MetadataError(
+            "Auto-number format needs a number such as {0000}.", fields={"name_format": "e.g. ITEM-{0000}"}
+        )
     bundle = {
         "api_name": api,
         "label": label,
@@ -117,8 +162,14 @@ def create_object(db: Session, actor_id: uuid.UUID | None, data: dict[str, Any],
         "name_label": data.get("name_label") or f"{label} Name",
         "name_format": name_format,
         **{f: bool(data.get(f, installer._OBJECT_DEFAULTS[f])) for f in installer.OBJECT_FLAGS},
-        "page_layout": [{"label": f"{label} Information", "columns": 2, "fields": ["name", "owner_id"]},
-                        {"label": "System Information", "columns": 2, "fields": ["created_by_id", "created_at", "updated_by_id", "updated_at"]}],
+        "page_layout": [
+            {"label": f"{label} Information", "columns": 2, "fields": ["name", "owner_id"]},
+            {
+                "label": "System Information",
+                "columns": 2,
+                "fields": ["created_by_id", "created_at", "updated_by_id", "updated_at"],
+            },
+        ],
         "compact_layout": ["owner_id"],
         "list_columns": ["name", "owner_id", "created_at"],
         "sharing": data.get("sharing", "private"),
@@ -127,19 +178,48 @@ def create_object(db: Session, actor_id: uuid.UUID | None, data: dict[str, Any],
         raise MetadataError("Invalid sharing default.", fields={"sharing": "Invalid"})
     conn = db.connection()
     installer.install_object(conn, bundle, pack_key)
-    installer.install_list_view(conn, {"key": f"{api}_all", "object": api, "name": f"All {plural}", "columns": bundle["list_columns"]})
-    installer.install_list_view(conn, {"key": f"{api}_mine", "object": api, "name": f"My {plural}", "scope": "mine", "columns": bundle["list_columns"]})
+    installer.install_list_view(
+        conn, {"key": f"{api}_all", "object": api, "name": f"All {plural}", "columns": bundle["list_columns"]}
+    )
+    installer.install_list_view(
+        conn,
+        {
+            "key": f"{api}_mine",
+            "object": api,
+            "name": f"My {plural}",
+            "scope": "mine",
+            "columns": bundle["list_columns"],
+        },
+    )
     bump_revision(db)
     obj = get_object(db, api)
-    _audit(db, actor_id, AuditAction.CREATE, "object_definition", obj.id, f"Created custom object {label}",
-           {"api_name": {"from": None, "to": api}}, meta)
+    _audit(
+        db,
+        actor_id,
+        AuditAction.CREATE,
+        "object_definition",
+        obj.id,
+        f"Created custom object {label}",
+        {"api_name": {"from": None, "to": api}},
+        meta,
+    )
     return obj
 
 
-OBJECT_EDITABLE = ("label", "plural_label", "description", "icon", "color", "name_label", *installer.OBJECT_FLAGS)
+OBJECT_EDITABLE = (
+    "label",
+    "plural_label",
+    "description",
+    "icon",
+    "color",
+    "name_label",
+    *installer.OBJECT_FLAGS,
+)
 
 
-def update_object(db: Session, actor_id: uuid.UUID | None, api_name: str, data: dict[str, Any], meta: RequestMeta) -> ObjectDefinition:
+def update_object(
+    db: Session, actor_id: uuid.UUID | None, api_name: str, data: dict[str, Any], meta: RequestMeta
+) -> ObjectDefinition:
     obj = get_object(db, api_name)
     before = {k: getattr(obj, k) for k in OBJECT_EDITABLE}
     for key in OBJECT_EDITABLE:
@@ -154,8 +234,16 @@ def update_object(db: Session, actor_id: uuid.UUID | None, api_name: str, data: 
             setattr(obj, key, data[key])
     bump_revision(db)
     after = {k: getattr(obj, k) for k in OBJECT_EDITABLE}
-    _audit(db, actor_id, AuditAction.UPDATE, "object_definition", obj.id, f"Updated object {obj.label}",
-           audit.diff(before, after) or None, meta)
+    _audit(
+        db,
+        actor_id,
+        AuditAction.UPDATE,
+        "object_definition",
+        obj.id,
+        f"Updated object {obj.label}",
+        audit.diff(before, after) or None,
+        meta,
+    )
     db.flush()
     return obj
 
@@ -193,7 +281,9 @@ def _validate_layout_part(db: Session, obj: ObjectDefinition, key: str, value: A
                 raise MetadataError("Unknown related object.", fields={key: "Unknown object"})
             f = child.fields.get(str(item.get("field")))
             if f is None or not f.is_lookup or obj.api_name not in f.targets:
-                raise MetadataError("Related list field must be a lookup to this object.", fields={key: "Invalid field"})
+                raise MetadataError(
+                    "Related list field must be a lookup to this object.", fields={key: "Invalid field"}
+                )
 
 
 def delete_object(db: Session, actor_id: uuid.UUID | None, api_name: str, meta: RequestMeta) -> None:
@@ -216,7 +306,16 @@ def delete_object(db: Session, actor_id: uuid.UUID | None, api_name: str, meta: 
             app.tabs = tabs
     db.delete(obj)
     bump_revision(db)
-    _audit(db, actor_id, AuditAction.DELETE, "object_definition", obj.id, f"Deleted custom object {obj.label}", None, meta)
+    _audit(
+        db,
+        actor_id,
+        AuditAction.DELETE,
+        "object_definition",
+        obj.id,
+        f"Deleted custom object {obj.label}",
+        None,
+        meta,
+    )
     db.flush()
 
 
@@ -227,7 +326,9 @@ def _clean_options(db: Session, ftype: str, options: dict[str, Any], *, object_a
     allowed = TYPE_OPTION_KEYS.get(ftype, set())
     unknown = set(options) - allowed - {"probabilities"}
     if unknown:
-        raise MetadataError(f"Unknown option {sorted(unknown)[0]!r} for {ftype}.", fields={"options": "Invalid"})
+        raise MetadataError(
+            f"Unknown option {sorted(unknown)[0]!r} for {ftype}.", fields={"options": "Invalid"}
+        )
     out = dict(options)
     if ftype in ("picklist", "multi_picklist"):
         values = out.get("values") or []
@@ -240,9 +341,13 @@ def _clean_options(db: Session, ftype: str, options: dict[str, Any], *, object_a
             item = {"value": v} if isinstance(v, str) else dict(v)
             value = str(item.get("value", "")).strip()
             if not value or len(value) > 255:
-                raise MetadataError("Picklist values need 1-255 characters.", fields={"options.values": "Invalid"})
+                raise MetadataError(
+                    "Picklist values need 1-255 characters.", fields={"options.values": "Invalid"}
+                )
             if value.lower() in seen:
-                raise MetadataError(f"Duplicate picklist value {value!r}.", fields={"options.values": "Duplicate"})
+                raise MetadataError(
+                    f"Duplicate picklist value {value!r}.", fields={"options.values": "Duplicate"}
+                )
             seen.add(value.lower())
             entry = {
                 "value": value,
@@ -259,16 +364,25 @@ def _clean_options(db: Session, ftype: str, options: dict[str, Any], *, object_a
                 defaults += 1
             cleaned.append(entry)
         if defaults > 1:
-            raise MetadataError("Only one default picklist value.", fields={"options.values": "Several defaults"})
+            raise MetadataError(
+                "Only one default picklist value.", fields={"options.values": "Several defaults"}
+            )
         out["values"] = cleaned
     if ftype in ("lookup", "master_detail"):
         target = out.get("target")
-        if not target or db.scalar(select(ObjectDefinition.id).where(ObjectDefinition.api_name == target)) is None:
-            raise MetadataError("Choose the object this field looks up to.", fields={"options.target": "Required"})
+        if (
+            not target
+            or db.scalar(select(ObjectDefinition.id).where(ObjectDefinition.api_name == target)) is None
+        ):
+            raise MetadataError(
+                "Choose the object this field looks up to.", fields={"options.target": "Required"}
+            )
         if ftype == "lookup":
             rule = out.setdefault("delete_rule", "clear")
             if rule not in ("clear", "restrict"):
-                raise MetadataError("Delete rule is 'clear' or 'restrict'.", fields={"options.delete_rule": "Invalid"})
+                raise MetadataError(
+                    "Delete rule is 'clear' or 'restrict'.", fields={"options.delete_rule": "Invalid"}
+                )
         if ftype == "master_detail" and target == object_api:
             raise MetadataError("An object can't be its own master.", fields={"options.target": "Invalid"})
     if "max_length" in out:
@@ -291,7 +405,15 @@ def _clean_options(db: Session, ftype: str, options: dict[str, Any], *, object_a
     return out
 
 
-def create_field(db: Session, actor_id: uuid.UUID | None, object_api: str, data: dict[str, Any], meta: RequestMeta, *, pack_key: str | None = None) -> FieldDefinition:
+def create_field(
+    db: Session,
+    actor_id: uuid.UUID | None,
+    object_api: str,
+    data: dict[str, Any],
+    meta: RequestMeta,
+    *,
+    pack_key: str | None = None,
+) -> FieldDefinition:
     obj = get_object(db, object_api)
     label = str(data.get("label") or "").strip()
     ftype = str(data.get("type") or "")
@@ -307,18 +429,51 @@ def create_field(db: Session, actor_id: uuid.UUID | None, object_api: str, data:
     if len(active) >= MAX_FIELDS:
         raise MetadataError(f"An object can have at most {MAX_FIELDS} fields.")
     if any(f.api_name == api for f in obj.fields):
-        raise ConflictError("A field with this API name already exists (or is in deleted fields).", fields={"api_name": "Already in use"})
-    if ftype == "master_detail" and any(f.type == "master_detail" and f.deleted_at is None for f in obj.fields):
-        raise MetadataError("An object can have only one master-detail relationship.", fields={"type": "Only one"})
-    if ftype == "master_detail" and db.scalar(select(Record.id).where(Record.object_api_name == object_api).limit(1)) is not None:
-        raise MetadataError("Master-detail fields can only be added to objects without records.", fields={"type": "Object has records"})
+        raise ConflictError(
+            "A field with this API name already exists (or is in deleted fields).",
+            fields={"api_name": "Already in use"},
+        )
+    if ftype == "master_detail" and any(
+        f.type == "master_detail" and f.deleted_at is None for f in obj.fields
+    ):
+        raise MetadataError(
+            "An object can have only one master-detail relationship.", fields={"type": "Only one"}
+        )
+    if (
+        ftype == "master_detail"
+        and db.scalar(select(Record.id).where(Record.object_api_name == object_api).limit(1)) is not None
+    ):
+        raise MetadataError(
+            "Master-detail fields can only be added to objects without records.",
+            fields={"type": "Object has records"},
+        )
     options = _clean_options(db, ftype, dict(data.get("options") or {}), object_api=object_api)
-    indexed = bool(data.get("indexed", False)) and ftype not in ("long_text", "encrypted_text", "address", "multi_picklist")
+    indexed = bool(data.get("indexed", False)) and ftype not in (
+        "long_text",
+        "encrypted_text",
+        "address",
+        "multi_picklist",
+    )
     if indexed and sum(1 for f in active if f.indexed or f.is_unique) >= MAX_INDEXED_FIELDS:
-        raise MetadataError(f"An object can have at most {MAX_INDEXED_FIELDS} indexed fields.", fields={"indexed": "Limit reached"})
+        raise MetadataError(
+            f"An object can have at most {MAX_INDEXED_FIELDS} indexed fields.",
+            fields={"indexed": "Limit reached"},
+        )
     required = bool(data.get("required", False)) or ftype == "master_detail"
-    if required and db.scalar(select(Record.id).where(Record.object_api_name == object_api, Record.is_deleted.is_(False)).limit(1)) is not None and data.get("default_value") is None:
-        raise MetadataError("A new required field needs a default value when records exist.", fields={"required": "Add a default value"})
+    if (
+        required
+        and db.scalar(
+            select(Record.id)
+            .where(Record.object_api_name == object_api, Record.is_deleted.is_(False))
+            .limit(1)
+        )
+        is not None
+        and data.get("default_value") is None
+    ):
+        raise MetadataError(
+            "A new required field needs a default value when records exist.",
+            fields={"required": "Add a default value"},
+        )
     field = FieldDefinition(
         object_id=obj.id,
         api_name=api,
@@ -332,7 +487,8 @@ def create_field(db: Session, actor_id: uuid.UUID | None, object_api: str, data:
         external_id=bool(data.get("external_id", False)) and ftype in ("text", "email", "number"),
         filterable=ftype not in ("long_text", "encrypted_text"),
         indexed=indexed,
-        searchable=bool(data.get("searchable", False)) and ftype in ("text", "textarea", "long_text", "email", "phone", "url"),
+        searchable=bool(data.get("searchable", False))
+        and ftype in ("text", "textarea", "long_text", "email", "phone", "url"),
         track_history=bool(data.get("track_history", False)),
         default_access=str(data.get("default_access") or ("edit" if pack_key else "hidden")),
         default_value=data.get("default_value"),
@@ -348,11 +504,23 @@ def create_field(db: Session, actor_id: uuid.UUID | None, object_api: str, data:
     db.add(field)
     db.flush()
     if ftype == "master_detail":
-        db.merge(SharingDefault(object_api_name=object_api, access="controlled_by_parent", grant_access_using_hierarchy=True))
+        db.merge(
+            SharingDefault(
+                object_api_name=object_api, access="controlled_by_parent", grant_access_using_hierarchy=True
+            )
+        )
     _add_to_layout(obj, api)
     bump_revision(db)
-    _audit(db, actor_id, AuditAction.CREATE, "field_definition", field.id, f"Created field {obj.label}.{label}",
-           {"api_name": {"from": None, "to": api}, "type": {"from": None, "to": ftype}}, meta)
+    _audit(
+        db,
+        actor_id,
+        AuditAction.CREATE,
+        "field_definition",
+        field.id,
+        f"Created field {obj.label}.{label}",
+        {"api_name": {"from": None, "to": api}, "type": {"from": None, "to": ftype}},
+        meta,
+    )
     return field
 
 
@@ -366,7 +534,17 @@ def _add_to_layout(obj: ObjectDefinition, api: str) -> None:
     obj.page_layout = layout
 
 
-FIELD_EDITABLE = ("label", "help_text", "required", "track_history", "searchable", "indexed", "default_access", "default_value", "is_unique")
+FIELD_EDITABLE = (
+    "label",
+    "help_text",
+    "required",
+    "track_history",
+    "searchable",
+    "indexed",
+    "default_access",
+    "default_value",
+    "is_unique",
+)
 
 
 def get_field(db: Session, object_api: str, field_api: str) -> tuple[ObjectDefinition, FieldDefinition]:
@@ -377,7 +555,14 @@ def get_field(db: Session, object_api: str, field_api: str) -> tuple[ObjectDefin
     return obj, field
 
 
-def update_field(db: Session, actor_id: uuid.UUID | None, object_api: str, field_api: str, data: dict[str, Any], meta: RequestMeta) -> tuple[FieldDefinition, list[str]]:
+def update_field(
+    db: Session,
+    actor_id: uuid.UUID | None,
+    object_api: str,
+    field_api: str,
+    data: dict[str, Any],
+    meta: RequestMeta,
+) -> tuple[FieldDefinition, list[str]]:
     """Returns (field, index DDL to run after commit)."""
     obj, field = get_field(db, object_api, field_api)
     if field.deleted_at is not None:
@@ -386,9 +571,14 @@ def update_field(db: Session, actor_id: uuid.UUID | None, object_api: str, field
     new_type = data.get("type")
     if new_type and new_type != field.type:
         if field.is_standard:
-            raise MetadataError("The type of a standard field can't be changed.", fields={"type": "Standard field"})
+            raise MetadataError(
+                "The type of a standard field can't be changed.", fields={"type": "Standard field"}
+            )
         if new_type not in COMPATIBLE_TYPES.get(field.type, set()):
-            raise MetadataError(f"A {field.type} field can't become {new_type}; create a new field instead.", fields={"type": "Incompatible"})
+            raise MetadataError(
+                f"A {field.type} field can't become {new_type}; create a new field instead.",
+                fields={"type": "Incompatible"},
+            )
         field.type = new_type
     if "options" in data and data["options"] is not None:
         merged = {**(field.options or {}), **dict(data["options"])}
@@ -406,28 +596,51 @@ def update_field(db: Session, actor_id: uuid.UUID | None, object_api: str, field
             if key == "default_access" and data[key] not in ("hidden", "read", "edit"):
                 raise MetadataError("Invalid default access.", fields={"default_access": "Invalid"})
             if key == "required" and field.type == "master_detail" and not data[key]:
-                raise MetadataError("Master-detail fields are always required.", fields={"required": "Always required"})
+                raise MetadataError(
+                    "Master-detail fields are always required.", fields={"required": "Always required"}
+                )
             setattr(field, key, data[key])
     if field.type in ("long_text", "encrypted_text", "address", "multi_picklist"):
         field.indexed = False
     if field.indexed and not before["indexed"]:
-        count = sum(1 for f in obj.fields if (f.indexed or f.is_unique) and f.deleted_at is None and f.id != field.id)
+        count = sum(
+            1 for f in obj.fields if (f.indexed or f.is_unique) and f.deleted_at is None and f.id != field.id
+        )
         if count >= MAX_INDEXED_FIELDS:
-            raise MetadataError(f"An object can have at most {MAX_INDEXED_FIELDS} indexed fields.", fields={"indexed": "Limit reached"})
+            raise MetadataError(
+                f"An object can have at most {MAX_INDEXED_FIELDS} indexed fields.",
+                fields={"indexed": "Limit reached"},
+            )
     bump_revision(db)
     after = {k: getattr(field, k) for k in (*FIELD_EDITABLE, "type", "options")}
-    _audit(db, actor_id, AuditAction.UPDATE, "field_definition", field.id, f"Updated field {obj.label}.{field.label}",
-           audit.diff(before, after) or None, meta)
+    _audit(
+        db,
+        actor_id,
+        AuditAction.UPDATE,
+        "field_definition",
+        field.id,
+        f"Updated field {obj.label}.{field.label}",
+        audit.diff(before, after) or None,
+        meta,
+    )
     db.flush()
     ddl: list[str] = []
-    if (before["indexed"], before["is_unique"], before["type"]) != (field.indexed, field.is_unique, field.type):
+    if (before["indexed"], before["is_unique"], before["type"]) != (
+        field.indexed,
+        field.is_unique,
+        field.type,
+    ):
         ddl += drop_statements(object_api, field_api, concurrently=True)
         registry = load_registry(db)
-        ddl += index_statements(registry.get(object_api), registry.get(object_api).field(field_api), concurrently=True)
+        ddl += index_statements(
+            registry.get(object_api), registry.get(object_api).field(field_api), concurrently=True
+        )
     return field, ddl
 
 
-def delete_field(db: Session, actor_id: uuid.UUID | None, object_api: str, field_api: str, meta: RequestMeta) -> list[str]:
+def delete_field(
+    db: Session, actor_id: uuid.UUID | None, object_api: str, field_api: str, meta: RequestMeta
+) -> list[str]:
     obj, field = get_field(db, object_api, field_api)
     if field.is_standard or (field.pack_key and not field.is_custom):
         raise MetadataError("Standard fields can't be deleted.")
@@ -438,25 +651,51 @@ def delete_field(db: Session, actor_id: uuid.UUID | None, object_api: str, field
         for r in o.related_lists:
             if r.get("object") == object_api and r.get("field") == field_api:
                 o_def = get_object(db, o.api_name)
-                o_def.related_lists = [x for x in o_def.related_lists if not (x.get("object") == object_api and x.get("field") == field_api)]
+                o_def.related_lists = [
+                    x
+                    for x in o_def.related_lists
+                    if not (x.get("object") == object_api and x.get("field") == field_api)
+                ]
     field.deleted_at = datetime.now(UTC)
-    obj.page_layout = [{**s, "fields": [f for f in s.get("fields", []) if f != field_api]} for s in obj.page_layout or []]
+    obj.page_layout = [
+        {**s, "fields": [f for f in s.get("fields", []) if f != field_api]} for s in obj.page_layout or []
+    ]
     obj.compact_layout = [f for f in obj.compact_layout or [] if f != field_api]
     obj.list_columns = [f for f in obj.list_columns or [] if f != field_api]
     bump_revision(db)
-    _audit(db, actor_id, AuditAction.DELETE, "field_definition", field.id, f"Deleted field {obj.label}.{field.label} (restorable for {DELETED_FIELD_DAYS} days)", None, meta)
+    _audit(
+        db,
+        actor_id,
+        AuditAction.DELETE,
+        "field_definition",
+        field.id,
+        f"Deleted field {obj.label}.{field.label} (restorable for {DELETED_FIELD_DAYS} days)",
+        None,
+        meta,
+    )
     db.flush()
     return drop_statements(object_api, field_api, concurrently=True)
 
 
-def restore_field(db: Session, actor_id: uuid.UUID | None, object_api: str, field_api: str, meta: RequestMeta) -> FieldDefinition:
+def restore_field(
+    db: Session, actor_id: uuid.UUID | None, object_api: str, field_api: str, meta: RequestMeta
+) -> FieldDefinition:
     obj, field = get_field(db, object_api, field_api)
     if field.deleted_at is None:
         return field
     field.deleted_at = None
     _add_to_layout(obj, field_api)
     bump_revision(db)
-    _audit(db, actor_id, AuditAction.UPDATE, "field_definition", field.id, f"Restored field {obj.label}.{field.label}", None, meta)
+    _audit(
+        db,
+        actor_id,
+        AuditAction.UPDATE,
+        "field_definition",
+        field.id,
+        f"Restored field {obj.label}.{field.label}",
+        None,
+        meta,
+    )
     db.flush()
     return field
 
@@ -473,8 +712,14 @@ def purge_deleted_fields(db: Session, days: int = DELETED_FIELD_DAYS) -> int:
             text("UPDATE records SET data = data - :f WHERE object_api_name = :o AND data ? :f"),
             {"f": field.api_name, "o": obj.api_name},
         )
-        db.execute(text("DELETE FROM record_links WHERE from_object = :o AND field_api_name = :f"), {"o": obj.api_name, "f": field.api_name})
-        db.execute(text("DELETE FROM profile_field_permissions WHERE object_api_name = :o AND field_api_name = :f"), {"o": obj.api_name, "f": field.api_name})
+        db.execute(
+            text("DELETE FROM record_links WHERE from_object = :o AND field_api_name = :f"),
+            {"o": obj.api_name, "f": field.api_name},
+        )
+        db.execute(
+            text("DELETE FROM profile_field_permissions WHERE object_api_name = :o AND field_api_name = :f"),
+            {"o": obj.api_name, "f": field.api_name},
+        )
         db.delete(field)
     if fields:
         bump_revision(db)
@@ -504,7 +749,13 @@ def _validate_tabs(db: Session, tabs: Any) -> list[dict[str, Any]]:
     return out
 
 
-def save_app(db: Session, actor_id: uuid.UUID | None, data: dict[str, Any], meta: RequestMeta, app_id: uuid.UUID | None = None) -> App:
+def save_app(
+    db: Session,
+    actor_id: uuid.UUID | None,
+    data: dict[str, Any],
+    meta: RequestMeta,
+    app_id: uuid.UUID | None = None,
+) -> App:
     label = str(data.get("label") or "").strip()
     if not label:
         raise MetadataError("Enter a label.", fields={"label": "Required"})
@@ -522,7 +773,12 @@ def save_app(db: Session, actor_id: uuid.UUID | None, data: dict[str, Any], meta
         if app_or_none is None:
             raise NotFoundError("App not found.")
         app = app_or_none
-        before = {"label": app.label, "tabs": app.tabs, "profile_ids": app.profile_ids, "is_active": app.is_active}
+        before = {
+            "label": app.label,
+            "tabs": app.tabs,
+            "profile_ids": app.profile_ids,
+            "is_active": app.is_active,
+        }
         app.label = label
         app.tabs = tabs
         app.profile_ids = profile_ids
@@ -531,8 +787,16 @@ def save_app(db: Session, actor_id: uuid.UUID | None, data: dict[str, Any], meta
             setattr(app, key, data[key])
     db.flush()
     after = {"label": app.label, "tabs": app.tabs, "profile_ids": app.profile_ids, "is_active": app.is_active}
-    _audit(db, actor_id, AuditAction.CREATE if app_id is None else AuditAction.UPDATE, "app", app.id,
-           f"{'Created' if app_id is None else 'Updated'} app {app.label}", audit.diff(before, after) or None, meta)
+    _audit(
+        db,
+        actor_id,
+        AuditAction.CREATE if app_id is None else AuditAction.UPDATE,
+        "app",
+        app.id,
+        f"{'Created' if app_id is None else 'Updated'} app {app.label}",
+        audit.diff(before, after) or None,
+        meta,
+    )
     return app
 
 

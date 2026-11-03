@@ -18,7 +18,7 @@ from app.engine.describe import describe_field
 from app.engine.indexes import index_statements, schedule_index_ddl
 from app.engine.meta import load_registry
 from app.engine.records import RecordService
-from app.models import App, FieldDefinition, ObjectDefinition
+from app.models import App, ObjectDefinition
 from app.models.metadata import FIELD_TYPES
 from app.security.catalog import SystemPermission
 from app.services.audit import RequestMeta
@@ -98,15 +98,40 @@ def _object_out(db: DbSession, auth: AuthContext, api_name: str) -> dict[str, An
         if f.deleted_at is not None
     ]
     return {
-        "id": str(obj.id), "api_name": obj.api_name, "label": obj.label, "plural_label": obj.plural_label,
-        "description": obj.description, "icon": obj.icon, "color": obj.color, "is_custom": obj.is_custom,
-        "pack_key": obj.pack_key, "name_field_type": obj.name_field_type, "name_label": obj.name_label,
+        "id": str(obj.id),
+        "api_name": obj.api_name,
+        "label": obj.label,
+        "plural_label": obj.plural_label,
+        "description": obj.description,
+        "icon": obj.icon,
+        "color": obj.color,
+        "is_custom": obj.is_custom,
+        "pack_key": obj.pack_key,
+        "name_field_type": obj.name_field_type,
+        "name_label": obj.name_label,
         "name_format": obj.name_format,
-        **{f: getattr(obj, f) for f in ("track_history", "allow_activities", "allow_files", "allow_notes", "searchable",
-                                         "allow_reports", "show_in_portal", "allow_queues", "is_detail_only")},
-        "page_layout": obj.page_layout, "compact_layout": obj.compact_layout, "related_lists": obj.related_lists,
-        "list_columns": obj.list_columns, "fields": fields, "deleted_fields": deleted,
-        "field_types": list(FIELD_TYPES), "updated_at": obj.updated_at,
+        **{
+            f: getattr(obj, f)
+            for f in (
+                "track_history",
+                "allow_activities",
+                "allow_files",
+                "allow_notes",
+                "searchable",
+                "allow_reports",
+                "show_in_portal",
+                "allow_queues",
+                "is_detail_only",
+            )
+        },
+        "page_layout": obj.page_layout,
+        "compact_layout": obj.compact_layout,
+        "related_lists": obj.related_lists,
+        "list_columns": obj.list_columns,
+        "fields": fields,
+        "deleted_fields": deleted,
+        "field_types": list(FIELD_TYPES),
+        "updated_at": obj.updated_at,
     }
 
 
@@ -115,11 +140,20 @@ def list_objects(db: DbSession, _: Reader) -> list[dict[str, Any]]:
     rows = db.scalars(select(ObjectDefinition).order_by(ObjectDefinition.label)).all()
     out = []
     for o in rows:
-        out.append({
-            "api_name": o.api_name, "label": o.label, "plural_label": o.plural_label, "icon": o.icon, "color": o.color,
-            "is_custom": o.is_custom, "pack_key": o.pack_key, "description": o.description,
-            "field_count": sum(1 for f in o.fields if f.deleted_at is None), "updated_at": o.updated_at,
-        })
+        out.append(
+            {
+                "api_name": o.api_name,
+                "label": o.label,
+                "plural_label": o.plural_label,
+                "icon": o.icon,
+                "color": o.color,
+                "is_custom": o.is_custom,
+                "pack_key": o.pack_key,
+                "description": o.description,
+                "field_count": sum(1 for f in o.fields if f.deleted_at is None),
+                "updated_at": o.updated_at,
+            }
+        )
     return out
 
 
@@ -136,7 +170,9 @@ def get_object(api_name: str, db: DbSession, auth: Reader) -> dict[str, Any]:
 
 
 @router.patch("/objects/{api_name}")
-def update_object(api_name: str, body: ObjectIn, request: Request, db: DbSession, auth: Customizer) -> dict[str, Any]:
+def update_object(
+    api_name: str, body: ObjectIn, request: Request, db: DbSession, auth: Customizer
+) -> dict[str, Any]:
     admin.update_object(db, auth.user.id, api_name, body.model_dump(exclude_none=True), _meta(request))
     db.commit()
     return _object_out(db, auth, api_name)
@@ -150,8 +186,12 @@ def delete_object(api_name: str, request: Request, db: DbSession, auth: Customiz
 
 
 @router.post("/objects/{api_name}/fields", status_code=status.HTTP_201_CREATED)
-def create_field(api_name: str, body: FieldIn, request: Request, db: DbSession, auth: Customizer) -> dict[str, Any]:
-    field = admin.create_field(db, auth.user.id, api_name, body.model_dump(exclude_unset=True), _meta(request))
+def create_field(
+    api_name: str, body: FieldIn, request: Request, db: DbSession, auth: Customizer
+) -> dict[str, Any]:
+    field = admin.create_field(
+        db, auth.user.id, api_name, body.model_dump(exclude_unset=True), _meta(request)
+    )
     db.commit()
     meta = load_registry(db).get(api_name)
     schedule_index_ddl(index_statements(meta, meta.field(field.api_name), concurrently=True))
@@ -159,15 +199,21 @@ def create_field(api_name: str, body: FieldIn, request: Request, db: DbSession, 
 
 
 @router.patch("/objects/{api_name}/fields/{field_api}")
-def update_field(api_name: str, field_api: str, body: FieldIn, request: Request, db: DbSession, auth: Customizer) -> dict[str, Any]:
-    _, ddl = admin.update_field(db, auth.user.id, api_name, field_api, body.model_dump(exclude_unset=True), _meta(request))
+def update_field(
+    api_name: str, field_api: str, body: FieldIn, request: Request, db: DbSession, auth: Customizer
+) -> dict[str, Any]:
+    _, ddl = admin.update_field(
+        db, auth.user.id, api_name, field_api, body.model_dump(exclude_unset=True), _meta(request)
+    )
     db.commit()
     schedule_index_ddl(ddl)
     return _object_out(db, auth, api_name)
 
 
 @router.delete("/objects/{api_name}/fields/{field_api}")
-def delete_field(api_name: str, field_api: str, request: Request, db: DbSession, auth: Customizer) -> dict[str, Any]:
+def delete_field(
+    api_name: str, field_api: str, request: Request, db: DbSession, auth: Customizer
+) -> dict[str, Any]:
     ddl = admin.delete_field(db, auth.user.id, api_name, field_api, _meta(request))
     db.commit()
     schedule_index_ddl(ddl)
@@ -175,16 +221,28 @@ def delete_field(api_name: str, field_api: str, request: Request, db: DbSession,
 
 
 @router.post("/objects/{api_name}/fields/{field_api}/restore")
-def restore_field(api_name: str, field_api: str, request: Request, db: DbSession, auth: Customizer) -> dict[str, Any]:
+def restore_field(
+    api_name: str, field_api: str, request: Request, db: DbSession, auth: Customizer
+) -> dict[str, Any]:
     admin.restore_field(db, auth.user.id, api_name, field_api, _meta(request))
     db.commit()
     return _object_out(db, auth, api_name)
 
 
 def _app_out(app: App) -> dict[str, Any]:
-    return {"id": str(app.id), "key": app.key, "label": app.label, "description": app.description, "icon": app.icon,
-            "color": app.color, "sort_order": app.sort_order, "is_active": app.is_active, "tabs": app.tabs,
-            "profile_ids": app.profile_ids, "pack_key": app.pack_key}
+    return {
+        "id": str(app.id),
+        "key": app.key,
+        "label": app.label,
+        "description": app.description,
+        "icon": app.icon,
+        "color": app.color,
+        "sort_order": app.sort_order,
+        "is_active": app.is_active,
+        "tabs": app.tabs,
+        "profile_ids": app.profile_ids,
+        "pack_key": app.pack_key,
+    }
 
 
 @router.get("/apps")
@@ -200,7 +258,9 @@ def create_app(body: AppIn, request: Request, db: DbSession, auth: Customizer) -
 
 
 @router.put("/apps/{app_id}")
-def update_app(app_id: uuid.UUID, body: AppIn, request: Request, db: DbSession, auth: Customizer) -> dict[str, Any]:
+def update_app(
+    app_id: uuid.UUID, body: AppIn, request: Request, db: DbSession, auth: Customizer
+) -> dict[str, Any]:
     app = admin.save_app(db, auth.user.id, body.model_dump(exclude_none=True), _meta(request), app_id)
     db.commit()
     return _app_out(app)

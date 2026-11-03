@@ -39,20 +39,30 @@ def search(
     for meta in readable_objects(svc):
         if not meta.searchable or meta.is_detail_only or (wanted and meta.api_name not in wanted):
             continue
-        result = svc.query(meta.api_name, search=q, limit=limit, sort=[{"field": "updated_at", "direction": "desc"}])
+        result = svc.query(
+            meta.api_name, search=q, limit=limit, sort=[{"field": "updated_at", "direction": "desc"}]
+        )
         if not result.records:
             continue
         cols = meta.compact_layout[:3]
-        groups.append({
-            "object": meta.api_name, "label": meta.plural_label, "icon": meta.icon, "color": meta.color,
-            "total": result.total, "columns": cols,
-            "items": svc.serialize_many(meta.api_name, result.records, columns=cols, with_access=False),
-        })
+        groups.append(
+            {
+                "object": meta.api_name,
+                "label": meta.plural_label,
+                "icon": meta.icon,
+                "color": meta.color,
+                "total": result.total,
+                "columns": cols,
+                "items": svc.serialize_many(meta.api_name, result.records, columns=cols, with_access=False),
+            }
+        )
     return {"query": q, "groups": groups}
 
 
 @router.get("/me/recent")
-def recent(svc: Records, limit: Annotated[int, Query(ge=1, le=50)] = 15, object_api_name: str | None = None) -> list[dict[str, Any]]:
+def recent(
+    svc: Records, limit: Annotated[int, Query(ge=1, le=50)] = 15, object_api_name: str | None = None
+) -> list[dict[str, Any]]:
     stmt = (
         select(Record, RecentItem.viewed_at)
         .join(RecentItem, RecentItem.record_id == Record.id)
@@ -69,8 +79,17 @@ def recent(svc: Records, limit: Annotated[int, Query(ge=1, le=50)] = 15, object_
             continue
         if not svc.visible_ids(meta.api_name, [record.id]):
             continue
-        out.append({"id": str(record.id), "name": record.name, "object": meta.api_name, "object_label": meta.label,
-                    "icon": meta.icon, "color": meta.color, "viewed_at": viewed_at})
+        out.append(
+            {
+                "id": str(record.id),
+                "name": record.name,
+                "object": meta.api_name,
+                "object_label": meta.label,
+                "icon": meta.icon,
+                "color": meta.color,
+                "viewed_at": viewed_at,
+            }
+        )
         if len(out) >= limit:
             break
     return out
@@ -88,8 +107,16 @@ def recycle_bin(svc: Records, limit: Annotated[int, Query(ge=1, le=200)] = 100) 
         if not access.modify_all:
             stmt = stmt.where(Record.deleted_by_id == svc.user_id)
         for r in svc.db.scalars(stmt.order_by(Record.deleted_at.desc()).limit(limit)):
-            out.append({"id": str(r.id), "name": r.name, "object": meta.api_name, "object_label": meta.label,
-                        "deleted_at": r.deleted_at, "purge_at": (r.deleted_at or datetime.now(UTC)) + timedelta(days=30)})
+            out.append(
+                {
+                    "id": str(r.id),
+                    "name": r.name,
+                    "object": meta.api_name,
+                    "object_label": meta.label,
+                    "deleted_at": r.deleted_at,
+                    "purge_at": (r.deleted_at or datetime.now(UTC)) + timedelta(days=30),
+                }
+            )
     out.sort(key=lambda x: x["deleted_at"], reverse=True)
     return out[:limit]
 
@@ -100,27 +127,48 @@ def notifications(svc: Records, unread_only: bool = False) -> dict[str, Any]:
     if unread_only:
         stmt = stmt.where(Notification.read_at.is_(None))
     rows = svc.db.scalars(stmt.order_by(Notification.created_at.desc()).limit(50)).all()
-    unread = int(svc.db.scalar(select(func.count()).select_from(Notification).where(
-        Notification.user_id == svc.user_id, Notification.read_at.is_(None))) or 0)
+    unread = int(
+        svc.db.scalar(
+            select(func.count())
+            .select_from(Notification)
+            .where(Notification.user_id == svc.user_id, Notification.read_at.is_(None))
+        )
+        or 0
+    )
     return {
         "unread": unread,
-        "items": [{"id": str(n.id), "title": n.title, "body": n.body, "link": n.link, "read": n.read_at is not None,
-                   "created_at": n.created_at} for n in rows],
+        "items": [
+            {
+                "id": str(n.id),
+                "title": n.title,
+                "body": n.body,
+                "link": n.link,
+                "read": n.read_at is not None,
+                "created_at": n.created_at,
+            }
+            for n in rows
+        ],
     }
 
 
 @router.post("/me/notifications/read-all", status_code=status.HTTP_204_NO_CONTENT)
 def read_all(svc: Records) -> Response:
-    svc.db.execute(update(Notification).where(Notification.user_id == svc.user_id, Notification.read_at.is_(None))
-                   .values(read_at=datetime.now(UTC)))
+    svc.db.execute(
+        update(Notification)
+        .where(Notification.user_id == svc.user_id, Notification.read_at.is_(None))
+        .values(read_at=datetime.now(UTC))
+    )
     svc.db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/me/notifications/{notification_id}/read", status_code=status.HTTP_204_NO_CONTENT)
 def read_one(notification_id: uuid.UUID, svc: Records) -> Response:
-    svc.db.execute(update(Notification).where(Notification.id == notification_id, Notification.user_id == svc.user_id)
-                   .values(read_at=datetime.now(UTC)))
+    svc.db.execute(
+        update(Notification)
+        .where(Notification.id == notification_id, Notification.user_id == svc.user_id)
+        .values(read_at=datetime.now(UTC))
+    )
     svc.db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -160,21 +208,39 @@ def calendar(
     """Events overlapping [start, end) and tasks due in the range."""
     if end <= start or end - start > timedelta(days=62):
         raise AppError("Choose a range of at most 62 days.", status_code=422)
-    events_filter = {"logic": "and", "conditions": [
-        {"field": "start_at", "op": "lt", "value": end.isoformat()},
-        {"field": "end_at", "op": "gte", "value": start.isoformat()},
-    ]}
+    events_filter = {
+        "logic": "and",
+        "conditions": [
+            {"field": "start_at", "op": "lt", "value": end.isoformat()},
+            {"field": "end_at", "op": "gte", "value": start.isoformat()},
+        ],
+    }
     scope = "mine" if mine else "all"
     out: dict[str, Any] = {"events": [], "tasks": []}
     if svc.policy.object("event").read:
-        res = svc.query("event", filters=events_filter, scope=scope, limit=200, sort=[{"field": "start_at", "direction": "asc"}])
+        res = svc.query(
+            "event",
+            filters=events_filter,
+            scope=scope,
+            limit=200,
+            sort=[{"field": "start_at", "direction": "asc"}],
+        )
         out["events"] = svc.serialize_many("event", res.records)
     if svc.policy.object("task").read:
-        tasks_filter = {"logic": "and", "conditions": [
-            {"field": "due_date", "op": "gte", "value": start.date().isoformat()},
-            {"field": "due_date", "op": "lt", "value": end.date().isoformat()},
-        ]}
-        res = svc.query("task", filters=tasks_filter, scope=scope, limit=200, sort=[{"field": "due_date", "direction": "asc"}])
+        tasks_filter = {
+            "logic": "and",
+            "conditions": [
+                {"field": "due_date", "op": "gte", "value": start.date().isoformat()},
+                {"field": "due_date", "op": "lt", "value": end.date().isoformat()},
+            ],
+        }
+        res = svc.query(
+            "task",
+            filters=tasks_filter,
+            scope=scope,
+            limit=200,
+            sort=[{"field": "due_date", "direction": "asc"}],
+        )
         out["tasks"] = svc.serialize_many("task", res.records)
     return out
 
@@ -190,8 +256,16 @@ def _scan(content: bytes) -> str:
     return "clean"
 
 
-def store_file(svc: RecordService, content: bytes, *, file_name: str, content_type: str,
-               related_to: uuid.UUID | None, is_public: bool = False, description: str | None = None) -> Record:
+def store_file(
+    svc: RecordService,
+    content: bytes,
+    *,
+    file_name: str,
+    content_type: str,
+    related_to: uuid.UUID | None,
+    is_public: bool = False,
+    description: str | None = None,
+) -> Record:
     if not content:
         raise AppError("The file is empty.", status_code=422)
     if len(content) > MAX_UPLOAD_BYTES:
@@ -201,8 +275,14 @@ def store_file(svc: RecordService, content: bytes, *, file_name: str, content_ty
         raise AppError("This file type isn't allowed.", code="file_type_blocked", status_code=415)
     if _scan(content) != "clean":
         raise AppError("The file failed the malware scan.", code="malware_detected", status_code=422)
-    stored = StoredFile(storage="db", content=content, content_type=content_type[:120] or "application/octet-stream",
-                        size=len(content), sha256=hashlib.sha256(content).hexdigest(), created_by_id=svc.user_id)
+    stored = StoredFile(
+        storage="db",
+        content=content,
+        content_type=content_type[:120] or "application/octet-stream",
+        size=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+        created_by_id=svc.user_id,
+    )
     svc.db.add(stored)
     svc.db.flush()
     values: dict[str, Any] = {"name": name, "is_public": is_public}
@@ -212,7 +292,12 @@ def store_file(svc: RecordService, content: bytes, *, file_name: str, content_ty
         values["description"] = description
     record = svc.create("file", values)
     sys_svc = svc.elevated()
-    record.data = {**record.data, "stored_file_id": str(stored.id), "content_type": stored.content_type, "size": stored.size}
+    record.data = {
+        **record.data,
+        "stored_file_id": str(stored.id),
+        "content_type": stored.content_type,
+        "size": stored.size,
+    }
     sys_svc.db.flush()
     return record
 
@@ -228,8 +313,14 @@ async def upload_file(
 ) -> dict[str, Any]:
     """Upload raw bytes (body) with the file name in the X-File-Name header."""
     content = await request.body()
-    record = store_file(svc, content, file_name=x_file_name, content_type=content_type or "application/octet-stream",
-                        related_to=related_to, is_public=is_public)
+    record = store_file(
+        svc,
+        content,
+        file_name=x_file_name,
+        content_type=content_type or "application/octet-stream",
+        related_to=related_to,
+        is_public=is_public,
+    )
     svc.db.commit()
     return svc.serialize(record)
 
@@ -240,16 +331,31 @@ def file_response(svc: RecordService, record_id: uuid.UUID, *, inline: bool) -> 
     stored = svc.db.get(StoredFile, uuid.UUID(str(stored_id))) if stored_id else None
     if stored is None or stored.content is None:
         raise NotFoundError("File content not found.")
-    audit.record(svc.db, action=AuditAction.DOWNLOAD, entity_type="record:file", entity_id=record.id,
-                 summary=f"Downloaded {record.name}", actor_id=svc.user_id, meta=svc.request_meta)
+    audit.record(
+        svc.db,
+        action=AuditAction.DOWNLOAD,
+        entity_type="record:file",
+        entity_id=record.id,
+        summary=f"Downloaded {record.name}",
+        actor_id=svc.user_id,
+        meta=svc.request_meta,
+    )
     svc.db.commit()
     safe = record.name.replace('"', "").replace("\r", "").replace("\n", "")
-    disposition = "inline" if inline and stored.content_type in ("application/pdf", "image/png", "image/jpeg", "image/gif") else "attachment"
-    return Response(content=stored.content, media_type=stored.content_type, headers={
-        "Content-Disposition": f'{disposition}; filename="{safe}"',
-        "X-Content-Type-Options": "nosniff",
-        "Cache-Control": "private, no-store",
-    })
+    disposition = (
+        "inline"
+        if inline and stored.content_type in ("application/pdf", "image/png", "image/jpeg", "image/gif")
+        else "attachment"
+    )
+    return Response(
+        content=stored.content,
+        media_type=stored.content_type,
+        headers={
+            "Content-Disposition": f'{disposition}; filename="{safe}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.get("/files/{record_id}/content")

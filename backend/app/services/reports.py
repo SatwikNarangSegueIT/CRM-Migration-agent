@@ -10,6 +10,7 @@ items (Current, 1-30, 31-60, 61-90, 90+ days).
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import io
 import uuid
@@ -58,7 +59,9 @@ def folder_visible(svc: RecordService, folder: ReportFolder | None, owner_id: uu
     return False
 
 
-def can_manage(svc: RecordService, folder: ReportFolder | None, owner_id: uuid.UUID | None, obj: str = "report") -> bool:
+def can_manage(
+    svc: RecordService, folder: ReportFolder | None, owner_id: uuid.UUID | None, obj: str = "report"
+) -> bool:
     access = svc.policy.object(obj)
     if svc.policy.is_system_admin or access.modify_all:
         return True
@@ -99,7 +102,9 @@ def get_dashboard(svc: RecordService, dashboard_id: uuid.UUID) -> Dashboard:
 class _Ref:
     """A report column/grouping: a field on the base object or one lookup hop away."""
 
-    def __init__(self, path: str, meta: ObjectMeta, field: FieldMeta, via: FieldMeta | None, target: ObjectMeta | None):
+    def __init__(
+        self, path: str, meta: ObjectMeta, field: FieldMeta, via: FieldMeta | None, target: ObjectMeta | None
+    ):
         self.path = path
         self.meta = meta
         self.field = field
@@ -164,7 +169,10 @@ class Runner:
             )
         gran = (self.d.get("date_granularity") or {}).get(path)
         if gran:
-            if gran not in GRANULARITIES or r.field.type not in ("date", "datetime", "created_at", "updated_at") and not r.field.api_name.endswith("_at"):
+            if gran not in GRANULARITIES or (
+                r.field.type not in ("date", "datetime", "created_at", "updated_at")
+                and not r.field.api_name.endswith("_at")
+            ):
                 raise ReportError("Date grouping needs a date field.")
             return cast(func.date_trunc(gran, base), Date)
         return base
@@ -177,11 +185,17 @@ class Runner:
         filters = self.d.get("filters")
         if filters:
             self.svc.check_readable_fields(self.meta, filter_fields(filters))
-            stmt = stmt.where(compile_filter(self.meta, filters, Record, None, user_id=self.svc.user_id, tz=self.svc.time_zone))
+            stmt = stmt.where(
+                compile_filter(
+                    self.meta, filters, Record, None, user_id=self.svc.user_id, tz=self.svc.time_zone
+                )
+            )
         for via_name, alias in self.joins.items():
             via = self.meta.fields[via_name]
             target = via.targets[0]
-            readable = self.svc.sharing.where_readable(target, alias) if not self.svc.system else literal(True)
+            readable = (
+                self.svc.sharing.where_readable(target, alias) if not self.svc.system else literal(True)
+            )
             stmt = stmt.outerjoin(
                 alias,
                 and_(
@@ -206,14 +220,22 @@ class Runner:
                 r = self.ref(str(a.get("field")))
                 if op in ("sum", "avg") and r.field.type not in ("number", "percent", "currency"):
                     raise ReportError(f"{r.label} can't be summed or averaged.")
-            out.append({"op": op, "field": a.get("field"), "key": op if op == "count" else f"{op}:{a.get('field')}"})
+            out.append(
+                {"op": op, "field": a.get("field"), "key": op if op == "count" else f"{op}:{a.get('field')}"}
+            )
         return out
 
     def agg_expr(self, a: dict[str, Any]) -> Any:
         if a["op"] == "count":
             return func.count(Record.id)
         expr = self.expr(a["field"])
-        return {"sum": func.sum, "avg": func.avg, "min": func.min, "max": func.max}[a["op"]](expr)
+        if a["op"] == "sum":
+            return func.sum(expr)
+        if a["op"] == "avg":
+            return func.avg(expr)
+        if a["op"] == "min":
+            return func.min(expr)
+        return func.max(expr)
 
     def run(self) -> dict[str, Any]:
         fmt = self.d.get("format", "tabular")
@@ -235,7 +257,9 @@ class Runner:
         stmt = self.base_statement(Record.id, *exprs)
         for s in (self.d.get("sort") or [])[:3]:
             e = self.expr(str(s.get("field")))
-            stmt = stmt.order_by(e.desc().nulls_last() if s.get("direction") == "desc" else e.asc().nulls_last())
+            stmt = stmt.order_by(
+                e.desc().nulls_last() if s.get("direction") == "desc" else e.asc().nulls_last()
+            )
         stmt = stmt.order_by(Record.created_at.desc())
         limit = min(int(self.d.get("limit") or MAX_ROWS), MAX_ROWS)
         rows = self.svc.db.execute(stmt.limit(limit + 1)).all()
@@ -244,7 +268,12 @@ class Runner:
         labels = self._labels(refs, [[r[i + 1] for r in rows] for i in range(len(refs))])
         out_rows = []
         for r in rows:
-            out_rows.append({"id": str(r[0]), "cells": [self._cell(ref, r[i + 1], labels[i]) for i, ref in enumerate(refs)]})
+            out_rows.append(
+                {
+                    "id": str(r[0]),
+                    "cells": [self._cell(ref, r[i + 1], labels[i]) for i, ref in enumerate(refs)],
+                }
+            )
         totals = {}
         for a in self.aggregates():
             if a["op"] != "count":
@@ -252,7 +281,10 @@ class Runner:
         count = self.svc.db.scalar(self.base_statement(func.count(Record.id)))
         return {
             "format": "tabular",
-            "columns": [{"key": c, "label": ref.label, "type": ref.field.type} for c, ref in zip(columns, refs, strict=True)],
+            "columns": [
+                {"key": c, "label": ref.label, "type": ref.field.type}
+                for c, ref in zip(columns, refs, strict=True)
+            ],
             "rows": out_rows,
             "truncated": truncated,
             "totals": {"count": int(count or 0), **totals},
@@ -268,12 +300,19 @@ class Runner:
         dims = group_by + col_groups
         refs = [self.ref(g) for g in dims]
         for g, ref in zip(dims, refs, strict=True):
-            if ref.field.type in ("long_text", "address", "encrypted_text", "multi_picklist") and not g.startswith("age:"):
+            if ref.field.type in (
+                "long_text",
+                "address",
+                "encrypted_text",
+                "multi_picklist",
+            ) and not g.startswith("age:"):
                 raise ReportError(f"{ref.label} can't be grouped.")
         aggs = self.aggregates()
         dim_exprs = [self.expr(g).label(f"g{i}") for i, g in enumerate(dims)]
         agg_exprs = [self.agg_expr(a).label(f"a{i}") for i, a in enumerate(aggs)]
-        stmt = self.base_statement(*dim_exprs, *agg_exprs).group_by(*[e.element if hasattr(e, "element") else e for e in dim_exprs])
+        stmt = self.base_statement(*dim_exprs, *agg_exprs).group_by(
+            *[e.element if hasattr(e, "element") else e for e in dim_exprs]
+        )
         sort = self.d.get("sort") or []
         if sort and str(sort[0].get("field")).startswith("agg:"):
             idx = next((i for i, a in enumerate(aggs) if a["key"] == sort[0]["field"][4:]), 0)
@@ -287,14 +326,16 @@ class Runner:
         rows = rows[:MAX_GROUPS]
         n = len(dims)
         labels = self._labels(refs, [[r[i] for r in rows] for i in range(n)])
-        groups = []
+        groups: list[dict[str, Any]] = []
         for r in rows:
             keys = [self._key(r[i]) for i in range(n)]
-            groups.append({
-                "keys": keys,
-                "labels": [labels[i].get(self._key(r[i]), _plain(r[i])) for i in range(n)],
-                "values": {a["key"]: _num(r[n + j]) for j, a in enumerate(aggs)},
-            })
+            groups.append(
+                {
+                    "keys": keys,
+                    "labels": [labels[i].get(self._key(r[i]), _plain(r[i])) for i in range(n)],
+                    "values": {a["key"]: _num(r[n + j]) for j, a in enumerate(aggs)},
+                }
+            )
         if dims and all(d.startswith("age:") for d in dims[:1]):
             order = {b: i for i, b in enumerate(AGE_BUCKETS)}
             groups.sort(key=lambda g: order.get(g["keys"][0], 99))
@@ -304,12 +345,28 @@ class Runner:
                 groups.sort(key=lambda g: ordered.get(g["keys"][0], 999))
         totals = {}
         for j, a in enumerate(aggs):
-            totals[a["key"]] = _num(self.svc.db.scalar(self.base_statement(agg_exprs[j].element if hasattr(agg_exprs[j], "element") else agg_exprs[j])))
+            totals[a["key"]] = _num(
+                self.svc.db.scalar(
+                    self.base_statement(
+                        agg_exprs[j].element if hasattr(agg_exprs[j], "element") else agg_exprs[j]
+                    )
+                )
+            )
         return {
             "format": "matrix" if matrix else "summary",
-            "dimensions": [{"key": g, "label": ref.label + (" (age)" if g.startswith("age:") else ""), "type": ref.field.type} for g, ref in zip(dims, refs, strict=True)],
+            "dimensions": [
+                {
+                    "key": g,
+                    "label": ref.label + (" (age)" if g.startswith("age:") else ""),
+                    "type": ref.field.type,
+                }
+                for g, ref in zip(dims, refs, strict=True)
+            ],
             "row_dimensions": len(group_by),
-            "aggregates": [{"key": a["key"], "op": a["op"], "field": a["field"], "label": self._agg_label(a)} for a in aggs],
+            "aggregates": [
+                {"key": a["key"], "op": a["op"], "field": a["field"], "label": self._agg_label(a)}
+                for a in aggs
+            ],
             "groups": groups,
             "truncated": truncated,
             "totals": totals,
@@ -344,23 +401,29 @@ class Runner:
             f = ref.field
             mapping: dict[Any, str] = {}
             keys = {self._key(v) for v in vals if v is not None}
-            if f.api_name in ("owner_id", "created_by_id", "updated_by_id") and keys:
+            if (f.api_name in ("owner_id", "created_by_id", "updated_by_id") or f.type == "user") and keys:
                 ids = []
                 for k in keys:
                     try:
                         ids.append(uuid.UUID(str(k)))
                     except ValueError:
                         continue
-                for uid, name in self.svc.db.execute(select(User.id, User.name).where(User.id.in_(ids))).all():
+                for uid, name in self.svc.db.execute(
+                    select(User.id, User.name).where(User.id.in_(ids))
+                ).all():
                     mapping[str(uid)] = name
-                for qid, name in self.svc.db.execute(select(Queue.id, Queue.name).where(Queue.id.in_(ids))).all():
+                for qid, name in self.svc.db.execute(
+                    select(Queue.id, Queue.name).where(Queue.id.in_(ids))
+                ).all():
                     mapping[str(qid)] = name
             elif f.is_lookup and keys:
                 ids = [uuid.UUID(str(k)) for k in keys]
                 visible: set[uuid.UUID] = set()
                 for target in f.targets:
                     visible |= self.svc.visible_ids(target, ids)
-                for rid, name in self.svc.db.execute(select(Record.id, Record.name).where(Record.id.in_(visible))).all():
+                for rid, name in self.svc.db.execute(
+                    select(Record.id, Record.name).where(Record.id.in_(visible))
+                ).all():
                     mapping[str(rid)] = name
             elif f.type in ("picklist",):
                 for v in f.picklist_values:
@@ -374,7 +437,7 @@ class Runner:
     def _cell(self, ref: _Ref, value: Any, labels: dict[Any, str]) -> dict[str, Any]:
         key = self._key(value)
         f = ref.field
-        if f.is_lookup or f.api_name in ("owner_id", "created_by_id", "updated_by_id"):
+        if f.is_lookup or f.type == "user" or f.api_name in ("owner_id", "created_by_id", "updated_by_id"):
             label = labels.get(key)
             return {"value": key if label else None, "label": label or ""}
         if f.type == "encrypted_text":
@@ -415,7 +478,7 @@ def validate_definition(svc: RecordService, object_api: str, definition: dict[st
         raise
     except AppError:
         raise
-    except Exception as exc:  # noqa: BLE001 - surface SQL errors from odd definitions as validation errors
+    except Exception as exc:
         svc.db.rollback()
         raise ReportError(f"This report can't be run: {exc.__class__.__name__}.") from exc
 
@@ -441,7 +504,10 @@ def to_csv(result: dict[str, Any]) -> str:
     else:
         w.writerow([d["label"] for d in result["dimensions"]] + [a["label"] for a in result["aggregates"]])
         for g in result["groups"]:
-            w.writerow([_csv_safe(lbl) for lbl in g["labels"]] + [g["values"].get(a["key"]) for a in result["aggregates"]])
+            w.writerow(
+                [_csv_safe(lbl) for lbl in g["labels"]]
+                + [g["values"].get(a["key"]) for a in result["aggregates"]]
+            )
     return buf.getvalue()
 
 
@@ -469,7 +535,9 @@ def run_due_schedules(db: Session, now: datetime | None = None) -> int:
     from app.services.email import queue_email
 
     now = now or datetime.now(UTC)
-    due = db.scalars(select(ReportSchedule).where(ReportSchedule.next_run_at <= now).with_for_update(skip_locked=True)).all()
+    due = db.scalars(
+        select(ReportSchedule).where(ReportSchedule.next_run_at <= now).with_for_update(skip_locked=True)
+    ).all()
     sent = 0
     outgoing: list[tuple[str, str, str]] = []
     for sched in due:
@@ -490,10 +558,9 @@ def run_due_schedules(db: Session, now: datetime | None = None) -> int:
         sent += 1
     db.commit()
     for to, subject, body in outgoing:
-        try:
+        # The schedule has already advanced; a broker outage must not fail the job.
+        with contextlib.suppress(Exception):
             queue_email(to, subject, body)
-        except Exception:  # noqa: BLE001, S110 - broker down; the schedule has already advanced
-            pass
     return sent
 
 
@@ -512,7 +579,14 @@ def available_columns(svc: RecordService, object_api: str) -> list[dict[str, Any
         for tf in svc.readable_fields(target):
             if tf.is_system and tf.api_name not in ("name", "owner_id", "created_at"):
                 continue
-            out.append({"key": f"{f.api_name}.{tf.api_name}", "label": f"{f.label}: {tf.label}", "type": tf.type, "group": f.label})
+            out.append(
+                {
+                    "key": f"{f.api_name}.{tf.api_name}",
+                    "label": f"{f.label}: {tf.label}",
+                    "type": tf.type,
+                    "group": f.label,
+                }
+            )
     return out
 
 

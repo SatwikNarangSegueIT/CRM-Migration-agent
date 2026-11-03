@@ -8,13 +8,32 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, FastAPI
 
+from app import apps as _apps  # noqa: F401 - registers the standard apps' object hooks
+from app import packs
 from app.auth.deps import verify_origin
 from app.core.config import Settings, get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
-import app.apps  # noqa: F401 - registers the standard apps' object hooks
-from app.routers import admin_users, audit_logs, auth, health, meta, records, setup, setup_objects, workspace
+from app.routers import (
+    admin_users,
+    audit_logs,
+    auth,
+    data,
+    health,
+    meta,
+    org_settings,
+    portal,
+    public,
+    records,
+    reports,
+    setup,
+    setup_objects,
+    workspace,
+)
+from app.routers import packs as packs_router
+
+packs.available()  # registers industry packs and their hooks
 
 API_PREFIX = "/api/v1"
 
@@ -52,6 +71,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(records.router)
     api.include_router(workspace.router)
     api.include_router(setup_objects.router)
+    api.include_router(reports.router)
+    api.include_router(data.router)
+    api.include_router(org_settings.router)
+    api.include_router(portal.router)
+    api.include_router(portal.staff_router)
+    api.include_router(public.router)
+    api.include_router(packs_router.router)
     app.include_router(api)
     return app
 
