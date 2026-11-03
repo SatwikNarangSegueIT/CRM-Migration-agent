@@ -15,19 +15,20 @@ from sqlalchemy import select
 from app.auth.security import hash_password, password_policy_errors
 from app.core.config import get_settings
 from app.db.session import get_sessionmaker
-from app.models import Profile, User
+from app.models import Profile, Role, User
 from app.security.policy import SYSTEM_ADMIN_KEY
 from app.services import audit
 from app.services.audit import AuditAction
 
 DEMO_PASSWORD = "Demo-Password-2026!"  # noqa: S105 - documented development-only credential
+# One demo user per default staff profile (plan v3 section 10): email, name, profile key, hierarchy role key.
 DEMO_USERS: list[tuple[str, str, str, str | None]] = [
-    ("admin@demo.example.com", "Alex Admin", "system_administrator", None),
-    ("manager@demo.example.com", "Morgan Manager", "sales_manager", None),
-    ("agent@demo.example.com", "Riley Agent", "sales_representative", "1234567"),
-    ("officer@demo.example.com", "Casey Officer", "service_agent", None),
-    ("intake@demo.example.com", "Jordan Intake", "service_agent", None),
-    ("accounts@demo.example.com", "Taylor Accounts", "finance", None),
+    ("admin@demo.example.com", "Alex Admin", "system_administrator", "ceo"),
+    ("salesmanager@demo.example.com", "Morgan Manager", "sales_manager", "sales_manager"),
+    ("sales@demo.example.com", "Riley Rep", "sales_representative", "sales_representative"),
+    ("service@demo.example.com", "Casey Service", "service_agent", "service_agent"),
+    ("marketing@demo.example.com", "Jordan Marketing", "marketing_user", "marketing_user"),
+    ("finance@demo.example.com", "Taylor Finance", "finance", "finance_officer"),
     ("auditor@demo.example.com", "Avery Auditor", "read_only", None),
 ]
 
@@ -81,7 +82,8 @@ def seed_demo() -> int:
     password_hash = hash_password(DEMO_PASSWORD)
     with get_sessionmaker()() as db:
         profiles_by_key = {p.key: p for p in db.scalars(select(Profile)).all() if p.key}
-        for email, name, profile_key, mara in DEMO_USERS:
+        roles_by_key = {r.key: r for r in db.scalars(select(Role)).all() if r.key}
+        for email, name, profile_key, role_key in DEMO_USERS:
             if db.scalar(select(User.id).where(User.email == email)) is not None:
                 continue
             profile = profiles_by_key.get(profile_key)
@@ -92,8 +94,8 @@ def seed_demo() -> int:
                 email=email,
                 name=name,
                 profile_id=profile.id,
+                role_id=roles_by_key[role_key].id if role_key and role_key in roles_by_key else None,
                 password_hash=password_hash,
-                mara_number=mara,
             )
             db.add(user)
             db.flush()
@@ -137,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     p_admin.add_argument("--email", required=True)
     p_admin.add_argument("--name", required=True)
     p_admin.add_argument("--password", help="Omit to be prompted (recommended)")
-    sub.add_parser("seed-demo", help="Create demo users and sample data (development only)")
+    sub.add_parser("seed-demo", help="Create one demo user per default staff profile (development only)")
     sub.add_parser("sync-indexes", help="Create missing field indexes (run after deploys)")
     args = parser.parse_args(argv)
     if args.command == "create-admin":

@@ -24,7 +24,11 @@ export function useObjects() {
 }
 
 export function useApps() {
-  return useQuery({ queryKey: ["meta", "apps"], queryFn: ({ signal }) => metaApi.apps(signal), staleTime: 5 * 60_000 });
+  return useQuery({
+    queryKey: ["meta", "apps"],
+    queryFn: ({ signal }) => metaApi.apps(signal),
+    staleTime: 5 * 60_000,
+  });
 }
 
 export function recordPath(object: string, id: string): string {
@@ -51,7 +55,12 @@ export function formatDate(value: unknown): string {
   const s = String(value);
   const d = new Date(s.length === 10 ? `${s}T00:00:00` : s);
   if (Number.isNaN(d.getTime())) return s;
-  return new Intl.DateTimeFormat(LOCALE, { day: "2-digit", month: "short", year: "numeric", ...(s.length === 10 ? {} : { timeZone: TIME_ZONE }) }).format(d);
+  return new Intl.DateTimeFormat(LOCALE, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    ...(s.length === 10 ? {} : { timeZone: TIME_ZONE }),
+  }).format(d);
 }
 
 export function formatDateTimeValue(value: unknown): string {

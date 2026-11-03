@@ -295,3 +295,27 @@ def test_audit_log_is_append_only(db: Session, admin_client: TestClient) -> None
     with pytest.raises(DBAPIError, match="append-only"):
         db.execute(text("DELETE FROM audit_logs"))
     db.rollback()
+
+
+def test_sign_in_does_not_make_an_open_edit_stale(admin_client: TestClient, db: Session) -> None:
+    """Sign-in bookkeeping (last login, failure counter) must not invalidate an administrator's edit."""
+    target = make_user(db, profile="read_only", email="busy@example.com")
+    loaded = admin_client.get(f"{API}/admin/users/{target.id}").json()
+    # Meanwhile the user signs in, fails once and signs in again.
+    other = TestClient(admin_client.app)
+    assert (
+        other.post(
+            f"{API}/auth/login", json={"email": target.email, "password": "wrong-password-x"}
+        ).status_code
+        == 401
+    )
+    login(other, target.email)
+    r = admin_client.patch(
+        f"{API}/admin/users/{target.id}", json={"updated_at": loaded["updated_at"], "title": "Analyst"}
+    )
+    assert r.status_code == 200, r.text
+    # A real edit still changes the token, so a second stale save is refused.
+    stale = admin_client.patch(
+        f"{API}/admin/users/{target.id}", json={"updated_at": loaded["updated_at"], "title": "X"}
+    )
+    assert stale.status_code == 409

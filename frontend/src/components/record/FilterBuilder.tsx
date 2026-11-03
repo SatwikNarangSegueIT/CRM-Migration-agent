@@ -4,9 +4,27 @@ import { Button } from "../ui";
 import { controlClass } from "./FieldInput";
 
 export const RELATIVE_DATES = [
-  "TODAY", "YESTERDAY", "TOMORROW", "THIS_WEEK", "LAST_WEEK", "NEXT_WEEK", "THIS_MONTH", "LAST_MONTH",
-  "NEXT_MONTH", "THIS_QUARTER", "LAST_QUARTER", "NEXT_QUARTER", "THIS_YEAR", "LAST_YEAR", "NEXT_YEAR",
-  "LAST_N_DAYS:7", "LAST_N_DAYS:30", "LAST_N_DAYS:90", "NEXT_N_DAYS:7", "NEXT_N_DAYS:30", "NEXT_N_DAYS:90",
+  "TODAY",
+  "YESTERDAY",
+  "TOMORROW",
+  "THIS_WEEK",
+  "LAST_WEEK",
+  "NEXT_WEEK",
+  "THIS_MONTH",
+  "LAST_MONTH",
+  "NEXT_MONTH",
+  "THIS_QUARTER",
+  "LAST_QUARTER",
+  "NEXT_QUARTER",
+  "THIS_YEAR",
+  "LAST_YEAR",
+  "NEXT_YEAR",
+  "LAST_N_DAYS:7",
+  "LAST_N_DAYS:30",
+  "LAST_N_DAYS:90",
+  "NEXT_N_DAYS:7",
+  "NEXT_N_DAYS:30",
+  "NEXT_N_DAYS:90",
 ];
 
 const OPS: Record<string, { value: string; label: string }[]> = {
@@ -81,18 +99,33 @@ export function emptyFilter(): FilterNode {
   return { logic: "and", conditions: [] };
 }
 
-function ValueInput({ field, cond, onChange }: { field?: FieldDescribe; cond: FilterCondition; onChange: (v: unknown) => void }) {
+function ValueInput({
+  field,
+  cond,
+  onChange,
+}: {
+  field?: FieldDescribe;
+  cond: FilterCondition;
+  onChange: (v: unknown) => void;
+}) {
   if (cond.op === "is_null" || cond.op === "is_not_null") return null;
   if (!field) return null;
   if (field.type === "checkbox")
     return (
-      <select aria-label="Value" className={controlClass(false)} value={String(cond.value ?? true)} onChange={(e) => onChange(e.target.value === "true")}>
+      <select
+        aria-label="Value"
+        className={controlClass(false)}
+        value={String(cond.value ?? true)}
+        onChange={(e) => onChange(e.target.value === "true")}
+      >
         <option value="true">True</option>
         <option value="false">False</option>
       </select>
     );
   if (field.type === "picklist" || field.type === "multi_picklist") {
-    const selected = new Set(Array.isArray(cond.value) ? (cond.value as string[]) : cond.value ? [String(cond.value)] : []);
+    const selected = new Set(
+      Array.isArray(cond.value) ? (cond.value as string[]) : cond.value ? [String(cond.value)] : [],
+    );
     return (
       <select
         aria-label="Values"
@@ -109,11 +142,21 @@ function ValueInput({ field, cond, onChange }: { field?: FieldDescribe; cond: Fi
       </select>
     );
   }
-  if (field.type === "date" || field.type === "datetime" || field.api_name === "created_at" || field.api_name === "updated_at") {
+  if (
+    field.type === "date" ||
+    field.type === "datetime" ||
+    field.api_name === "created_at" ||
+    field.api_name === "updated_at"
+  ) {
     const relative = typeof cond.value === "string" && /^[A-Z_]+(:\d+)?$/.test(cond.value);
     return (
       <div className="flex gap-1">
-        <select aria-label="Date range" className={controlClass(false, "w-40")} value={relative ? String(cond.value) : ""} onChange={(e) => onChange(e.target.value || null)}>
+        <select
+          aria-label="Date range"
+          className={controlClass(false, "w-40")}
+          value={relative ? String(cond.value) : ""}
+          onChange={(e) => onChange(e.target.value || null)}
+        >
           <option value="">Specific date</option>
           {RELATIVE_DATES.map((d) => (
             <option key={d} value={d}>
@@ -121,13 +164,26 @@ function ValueInput({ field, cond, onChange }: { field?: FieldDescribe; cond: Fi
             </option>
           ))}
         </select>
-        {!relative && <input aria-label="Date" type="date" className={controlClass(false)} value={String(cond.value ?? "").slice(0, 10)} onChange={(e) => onChange(e.target.value)} />}
+        {!relative && (
+          <input
+            aria-label="Date"
+            type="date"
+            className={controlClass(false)}
+            value={String(cond.value ?? "").slice(0, 10)}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        )}
       </div>
     );
   }
   if (["lookup", "master_detail", "user", "owner", "id"].includes(field.type)) {
     return (
-      <select aria-label="Value" className={controlClass(false)} value={String(cond.value ?? "$me")} onChange={(e) => onChange(e.target.value)}>
+      <select
+        aria-label="Value"
+        className={controlClass(false)}
+        value={String(cond.value ?? "$me")}
+        onChange={(e) => onChange(e.target.value)}
+      >
         <option value="$me">Me (current user)</option>
       </select>
     );
@@ -164,7 +220,12 @@ export function FilterBuilder({
       {conditions.length > 1 && (
         <div className="flex items-center gap-2 text-sm">
           <span className="text-slate-600">Match</span>
-          <select aria-label="Filter logic" className={controlClass(false, "w-auto py-1")} value={value.logic} onChange={(e) => onChange({ ...value, logic: e.target.value as "and" | "or" })}>
+          <select
+            aria-label="Filter logic"
+            className={controlClass(false, "w-auto py-1")}
+            value={value.logic}
+            onChange={(e) => onChange({ ...value, logic: e.target.value as "and" | "or" })}
+          >
             <option value="and">all conditions (AND)</option>
             <option value="or">any condition (OR)</option>
           </select>
@@ -173,15 +234,34 @@ export function FilterBuilder({
       {conditions.map((cond, i) => {
         const f = meta.fields[cond.field];
         return (
-          <div key={i} className="grid gap-1 rounded-md border border-slate-200 bg-white p-2 sm:grid-cols-[1fr_1fr_1.4fr_auto]">
-            <select aria-label="Field" className={controlClass(false)} value={cond.field} onChange={(e) => update(i, { field: e.target.value, op: opsFor(meta.fields[e.target.value])[0]!.value, value: undefined })}>
+          <div
+            key={i}
+            className="grid gap-1 rounded-md border border-slate-200 bg-white p-2 sm:grid-cols-[1fr_1fr_1.4fr_auto]"
+          >
+            <select
+              aria-label="Field"
+              className={controlClass(false)}
+              value={cond.field}
+              onChange={(e) =>
+                update(i, {
+                  field: e.target.value,
+                  op: opsFor(meta.fields[e.target.value])[0]!.value,
+                  value: undefined,
+                })
+              }
+            >
               {filterable.map((api) => (
                 <option key={api} value={api}>
                   {meta.fields[api]!.label}
                 </option>
               ))}
             </select>
-            <select aria-label="Operator" className={controlClass(false)} value={cond.op} onChange={(e) => update(i, { ...cond, op: e.target.value })}>
+            <select
+              aria-label="Operator"
+              className={controlClass(false)}
+              value={cond.op}
+              onChange={(e) => update(i, { ...cond, op: e.target.value })}
+            >
               {opsFor(f).map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -189,7 +269,12 @@ export function FilterBuilder({
               ))}
             </select>
             <ValueInput field={f} cond={cond} onChange={(v) => update(i, { ...cond, value: v })} />
-            <button type="button" aria-label="Remove condition" className="justify-self-end rounded p-2 text-slate-500 hover:bg-slate-100" onClick={() => onChange({ ...value, conditions: conditions.filter((_, j) => j !== i) })}>
+            <button
+              type="button"
+              aria-label="Remove condition"
+              className="justify-self-end rounded p-2 text-slate-500 hover:bg-slate-100"
+              onClick={() => onChange({ ...value, conditions: conditions.filter((_, j) => j !== i) })}
+            >
               <TrashIcon size={16} />
             </button>
           </div>
@@ -200,7 +285,10 @@ export function FilterBuilder({
         variant="secondary"
         onClick={() => {
           const first = filterable[0] ?? "name";
-          onChange({ ...value, conditions: [...conditions, { field: first, op: opsFor(meta.fields[first])[0]!.value }] });
+          onChange({
+            ...value,
+            conditions: [...conditions, { field: first, op: opsFor(meta.fields[first])[0]!.value }],
+          });
         }}
       >
         <PlusIcon size={14} /> Add filter

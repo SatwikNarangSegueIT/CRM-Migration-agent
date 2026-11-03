@@ -216,7 +216,9 @@ export const NoteIcon = make(
     <path d="M15 3v4h4M8 12h8M8 16h5" />
   </>,
 );
-export const PaperclipIcon = make(<path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7" />);
+export const PaperclipIcon = make(
+  <path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7" />,
+);
 export const CheckIcon = make(<path d="m5 12 5 5L20 7" />);
 export const CheckCircleIcon = make(
   <>

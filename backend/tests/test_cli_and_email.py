@@ -68,7 +68,11 @@ def test_seed_demo_is_idempotent_and_dev_only(
 def test_console_email_logs(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level("INFO", logger="app.email"):
         email.deliver_email("a@example.com", "Hi", "Body")
-    assert caplog.records[-1].__dict__["to"] == "a@example.com"
+    record = caplog.records[-1]
+    assert record.__dict__["to"] == "a@example.com"
+    # Readable even when a log formatter ignores extra fields (e.g. the Celery worker's).
+    assert "To: a@example.com" in record.getMessage()
+    assert record.getMessage().endswith("Body")
 
 
 def test_smtp_email(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:

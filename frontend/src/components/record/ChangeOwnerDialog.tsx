@@ -63,10 +63,26 @@ export function ChangeOwnerDialog({
         {allowQueues && (
           <div className="flex gap-4 text-sm">
             <label className="flex items-center gap-1.5">
-              <input type="radio" checked={kind === "user"} onChange={() => { setKind("user"); setOwnerId(null); }} /> User
+              <input
+                type="radio"
+                checked={kind === "user"}
+                onChange={() => {
+                  setKind("user");
+                  setOwnerId(null);
+                }}
+              />{" "}
+              User
             </label>
             <label className="flex items-center gap-1.5">
-              <input type="radio" checked={kind === "queue"} onChange={() => { setKind("queue"); setOwnerId(null); }} /> Queue
+              <input
+                type="radio"
+                checked={kind === "queue"}
+                onChange={() => {
+                  setKind("queue");
+                  setOwnerId(null);
+                }}
+              />{" "}
+              Queue
             </label>
           </div>
         )}
@@ -81,12 +97,21 @@ export function ChangeOwnerDialog({
                   setOwnerId(v);
                   setOwnerName(name ?? "");
                 }}
-                search={(q, signal) => metaApi.users(q, signal).then((r) => r.map((u) => ({ id: u.id, name: u.name, detail: u.title ?? u.email })))}
+                search={(q, signal) =>
+                  metaApi
+                    .users(q, signal)
+                    .then((r) => r.map((u) => ({ id: u.id, name: u.name, detail: u.title ?? u.email })))
+                }
                 queryKey={["user-picker"]}
                 placeholder="Search users..."
               />
             ) : (
-              <select id={id} className={controlClass(false)} value={ownerId ?? ""} onChange={(e) => setOwnerId(e.target.value || null)}>
+              <select
+                id={id}
+                className={controlClass(false)}
+                value={ownerId ?? ""}
+                onChange={(e) => setOwnerId(e.target.value || null)}
+              >
                 <option value="">Select a queue…</option>
                 {queues.data?.map((q) => (
                   <option key={q.id} value={q.id}>

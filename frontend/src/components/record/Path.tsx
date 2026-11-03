@@ -24,7 +24,9 @@ export function Path({
   const current = values[currentIndex];
   const closed = Boolean(current?.closed);
   // Show only one terminal "closed" step (the reached one), like other CRMs' paths.
-  const visible = values.filter((v, i) => !v.closed || i === currentIndex || (!closed && v === values.find((x) => x.closed)));
+  const visible = values.filter(
+    (v, i) => !v.closed || i === currentIndex || (!closed && v === values.find((x) => x.closed)),
+  );
   const chosen = selected && selected !== value ? selected : null;
 
   return (

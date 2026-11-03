@@ -205,6 +205,7 @@ def update_user(
     changes = audit.diff(before, _snapshot(user))
     if not changes:
         return user
+    user.updated_at = func.now()
     # Access changes take effect immediately: sign the user out everywhere.
     if {"profile_id", "role_id", "is_active"} & changes.keys():
         revoke_sessions(db, user.id)

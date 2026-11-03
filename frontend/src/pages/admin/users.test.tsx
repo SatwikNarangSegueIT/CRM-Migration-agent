@@ -3,19 +3,42 @@ import { describe, expect, it } from "vitest";
 import type { User } from "../../api/users";
 import { errorResponse, jsonResponse, makeMe, mockApi, renderRoute } from "../../test/utils";
 
-const ROLES = [
-  { value: "ADMIN", label: "Administrator", is_staff: true, permissions: {} },
-  { value: "CASE_OFFICER", label: "Case Officer", is_staff: true, permissions: {} },
-  { value: "CLIENT", label: "Client", is_staff: false, permissions: {} },
+const profile = (id: string, name: string, is_portal = false) => ({
+  id,
+  key: null,
+  name,
+  description: null,
+  is_locked: false,
+  is_portal,
+  user_count: 0,
+  updated_at: "2026-11-01T00:00:00Z",
+});
+const PROFILES = [
+  profile("p-admin", "System Administrator"),
+  profile("p-service", "Service Agent"),
+  profile("p-portal", "Customer Portal User", true),
 ];
+const ROLES = [
+  { id: "r-ceo", key: "ceo", name: "CEO", description: null, parent_id: null, depth: 0, user_count: 1 },
+  {
+    id: "r-svc",
+    key: "service_agent",
+    name: "Service Agent",
+    description: null,
+    parent_id: "r-ceo",
+    depth: 1,
+    user_count: 0,
+  },
+];
+const SETUP = { "GET /setup/profiles": PROFILES, "GET /setup/roles": ROLES };
 
 function user(overrides: Partial<User> = {}): User {
   return {
     id: "u-2",
     email: "casey@example.com",
     name: "Casey Officer",
-    role: "CASE_OFFICER",
-    role_label: "Case Officer",
+    profile: { id: "p-service", name: "Service Agent", is_portal: false },
+    role: { id: "r-svc", name: "Service Agent" },
     is_active: true,
     title: null,
     phone: null,
@@ -34,7 +57,7 @@ describe("users list", () => {
   it("renders users with status badges and a list-view summary", async () => {
     mockApi({
       "GET /auth/me": makeMe(),
-      "GET /meta/roles": ROLES,
+      ...SETUP,
       "GET /admin/users": {
         items: [
           user(),
@@ -59,7 +82,7 @@ describe("users list", () => {
   it("passes search and filters to the API via the URL", async () => {
     const fetchSpy = mockApi({
       "GET /auth/me": makeMe(),
-      "GET /meta/roles": ROLES,
+      ...SETUP,
       "GET /admin/users": { items: [], total: 0, page: 1, page_size: 25 },
     });
     const { router } = renderRoute("/admin/users");
@@ -74,9 +97,10 @@ describe("users list", () => {
       expect(urls).toContain("/api/v1/admin/users?page=1&page_size=25&q=casey&is_active=false");
     });
     expect(await screen.findByText("No users match this view")).toBeInTheDocument();
-    // CLIENT is not offered as a staff role.
-    const roleSelect = screen.getByLabelText("Role");
-    expect(within(roleSelect).queryByText("Client")).not.toBeInTheDocument();
+    // Portal profiles are not offered for staff users.
+    const profileSelect = screen.getByLabelText("Profile");
+    expect(within(profileSelect).getByText("Service Agent")).toBeInTheDocument();
+    expect(within(profileSelect).queryByText("Customer Portal User")).not.toBeInTheDocument();
   });
 });
 
@@ -85,7 +109,7 @@ describe("user detail", () => {
     let body: Record<string, unknown> | null = null;
     mockApi({
       "GET /auth/me": makeMe(),
-      "GET /meta/roles": ROLES,
+      ...SETUP,
       "GET /admin/users/u-2": user(),
       "PATCH /admin/users/u-2": (init: RequestInit) => {
         body = JSON.parse(String(init.body)) as Record<string, unknown>;
@@ -112,7 +136,7 @@ describe("user detail", () => {
     let resent = false;
     mockApi({
       "GET /auth/me": makeMe({ id: "u-2" }),
-      "GET /meta/roles": ROLES,
+      ...SETUP,
       "GET /admin/users/u-2": user(),
       "POST /admin/users/u-2/resend-invitation": () => {
         resent = true;
@@ -121,7 +145,8 @@ describe("user detail", () => {
     });
     renderRoute("/admin/users/u-2");
     expect(await screen.findByRole("button", { name: "Deactivate" })).toBeDisabled();
-    expect(screen.getByLabelText(/Role/)).toBeDisabled();
+    expect(screen.getByLabelText(/^Role/)).toBeDisabled();
+    expect(screen.getByLabelText(/^Profile/)).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Resend invitation" }));
     const dialog = await screen.findByRole("dialog", { name: "Resend invitation?" });

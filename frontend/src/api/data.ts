@@ -57,7 +57,8 @@ export type ExportInput = {
 export const dataApi = {
   analyze: (object_api_name: string, csv: string) =>
     apiRequest<ImportAnalysis>("/imports/analyze", { method: "POST", body: { object_api_name, csv } }),
-  dryRun: (body: ImportInput) => apiRequest<DryRun>("/imports", { method: "POST", body: { ...body, dry_run: true } }),
+  dryRun: (body: ImportInput) =>
+    apiRequest<DryRun>("/imports", { method: "POST", body: { ...body, dry_run: true } }),
   start: (body: ImportInput) => apiRequest<ImportJob>("/imports", { method: "POST", body }),
   jobs: (signal?: AbortSignal) => apiRequest<ImportJob[]>("/imports", { signal }),
   job: (id: string, signal?: AbortSignal) => apiRequest<ImportJob>(`/imports/${id}`, { signal }),

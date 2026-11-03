@@ -24,7 +24,11 @@ export type ProfileSummary = {
 export type ProfileDetail = ProfileSummary & {
   system_permissions: string[];
   object_permissions: (ObjectAccess & { object_api_name: string })[];
-  field_permissions: { object_api_name: string; field_api_name: string; access: "hidden" | "read" | "edit" }[];
+  field_permissions: {
+    object_api_name: string;
+    field_api_name: string;
+    access: "hidden" | "read" | "edit";
+  }[];
 };
 
 export type RoleInfo = {
@@ -37,7 +41,11 @@ export type RoleInfo = {
   user_count: number;
 };
 
-export type SharingDefault = { object_api_name: string; access: string; grant_access_using_hierarchy: boolean };
+export type SharingDefault = {
+  object_api_name: string;
+  access: string;
+  grant_access_using_hierarchy: boolean;
+};
 
 export type Group = {
   id: string;
@@ -47,7 +55,13 @@ export type Group = {
   roles: { role_id: string; include_subordinates: boolean }[];
 };
 
-export type Queue = { id: string; name: string; email: string | null; object_api_names: string[]; user_ids: string[] };
+export type Queue = {
+  id: string;
+  name: string;
+  email: string | null;
+  object_api_names: string[];
+  user_ids: string[];
+};
 
 export type SharingRule = {
   id: string;
@@ -144,7 +158,8 @@ const json = <T>(path: string, method: "POST" | "PUT" | "PATCH" | "DELETE", body
 export const setupApi = {
   catalog: (signal?: AbortSignal) => apiRequest<Catalog>("/setup/catalog", { signal }),
   profiles: (signal?: AbortSignal) => apiRequest<ProfileSummary[]>("/setup/profiles", { signal }),
-  profile: (id: string, signal?: AbortSignal) => apiRequest<ProfileDetail>(`/setup/profiles/${id}`, { signal }),
+  profile: (id: string, signal?: AbortSignal) =>
+    apiRequest<ProfileDetail>(`/setup/profiles/${id}`, { signal }),
   createProfile: (body: { name: string; description?: string | null; clone_from_id?: string | null }) =>
     json<ProfileDetail>("/setup/profiles", "POST", body),
   updateProfile: (id: string, body: { name?: string; description?: string | null }) =>
@@ -164,7 +179,8 @@ export const setupApi = {
   updateRole: (id: string, body: { name?: string; parent_id?: string | null; description?: string | null }) =>
     json<RoleInfo>(`/setup/roles/${id}`, "PATCH", body),
   deleteRole: (id: string) => json<void>(`/setup/roles/${id}`, "DELETE"),
-  sharingDefaults: (signal?: AbortSignal) => apiRequest<SharingDefault[]>("/setup/sharing-defaults", { signal }),
+  sharingDefaults: (signal?: AbortSignal) =>
+    apiRequest<SharingDefault[]>("/setup/sharing-defaults", { signal }),
   setSharingDefault: (api: string, body: { access: string; grant_access_using_hierarchy: boolean }) =>
     json<SharingDefault>(`/setup/sharing-defaults/${api}`, "PUT", body),
   groups: (signal?: AbortSignal) => apiRequest<Group[]>("/setup/groups", { signal }),
@@ -176,12 +192,17 @@ export const setupApi = {
   ) => json<Group>(`/setup/groups/${id}/members`, "PUT", body),
   deleteGroup: (id: string) => json<void>(`/setup/groups/${id}`, "DELETE"),
   queues: (signal?: AbortSignal) => apiRequest<Queue[]>("/setup/queues", { signal }),
-  saveQueue: (id: string | null, body: { name: string; email?: string | null; object_api_names: string[] }) =>
-    id ? json<Queue>(`/setup/queues/${id}`, "PUT", body) : json<Queue>("/setup/queues", "POST", body),
-  setQueueMembers: (id: string, user_ids: string[]) => json<Queue>(`/setup/queues/${id}/members`, "PUT", { user_ids }),
+  saveQueue: (
+    id: string | null,
+    body: { name: string; email?: string | null; object_api_names: string[] },
+  ) => (id ? json<Queue>(`/setup/queues/${id}`, "PUT", body) : json<Queue>("/setup/queues", "POST", body)),
+  setQueueMembers: (id: string, user_ids: string[]) =>
+    json<Queue>(`/setup/queues/${id}/members`, "PUT", { user_ids }),
   deleteQueue: (id: string) => json<void>(`/setup/queues/${id}`, "DELETE"),
   sharingRules: (object?: string, signal?: AbortSignal) =>
-    apiRequest<SharingRule[]>(`/setup/sharing-rules${toQueryString({ object_api_name: object })}`, { signal }),
+    apiRequest<SharingRule[]>(`/setup/sharing-rules${toQueryString({ object_api_name: object })}`, {
+      signal,
+    }),
   saveSharingRule: (id: string | null, body: Omit<SharingRule, "id">) =>
     id
       ? json<SharingRule>(`/setup/sharing-rules/${id}`, "PUT", body)
@@ -190,13 +211,15 @@ export const setupApi = {
   objects: (signal?: AbortSignal) => apiRequest<SetupObjectSummary[]>("/setup/objects", { signal }),
   object: (api: string, signal?: AbortSignal) => apiRequest<SetupObject>(`/setup/objects/${api}`, { signal }),
   createObject: (body: Record<string, unknown>) => json<SetupObject>("/setup/objects", "POST", body),
-  updateObject: (api: string, body: Record<string, unknown>) => json<SetupObject>(`/setup/objects/${api}`, "PATCH", body),
+  updateObject: (api: string, body: Record<string, unknown>) =>
+    json<SetupObject>(`/setup/objects/${api}`, "PATCH", body),
   deleteObject: (api: string) => json<void>(`/setup/objects/${api}`, "DELETE"),
   createField: (api: string, body: Record<string, unknown>) =>
     json<SetupObject>(`/setup/objects/${api}/fields`, "POST", body),
   updateField: (api: string, field: string, body: Record<string, unknown>) =>
     json<SetupObject>(`/setup/objects/${api}/fields/${field}`, "PATCH", body),
-  deleteField: (api: string, field: string) => json<SetupObject>(`/setup/objects/${api}/fields/${field}`, "DELETE"),
+  deleteField: (api: string, field: string) =>
+    json<SetupObject>(`/setup/objects/${api}/fields/${field}`, "DELETE"),
   restoreField: (api: string, field: string) =>
     json<SetupObject>(`/setup/objects/${api}/fields/${field}/restore`, "POST"),
   apps: (signal?: AbortSignal) => apiRequest<SetupApp[]>("/setup/apps", { signal }),
@@ -209,7 +232,8 @@ export const setupApi = {
     json<PackInfo[]>(`/setup/packs/${key}/${enabled ? "enable" : "disable"}`, "POST"),
   setPackPermission: (key: string, name: string, profile_ids: string[]) =>
     json<PackInfo[]>(`/setup/packs/${key}/permissions/${name}`, "PUT", { profile_ids }),
-  settings: (signal?: AbortSignal) => apiRequest<Record<string, Record<string, unknown>>>("/setup/settings", { signal }),
+  settings: (signal?: AbortSignal) =>
+    apiRequest<Record<string, Record<string, unknown>>>("/setup/settings", { signal }),
   saveSetting: (key: string, value: Record<string, unknown>) =>
     json<Record<string, unknown>>(`/setup/settings/${key}`, "PUT", { value }),
   portalUsers: (signal?: AbortSignal) => apiRequest<PortalUser[]>("/portal-users", { signal }),

@@ -39,7 +39,9 @@ export function ListViewEditor({
   const save = useMutation({
     mutationFn: () => {
       const body = { ...form, filters: cleanFilter(form.filters as FilterNode) ?? {} };
-      return view ? recordsApi.updateView(meta.api_name, view.id, body) : recordsApi.createView(meta.api_name, body);
+      return view
+        ? recordsApi.updateView(meta.api_name, view.id, body)
+        : recordsApi.createView(meta.api_name, body);
     },
     onSuccess: (saved) => {
       void queryClient.invalidateQueries({ queryKey: ["list-views", meta.api_name] });
@@ -47,7 +49,9 @@ export function ListViewEditor({
       onSaved(saved);
     },
   });
-  const available = Object.values(meta.fields).filter((f) => !form.columns.includes(f.api_name) && f.type !== "encrypted_text");
+  const available = Object.values(meta.fields).filter(
+    (f) => !form.columns.includes(f.api_name) && f.type !== "encrypted_text",
+  );
   const picklists = Object.values(meta.fields).filter((f) => f.type === "picklist");
   const sort = form.sort[0];
 
@@ -71,7 +75,11 @@ export function ListViewEditor({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!form.name.trim() || form.columns.length === 0}>
+          <Button
+            onClick={() => save.mutate()}
+            loading={save.isPending}
+            disabled={!form.name.trim() || form.columns.length === 0}
+          >
             Save
           </Button>
         </>
@@ -81,11 +89,21 @@ export function ListViewEditor({
         {save.isError && <Alert tone="error">{errorMessage(save.error)}</Alert>}
         <div className="grid gap-4 sm:grid-cols-3">
           <FormField label="List name" required>
-            {({ id }) => <Input id={id} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}
+            {({ id }) => (
+              <Input id={id} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            )}
           </FormField>
           <FormField label="Who sees this view">
             {({ id }) => (
-              <select id={id} className={controlClass(false)} value={form.visibility} onChange={(e) => setForm({ ...form, visibility: e.target.value as ListViewInput["visibility"] })} disabled={!canShare}>
+              <select
+                id={id}
+                className={controlClass(false)}
+                value={form.visibility}
+                onChange={(e) =>
+                  setForm({ ...form, visibility: e.target.value as ListViewInput["visibility"] })
+                }
+                disabled={!canShare}
+              >
                 <option value="private">Only me</option>
                 <option value="public">All users</option>
               </select>
@@ -93,7 +111,12 @@ export function ListViewEditor({
           </FormField>
           <FormField label="Show">
             {({ id }) => (
-              <select id={id} className={controlClass(false)} value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value as ListViewInput["scope"] })}>
+              <select
+                id={id}
+                className={controlClass(false)}
+                value={form.scope}
+                onChange={(e) => setForm({ ...form, scope: e.target.value as ListViewInput["scope"] })}
+              >
                 <option value="all">All {meta.plural_label.toLowerCase()} I can see</option>
                 <option value="mine">My {meta.plural_label.toLowerCase()}</option>
                 <option value="team">My team's {meta.plural_label.toLowerCase()}</option>
@@ -104,29 +127,58 @@ export function ListViewEditor({
         </div>
         <section>
           <h3 className="mb-2 text-sm font-semibold text-slate-900">Filters</h3>
-          <FilterBuilder meta={meta} value={form.filters as FilterNode} onChange={(filters) => setForm({ ...form, filters })} />
+          <FilterBuilder
+            meta={meta}
+            value={form.filters as FilterNode}
+            onChange={(filters) => setForm({ ...form, filters })}
+          />
         </section>
         <section>
           <h3 className="mb-2 text-sm font-semibold text-slate-900">Columns</h3>
           <ol className="space-y-1">
             {form.columns.map((c, i) => (
-              <li key={c} className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-1.5 text-sm">
+              <li
+                key={c}
+                className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-1.5 text-sm"
+              >
                 <span>{meta.fields[c]?.label ?? c}</span>
                 <span className="flex gap-1">
-                  <button type="button" aria-label="Move up" className="rounded p-1 hover:bg-slate-100" onClick={() => moveColumn(i, -1)}>
+                  <button
+                    type="button"
+                    aria-label="Move up"
+                    className="rounded p-1 hover:bg-slate-100"
+                    onClick={() => moveColumn(i, -1)}
+                  >
                     <ChevronDownIcon size={14} className="rotate-180" />
                   </button>
-                  <button type="button" aria-label="Move down" className="rounded p-1 hover:bg-slate-100" onClick={() => moveColumn(i, 1)}>
+                  <button
+                    type="button"
+                    aria-label="Move down"
+                    className="rounded p-1 hover:bg-slate-100"
+                    onClick={() => moveColumn(i, 1)}
+                  >
                     <ChevronDownIcon size={14} />
                   </button>
-                  <button type="button" aria-label={`Remove ${meta.fields[c]?.label ?? c}`} className="rounded p-1 hover:bg-slate-100" onClick={() => setForm({ ...form, columns: form.columns.filter((x) => x !== c) })}>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${meta.fields[c]?.label ?? c}`}
+                    className="rounded p-1 hover:bg-slate-100"
+                    onClick={() => setForm({ ...form, columns: form.columns.filter((x) => x !== c) })}
+                  >
                     <CloseIcon size={14} />
                   </button>
                 </span>
               </li>
             ))}
           </ol>
-          <select aria-label="Add column" className={controlClass(false, "mt-2 w-64")} value="" onChange={(e) => e.target.value && setForm({ ...form, columns: [...form.columns, e.target.value] })}>
+          <select
+            aria-label="Add column"
+            className={controlClass(false, "mt-2 w-64")}
+            value=""
+            onChange={(e) =>
+              e.target.value && setForm({ ...form, columns: [...form.columns, e.target.value] })
+            }
+          >
             <option value="">+ Add column…</option>
             {available.map((f) => (
               <option key={f.api_name} value={f.api_name}>
@@ -138,7 +190,19 @@ export function ListViewEditor({
         <div className="grid gap-4 sm:grid-cols-3">
           <FormField label="Sort by">
             {({ id }) => (
-              <select id={id} className={controlClass(false)} value={sort?.field ?? ""} onChange={(e) => setForm({ ...form, sort: e.target.value ? [{ field: e.target.value, direction: sort?.direction ?? "asc" }] : [] })}>
+              <select
+                id={id}
+                className={controlClass(false)}
+                value={sort?.field ?? ""}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    sort: e.target.value
+                      ? [{ field: e.target.value, direction: sort?.direction ?? "asc" }]
+                      : [],
+                  })
+                }
+              >
                 <option value="">Name</option>
                 {Object.values(meta.fields)
                   .filter((f) => f.sortable)
@@ -152,7 +216,17 @@ export function ListViewEditor({
           </FormField>
           <FormField label="Direction">
             {({ id }) => (
-              <select id={id} className={controlClass(false)} value={sort?.direction ?? "asc"} onChange={(e) => setForm({ ...form, sort: [{ field: sort?.field ?? "name", direction: e.target.value as "asc" | "desc" }] })}>
+              <select
+                id={id}
+                className={controlClass(false)}
+                value={sort?.direction ?? "asc"}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    sort: [{ field: sort?.field ?? "name", direction: e.target.value as "asc" | "desc" }],
+                  })
+                }
+              >
                 <option value="asc">Ascending</option>
                 <option value="desc">Descending</option>
               </select>
@@ -161,7 +235,12 @@ export function ListViewEditor({
           {picklists.length > 0 && (
             <FormField label="Kanban grouping">
               {({ id }) => (
-                <select id={id} className={controlClass(false)} value={form.kanban_field ?? ""} onChange={(e) => setForm({ ...form, kanban_field: e.target.value || null })}>
+                <select
+                  id={id}
+                  className={controlClass(false)}
+                  value={form.kanban_field ?? ""}
+                  onChange={(e) => setForm({ ...form, kanban_field: e.target.value || null })}
+                >
                   <option value="">None</option>
                   {picklists.map((f) => (
                     <option key={f.api_name} value={f.api_name}>

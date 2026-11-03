@@ -9,7 +9,13 @@ import { Alert, Button, Checkbox, FormField, Input } from "../ui";
 import { Modal } from "../ui/Modal";
 import { Combobox, controlClass } from "./FieldInput";
 
-type ParamSpec = { name: string; label: string; type: "text" | "textarea" | "datetime" | "date" | "segment"; required?: boolean; hint?: string };
+type ParamSpec = {
+  name: string;
+  label: string;
+  type: "text" | "textarea" | "datetime" | "date" | "segment";
+  required?: boolean;
+  hint?: string;
+};
 
 // Actions that need input before they run. Other actions just confirm.
 const ACTION_PARAMS: Record<string, ParamSpec[]> = {
@@ -26,7 +32,9 @@ const ACTION_PARAMS: Record<string, ParamSpec[]> = {
   "email_send.schedule": [
     { name: "scheduled_at", label: "Send at", type: "datetime", hint: "Leave empty to send now." },
   ],
-  "campaign.add_members": [{ name: "segment_id", label: "Add everyone in segment", type: "segment", required: true }],
+  "campaign.add_members": [
+    { name: "segment_id", label: "Add everyone in segment", type: "segment", required: true },
+  ],
 };
 
 const CONFIRM_TEXT: Record<string, string> = {
@@ -53,7 +61,17 @@ export function ActionDialog({
   const key = action ? `${object}.${action.name}` : "";
   if (!action) return null;
   if (key === "lead.convert") return <ConvertLeadDialog record={record} onClose={onClose} onDone={onDone} />;
-  return <GenericActionDialog key={key} object={object} record={record} action={action} specKey={key} onClose={onClose} onDone={onDone} />;
+  return (
+    <GenericActionDialog
+      key={key}
+      object={object}
+      record={record}
+      action={action}
+      specKey={key}
+      onClose={onClose}
+      onDone={onDone}
+    />
+  );
 }
 
 function GenericActionDialog({
@@ -113,12 +131,29 @@ function GenericActionDialog({
     >
       <form id="action-form" onSubmit={onSubmit} className="space-y-4" noValidate>
         {err && <Alert tone="error">{errorMessage(err)}</Alert>}
-        {spec.length === 0 && <p className="text-sm text-slate-700">{CONFIRM_TEXT[specKey] ?? `Run "${action.label}" on ${record.name}?`}</p>}
+        {spec.length === 0 && (
+          <p className="text-sm text-slate-700">
+            {CONFIRM_TEXT[specKey] ?? `Run "${action.label}" on ${record.name}?`}
+          </p>
+        )}
         {spec.map((p) => (
-          <FormField key={p.name} label={p.label} required={p.required} hint={p.hint} error={err?.fields[p.name]}>
+          <FormField
+            key={p.name}
+            label={p.label}
+            required={p.required}
+            hint={p.hint}
+            error={err?.fields[p.name]}
+          >
             {({ id, describedBy, invalid }) =>
               p.type === "textarea" ? (
-                <textarea id={id} rows={4} aria-describedby={describedBy} className={controlClass(invalid)} value={values[p.name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [p.name]: e.target.value }))} />
+                <textarea
+                  id={id}
+                  rows={4}
+                  aria-describedby={describedBy}
+                  className={controlClass(invalid)}
+                  value={values[p.name] ?? ""}
+                  onChange={(e) => setValues((v) => ({ ...v, [p.name]: e.target.value }))}
+                />
               ) : p.type === "segment" ? (
                 <Combobox
                   id={id}
@@ -215,7 +250,12 @@ function ConvertLeadDialog({
           </label>
           {d?.accounts.map((a) => (
             <label key={a.id} className="mt-1 flex items-center gap-2">
-              <input type="radio" name="account" checked={accountId === a.id} onChange={() => setAccountId(a.id)} />
+              <input
+                type="radio"
+                name="account"
+                checked={accountId === a.id}
+                onChange={() => setAccountId(a.id)}
+              />
               Use existing account <strong>{a.name}</strong>
             </label>
           ))}
@@ -228,7 +268,12 @@ function ConvertLeadDialog({
           </label>
           {d?.contacts.map((c) => (
             <label key={c.id} className="mt-1 flex items-center gap-2">
-              <input type="radio" name="contact" checked={contactId === c.id} onChange={() => setContactId(c.id)} />
+              <input
+                type="radio"
+                name="contact"
+                checked={contactId === c.id}
+                onChange={() => setContactId(c.id)}
+              />
               Use existing contact <strong>{c.name}</strong> (same e-mail)
             </label>
           ))}
@@ -236,18 +281,29 @@ function ConvertLeadDialog({
         <section>
           <h3 className="font-semibold text-slate-900">Opportunity</h3>
           <div className="mt-2">
-            <Checkbox label="Create an opportunity" checked={createOpp} onChange={(e) => setCreateOpp(e.target.checked)} />
+            <Checkbox
+              label="Create an opportunity"
+              checked={createOpp}
+              onChange={(e) => setCreateOpp(e.target.checked)}
+            />
           </div>
           {createOpp && (
             <div className="mt-2">
               <label htmlFor="opp-name" className="block text-sm font-medium text-slate-700">
                 Opportunity name
               </label>
-              <input id="opp-name" className={controlClass(false, "mt-1")} value={oppName} onChange={(e) => setOppName(e.target.value)} />
+              <input
+                id="opp-name"
+                className={controlClass(false, "mt-1")}
+                value={oppName}
+                onChange={(e) => setOppName(e.target.value)}
+              />
             </div>
           )}
         </section>
-        <p className="text-xs text-slate-500">Activities, campaign history and consent move to the contact. The lead becomes read-only.</p>
+        <p className="text-xs text-slate-500">
+          Activities, campaign history and consent move to the contact. The lead becomes read-only.
+        </p>
       </div>
     </Modal>
   );

@@ -16,7 +16,14 @@ def deliver_email(to: str, subject: str, body: str) -> None:
     """Send immediately (called by the worker task)."""
     settings = get_settings()
     if settings.email_backend == "console":
-        logger.info("E-mail (console backend)", extra={"to": to, "subject": subject, "body": body})
+        # The text is in the message itself: Celery's log formatter drops `extra` fields.
+        logger.info(
+            "E-mail (console backend)\nTo: %s\nSubject: %s\n\n%s",
+            to,
+            subject,
+            body,
+            extra={"to": to, "subject": subject, "body": body},
+        )
         return
 
     message = EmailMessage()
@@ -46,7 +53,13 @@ def deliver_message(
     """Send a (marketing) message with an optional HTML part and extra headers."""
     settings = get_settings()
     if settings.email_backend == "console":
-        logger.info("E-mail (console backend)", extra={"to": to, "subject": subject, "body": text})
+        logger.info(
+            "E-mail (console backend)\nTo: %s\nSubject: %s\n\n%s",
+            to,
+            subject,
+            text,
+            extra={"to": to, "subject": subject, "body": text},
+        )
         return
     message = EmailMessage()
     sender = settings.email_from

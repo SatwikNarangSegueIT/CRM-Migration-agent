@@ -41,9 +41,17 @@ export function RequireClient({ children }: { children?: ReactNode }) {
   return <>{children ?? <Outlet />}</>;
 }
 
-export function RequirePermission({ permission, children }: { permission: string; children?: ReactNode }) {
+/** Requires a system permission; with a list, any one of them. The server remains the authority. */
+export function RequirePermission({
+  permission,
+  children,
+}: {
+  permission: string | string[];
+  children?: ReactNode;
+}) {
   const { can } = useAuth();
-  if (!can(permission)) return <Navigate to="/forbidden" replace />;
+  const allowed = (Array.isArray(permission) ? permission : [permission]).some(can);
+  if (!allowed) return <Navigate to="/forbidden" replace />;
   return <>{children ?? <Outlet />}</>;
 }
 

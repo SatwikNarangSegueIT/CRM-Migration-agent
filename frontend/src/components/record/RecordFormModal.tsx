@@ -8,12 +8,22 @@ import { Alert, Button, FormField } from "../ui";
 import { Modal } from "../ui/Modal";
 import { FieldInput } from "./FieldInput";
 
-function initialValues(meta: ObjectDescribe, record: RecordData | null, defaults: Record<string, unknown>): Record<string, unknown> {
+function initialValues(
+  meta: ObjectDescribe,
+  record: RecordData | null,
+  defaults: Record<string, unknown>,
+): Record<string, unknown> {
   const values: Record<string, unknown> = {};
   for (const f of Object.values(meta.fields)) {
-    if (record) values[f.api_name] = f.api_name === "name" ? record.name : record.fields[f.api_name] ?? null;
+    if (record)
+      values[f.api_name] = f.api_name === "name" ? record.name : (record.fields[f.api_name] ?? null);
     else if (f.default_value !== null && f.default_value !== undefined) {
-      values[f.api_name] = f.default_value === "today" ? new Date().toISOString().slice(0, 10) : f.default_value === "now" ? null : f.default_value;
+      values[f.api_name] =
+        f.default_value === "today"
+          ? new Date().toISOString().slice(0, 10)
+          : f.default_value === "now"
+            ? null
+            : f.default_value;
     }
     if (!record && f.type === "picklist") {
       const def = f.options.values?.find((v) => v.default && v.active);
@@ -74,12 +84,17 @@ export function RecordFormModal({
           if (creating || v !== record?.name) name = (v as string) ?? "";
           continue;
         }
-        const before = record ? record.fields[api] ?? null : null;
-        if (creating ? v !== undefined && v !== null && v !== "" : JSON.stringify(v ?? null) !== JSON.stringify(before)) {
+        const before = record ? (record.fields[api] ?? null) : null;
+        if (
+          creating
+            ? v !== undefined && v !== null && v !== ""
+            : JSON.stringify(v ?? null) !== JSON.stringify(before)
+        ) {
           fields[api] = v === "" ? null : v;
         }
       }
-      for (const [k, v] of Object.entries(defaults)) if (creating && !(k in fields) && k !== "name") fields[k] = v;
+      for (const [k, v] of Object.entries(defaults))
+        if (creating && !(k in fields) && k !== "name") fields[k] = v;
       return creating
         ? recordsApi.create(meta.api_name, { name, fields })
         : recordsApi.update(meta.api_name, record.id, { version: record.version, name, fields });
@@ -93,7 +108,8 @@ export function RecordFormModal({
   });
   const err = save.error instanceof ApiError ? save.error : null;
   const fieldErrors = err?.fields ?? {};
-  const unmapped = err && !Object.keys(fieldErrors).some((k) => editable.includes(k)) ? errorMessage(err) : null;
+  const unmapped =
+    err && !Object.keys(fieldErrors).some((k) => editable.includes(k)) ? errorMessage(err) : null;
   const conflict = err?.status === 409 && err.code === "stale_version";
 
   function onSubmit(e: FormEvent) {
@@ -138,7 +154,12 @@ export function RecordFormModal({
                 const wide = ["long_text", "textarea", "address", "multi_picklist"].includes(f.type);
                 return (
                   <div key={api} className={wide && section.columns === 2 ? "sm:col-span-2" : undefined}>
-                    <FormField label={f.label} required={f.required || (api === "name" && creating)} hint={f.help_text ?? undefined} error={fieldErrors[api]}>
+                    <FormField
+                      label={f.label}
+                      required={f.required || (api === "name" && creating)}
+                      hint={f.help_text ?? undefined}
+                      error={fieldErrors[api]}
+                    >
                       {({ id, describedBy, invalid }) => (
                         <FieldInput
                           id={id}

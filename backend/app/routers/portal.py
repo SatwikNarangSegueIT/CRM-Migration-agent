@@ -17,6 +17,7 @@ from app.auth.deps import AuthContext, DbSession, require
 from app.core.errors import AppError, ConflictError, NotFoundError, PermissionDeniedError
 from app.engine import hooks
 from app.engine.deps import PortalRecords, Records
+from app.engine.describe import describe_object
 from app.engine.records import RecordService
 from app.models import Profile, Record, User
 from app.routers.workspace import file_response, store_file
@@ -92,6 +93,30 @@ def me(svc: PortalRecords) -> dict[str, Any]:
         "counts": counts,
         "branding": branding,
     }
+
+
+@router.get("/objects/{api_name}/describe")
+def describe(api_name: str, svc: PortalRecords) -> dict[str, Any]:
+    """Field labels, types and layout for rendering portal records. Field-level security applies;
+    staff-only details (list views, actions, related-list configuration) are left out."""
+    meta = svc.object(api_name)
+    if not meta.show_in_portal or not svc.policy.object(api_name).read:
+        raise NotFoundError("Not found.")
+    full = describe_object(svc, meta)
+    keep = (
+        "api_name",
+        "label",
+        "plural_label",
+        "icon",
+        "color",
+        "name_label",
+        "fields",
+        "page_layout",
+        "compact_layout",
+        "list_columns",
+        "path_field",
+    )
+    return {k: full[k] for k in keep if k in full}
 
 
 @router.get("/objects/{api_name}/records")
@@ -351,6 +376,7 @@ def deactivate(user_id: uuid.UUID, request: Request, db: DbSession, auth: Portal
     if user is None or not user.profile.is_portal:
         raise NotFoundError("Portal user not found.")
     user.is_active = False
+    user.updated_at = func.now()
     revoke_sessions(db, user.id)
     audit.record(
         db,
@@ -372,6 +398,7 @@ def activate(user_id: uuid.UUID, request: Request, db: DbSession, auth: PortalAd
     if user is None or not user.profile.is_portal:
         raise NotFoundError("Portal user not found.")
     user.is_active = True
+    user.updated_at = func.now()
     audit.record(
         db,
         action=AuditAction.UPDATE,

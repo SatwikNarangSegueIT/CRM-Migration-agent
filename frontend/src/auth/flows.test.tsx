@@ -1,12 +1,10 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { MeResponse } from "../api/auth";
-import { errorResponse, jsonResponse, makeMe, mockApi, renderRoute } from "../test/utils";
+import { errorResponse, jsonResponse, makeMe, mockApi, renderRoute, shellHandlers } from "../test/utils";
 
-const HEALTH = {
-  "GET /health/live": { status: "ok", app: "MigrateCRM", environment: "test" },
-  "GET /health/ready": { status: "ok", checks: {} },
-};
+const HEALTH = shellHandlers();
+const GREETING = /^Good (morning|afternoon|evening), Alex$/;
 
 /** /auth/me returns 401 until login succeeds, then `afterLogin`. */
 function loginScenario(state: string, afterLogin: MeResponse | null) {
@@ -41,22 +39,29 @@ describe("route guards", () => {
 
   it("sends clients to the portal", async () => {
     mockApi({
-      "GET /auth/me": makeMe({ role: "CLIENT", name: "Priya Client", permissions: ["portal.access"] }),
+      "GET /auth/me": makeMe({ profile: "Customer Portal User", name: "Priya Client" }),
+      "GET /portal/me": { contact: null, account: null, objects: [], counts: {}, branding: {} },
     });
     const { router } = renderRoute("/");
-    expect(await screen.findByText("Your client portal is coming soon")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Hello, Priya" })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/portal");
   });
 
   it("sends staff away from the portal", async () => {
     mockApi({ ...HEALTH, "GET /auth/me": makeMe() });
     const { router } = renderRoute("/portal");
-    await screen.findByRole("heading", { name: "Welcome, Alex" });
+    await screen.findByRole("heading", { name: GREETING });
     expect(router.state.location.pathname).toBe("/");
   });
 
   it("shows access denied without the permission", async () => {
-    mockApi({ "GET /auth/me": makeMe({ role: "AUDITOR", permissions: ["dashboard.view", "audit.read"] }) });
+    mockApi({
+      ...HEALTH,
+      "GET /auth/me": makeMe({
+        profile: "Read Only (Auditor)",
+        permissions: ["export_data", "view_audit_log", "view_setup"],
+      }),
+    });
     const { router } = renderRoute("/admin/users");
     expect(await screen.findByRole("heading", { name: "Access denied" })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/forbidden");
@@ -69,27 +74,36 @@ describe("route guards", () => {
     expect(router.state.location.pathname).toBe("/mfa");
   });
 
-  it("shows only permitted apps and tabs in the navigation", async () => {
+  it("shows only permitted Setup pages in the navigation", async () => {
     mockApi({
-      "GET /auth/me": makeMe({ role: "AUDITOR", permissions: ["dashboard.view", "audit.read"] }),
+      ...HEALTH,
+      "GET /auth/me": makeMe({
+        profile: "Read Only (Auditor)",
+        permissions: ["export_data", "view_audit_log", "view_setup"],
+      }),
       "GET /admin/audit-logs": { items: [], total: 0, page: 1, page_size: 50 },
     });
     renderRoute("/admin/audit");
-    const tabs = await screen.findByRole("navigation", { name: "Administration tabs" });
-    expect(tabs).toHaveTextContent("Audit Log");
-    expect(tabs).not.toHaveTextContent("Users");
-    expect(screen.queryByRole("button", { name: "Settings" })).not.toBeInTheDocument();
+    const setup = await screen.findByRole("navigation", { name: "Setup" });
+    expect(setup).toHaveTextContent("Audit Log");
+    expect(setup).toHaveTextContent("Profiles");
+    expect(setup).not.toHaveTextContent("Portal Users");
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
   });
 
-  it("hides the Administration app when no admin permission is held", async () => {
+  it("hides Setup when no setup permission is held and lists the user's apps", async () => {
     mockApi({
       ...HEALTH,
-      "GET /auth/me": makeMe({ role: "CASE_OFFICER", permissions: ["dashboard.view"] }),
+      "GET /auth/me": makeMe({ profile: "Sales Representative", objects: { account: { read: true } } }),
     });
     renderRoute("/");
     const rail = await screen.findByRole("navigation", { name: "Apps" });
+    await waitFor(() => expect(rail).toHaveTextContent("Sales"));
     expect(rail).toHaveTextContent("Home");
-    expect(rail).not.toHaveTextContent("Admin");
+    expect(rail).toHaveTextContent("Accounts");
+    expect(rail).not.toHaveTextContent("Contacts");
+    expect(rail).not.toHaveTextContent("Setup");
+    expect(screen.queryByRole("button", { name: "Setup" })).not.toBeInTheDocument();
   });
 
   it("returns to login when a request reports the session has ended", async () => {
@@ -101,7 +115,8 @@ describe("route guards", () => {
         expired = true;
         return errorResponse(401, "unauthenticated", "Please sign in.");
       },
-      "GET /meta/roles": [],
+      "GET /setup/profiles": [],
+      "GET /setup/roles": [],
     });
     const { router } = renderRoute("/admin/users");
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
@@ -158,7 +173,7 @@ describe("login flow", () => {
     const { router } = renderRoute("/mfa?next=%2F");
     fireEvent.change(await screen.findByLabelText(/Authentication code/), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: "Verify" }));
-    expect(await screen.findByRole("heading", { name: "Welcome, Alex" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: GREETING })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/");
   });
 

@@ -10,7 +10,17 @@ import { cx } from "../../components/ui/cx";
 import { formatCurrency, recordPath } from "../../lib/records";
 
 /** Kanban for any object with a path picklist; drag a card to another column to change the value. */
-export function KanbanBoard({ meta, field, viewId, q }: { meta: ObjectDescribe; field: string; viewId: string | null; q: string }) {
+export function KanbanBoard({
+  meta,
+  field,
+  viewId,
+  q,
+}: {
+  meta: ObjectDescribe;
+  field: string;
+  viewId: string | null;
+  q: string;
+}) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [dragging, setDragging] = useState<RecordData | null>(null);
@@ -25,7 +35,10 @@ export function KanbanBoard({ meta, field, viewId, q }: { meta: ObjectDescribe; 
       if (pv?.closed && pv.won === false && meta.fields.loss_reason) {
         throw new Error("Open the record to close it as lost (a loss reason is required).");
       }
-      return recordsApi.update(meta.api_name, record.id, { version: record.version, fields: { [field]: value } });
+      return recordsApi.update(meta.api_name, record.id, {
+        version: record.version,
+        fields: { [field]: value },
+      });
     },
     onSuccess: (r) => {
       toast.show(`${r.name} moved.`);
@@ -35,7 +48,12 @@ export function KanbanBoard({ meta, field, viewId, q }: { meta: ObjectDescribe; 
   });
   const compact = meta.compact_layout.filter((c) => c !== field).slice(0, 3);
 
-  if (board.isPending) return <div className="rounded-b-lg border border-slate-300 bg-white p-8"><Spinner label="Loading board" /></div>;
+  if (board.isPending)
+    return (
+      <div className="rounded-b-lg border border-slate-300 bg-white p-8">
+        <Spinner label="Loading board" />
+      </div>
+    );
   if (board.isError) return <Alert tone="error">{errorMessage(board.error)}</Alert>;
 
   return (
@@ -53,12 +71,19 @@ export function KanbanBoard({ meta, field, viewId, q }: { meta: ObjectDescribe; 
             onDrop={(e) => {
               e.preventDefault();
               setOver(null);
-              if (dragging && dragging.fields[field] !== col.value) move.mutate({ record: dragging, value: col.value });
+              if (dragging && dragging.fields[field] !== col.value)
+                move.mutate({ record: dragging, value: col.value });
               setDragging(null);
             }}
-            className={cx("flex w-72 flex-none flex-col rounded-lg border bg-white", over === col.value ? "border-brand-500 ring-2 ring-brand-200" : "border-slate-200")}
+            className={cx(
+              "flex w-72 flex-none flex-col rounded-lg border bg-white",
+              over === col.value ? "border-brand-500 ring-2 ring-brand-200" : "border-slate-200",
+            )}
           >
-            <header className="border-b border-slate-200 px-3 py-2" style={{ borderTop: `3px solid ${col.color ?? "#94a3b8"}` }}>
+            <header
+              className="border-b border-slate-200 px-3 py-2"
+              style={{ borderTop: `3px solid ${col.color ?? "#94a3b8"}` }}
+            >
               <p className="flex items-center justify-between text-sm font-semibold text-slate-900">
                 {col.label}
                 <span className="rounded-full bg-slate-100 px-2 text-xs text-slate-600">{col.total}</span>
@@ -72,9 +97,15 @@ export function KanbanBoard({ meta, field, viewId, q }: { meta: ObjectDescribe; 
                   draggable={r.access.edit}
                   onDragStart={() => setDragging(r)}
                   onDragEnd={() => setDragging(null)}
-                  className={cx("rounded-md border border-slate-200 bg-white p-2.5 text-sm shadow-sm", r.access.edit && "cursor-grab hover:border-brand-300")}
+                  className={cx(
+                    "rounded-md border border-slate-200 bg-white p-2.5 text-sm shadow-sm",
+                    r.access.edit && "cursor-grab hover:border-brand-300",
+                  )}
                 >
-                  <Link to={recordPath(meta.api_name, r.id)} className="font-medium text-brand-700 hover:underline">
+                  <Link
+                    to={recordPath(meta.api_name, r.id)}
+                    className="font-medium text-brand-700 hover:underline"
+                  >
                     {r.name}
                   </Link>
                   <dl className="mt-1 space-y-0.5 text-xs text-slate-600">
@@ -89,7 +120,11 @@ export function KanbanBoard({ meta, field, viewId, q }: { meta: ObjectDescribe; 
                   </dl>
                 </li>
               ))}
-              {col.total > col.items.length && <li className="px-1 text-xs text-slate-500">+{col.total - col.items.length} more — refine the list to see them</li>}
+              {col.total > col.items.length && (
+                <li className="px-1 text-xs text-slate-500">
+                  +{col.total - col.items.length} more — refine the list to see them
+                </li>
+              )}
             </ul>
           </section>
         ))}

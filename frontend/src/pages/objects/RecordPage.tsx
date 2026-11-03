@@ -45,11 +45,21 @@ function MoreMenu({ children }: { children: (close: () => void) => React.ReactNo
   useDismiss(open, ref, () => setOpen(false));
   return (
     <div ref={ref} className="relative">
-      <button type="button" aria-label="More actions" aria-haspopup="menu" aria-expanded={open} className="inline-flex h-[34px] items-center rounded-md border border-slate-300 bg-white px-2 text-slate-600 shadow-sm hover:bg-slate-50" onClick={() => setOpen((o) => !o)}>
+      <button
+        type="button"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex h-[34px] items-center rounded-md border border-slate-300 bg-white px-2 text-slate-600 shadow-sm hover:bg-slate-50"
+        onClick={() => setOpen((o) => !o)}
+      >
         <ChevronDownIcon size={16} />
       </button>
       {open && (
-        <div role="menu" className="absolute right-0 z-30 mt-1 w-56 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg">
+        <div
+          role="menu"
+          className="absolute right-0 z-30 mt-1 w-56 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg"
+        >
           {children(() => setOpen(false))}
         </div>
       )}
@@ -78,7 +88,8 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
     void queryClient.invalidateQueries({ queryKey: ["history", api, record.id] });
   };
   const markStage = useMutation({
-    mutationFn: (value: string) => recordsApi.update(api, record.id, { version: record.version, fields: { [meta.path_field!]: value } }),
+    mutationFn: (value: string) =>
+      recordsApi.update(api, record.id, { version: record.version, fields: { [meta.path_field!]: value } }),
     onSuccess: () => {
       toast.show(`${meta.fields[meta.path_field!]!.label} updated.`);
       refresh();
@@ -128,7 +139,13 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
     <div className="space-y-3">
       {record.is_deleted && (
         <Alert tone="warning" title="This record is in the recycle bin">
-          <Button size="sm" variant="secondary" className="mt-2" loading={restore.isPending} onClick={() => restore.mutate()}>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-2"
+            loading={restore.isPending}
+            onClick={() => restore.mutate()}
+          >
             <RecycleIcon size={14} /> Restore
           </Button>
         </Alert>
@@ -160,7 +177,12 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
                 </Button>
               ))}
               {(api === "invoice" || api === "quote") && (
-                <a className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50" href={`/api/v1/objects/${api}/records/${record.id}/pdf`} target="_blank" rel="noopener noreferrer">
+                <a
+                  className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                  href={`/api/v1/objects/${api}/records/${record.id}/pdf`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   <DownloadIcon size={16} /> PDF
                 </a>
               )}
@@ -168,13 +190,65 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
                 {(close) => (
                   <>
                     {moreActions.map((a) => (
-                      <MenuItem key={a.name} onClick={() => { close(); setAction(a); }}>{a.label}</MenuItem>
+                      <MenuItem
+                        key={a.name}
+                        onClick={() => {
+                          close();
+                          setAction(a);
+                        }}
+                      >
+                        {a.label}
+                      </MenuItem>
                     ))}
-                    {meta.access.create && meta.name_field_type !== "auto_number" && <MenuItem onClick={() => { close(); setCloning(true); }}>Clone</MenuItem>}
-                    {record.access.edit && <MenuItem onClick={() => { close(); setOwnerOpen(true); }}>Change Owner</MenuItem>}
-                    <MenuItem onClick={() => { close(); setSharingOpen(true); }}>Sharing</MenuItem>
-                    {api === "contact" && can("manage_portal_users") && <MenuItem onClick={() => { close(); invite.mutate(); }}>Invite to Customer Portal</MenuItem>}
-                    {record.access.delete && <MenuItem danger onClick={() => { close(); setConfirm("delete"); }}>Delete</MenuItem>}
+                    {meta.access.create && meta.name_field_type !== "auto_number" && (
+                      <MenuItem
+                        onClick={() => {
+                          close();
+                          setCloning(true);
+                        }}
+                      >
+                        Clone
+                      </MenuItem>
+                    )}
+                    {record.access.edit && (
+                      <MenuItem
+                        onClick={() => {
+                          close();
+                          setOwnerOpen(true);
+                        }}
+                      >
+                        Change Owner
+                      </MenuItem>
+                    )}
+                    <MenuItem
+                      onClick={() => {
+                        close();
+                        setSharingOpen(true);
+                      }}
+                    >
+                      Sharing
+                    </MenuItem>
+                    {api === "contact" && can("manage_portal_users") && (
+                      <MenuItem
+                        onClick={() => {
+                          close();
+                          invite.mutate();
+                        }}
+                      >
+                        Invite to Customer Portal
+                      </MenuItem>
+                    )}
+                    {record.access.delete && (
+                      <MenuItem
+                        danger
+                        onClick={() => {
+                          close();
+                          setConfirm("delete");
+                        }}
+                      >
+                        Delete
+                      </MenuItem>
+                    )}
                   </>
                 )}
               </MoreMenu>
@@ -184,7 +258,9 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
         <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-slate-100 px-4 py-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
           {compact.map((api_) => (
             <div key={api_} className="min-w-0">
-              <dt className="text-xs text-slate-500">{api_ === "owner_id" ? "Owner" : meta.fields[api_]?.label}</dt>
+              <dt className="text-xs text-slate-500">
+                {api_ === "owner_id" ? "Owner" : meta.fields[api_]?.label}
+              </dt>
               <dd className="truncate text-slate-900">
                 <FieldDisplay field={meta.fields[api_]} record={record} apiName={api_} />
               </dd>
@@ -194,29 +270,70 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
       </section>
 
       {pathField && (
-        <Path field={pathField} value={record.fields[pathField.api_name]} canEdit={record.access.edit && !record.is_deleted && pathField.access === "edit" && !pathField.is_readonly} saving={markStage.isPending} onMark={(v) => markStage.mutate(v)} />
+        <Path
+          field={pathField}
+          value={record.fields[pathField.api_name]}
+          canEdit={
+            record.access.edit && !record.is_deleted && pathField.access === "edit" && !pathField.is_readonly
+          }
+          saving={markStage.isPending}
+          onMark={(v) => markStage.mutate(v)}
+        />
       )}
 
       <div className="grid gap-3 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-            <div role="tablist" aria-label="Record tabs" className="flex gap-1 border-b border-slate-200 px-3">
+            <div
+              role="tablist"
+              aria-label="Record tabs"
+              className="flex gap-1 border-b border-slate-200 px-3"
+            >
               {(["details", ...(hasRelated ? ["related"] : []), "history"] as const).map((t) => (
-                <button key={t} type="button" role="tab" aria-selected={tab === t} className={cx("border-b-[3px] px-3 py-3 text-sm capitalize", tab === t ? "border-brand-700 font-semibold text-slate-900" : "border-transparent text-slate-600 hover:text-slate-900")} onClick={() => setTab(t as typeof tab)}>
+                <button
+                  key={t}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === t}
+                  className={cx(
+                    "border-b-[3px] px-3 py-3 text-sm capitalize",
+                    tab === t
+                      ? "border-brand-700 font-semibold text-slate-900"
+                      : "border-transparent text-slate-600 hover:text-slate-900",
+                  )}
+                  onClick={() => setTab(t as typeof tab)}
+                >
                   {t}
                 </button>
               ))}
               {hasActivity && (
-                <button type="button" role="tab" aria-selected={tab === "activity"} className={cx("border-b-[3px] px-3 py-3 text-sm lg:hidden", tab === "activity" ? "border-brand-700 font-semibold text-slate-900" : "border-transparent text-slate-600")} onClick={() => setTab("activity")}>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === "activity"}
+                  className={cx(
+                    "border-b-[3px] px-3 py-3 text-sm lg:hidden",
+                    tab === "activity"
+                      ? "border-brand-700 font-semibold text-slate-900"
+                      : "border-transparent text-slate-600",
+                  )}
+                  onClick={() => setTab("activity")}
+                >
                   Activity
                 </button>
               )}
             </div>
             <div className="p-4" role="tabpanel">
-              {tab === "details" && <DetailsTab meta={meta} record={record} onEdit={() => setEditing(true)} />}
+              {tab === "details" && (
+                <DetailsTab meta={meta} record={record} onEdit={() => setEditing(true)} />
+              )}
               {tab === "related" && <RelatedTab meta={meta} record={record} />}
               {tab === "history" && <HistoryTab meta={meta} record={record} />}
-              {tab === "activity" && <div className="lg:hidden"><ActivityPanel meta={meta} record={record} /></div>}
+              {tab === "activity" && (
+                <div className="lg:hidden">
+                  <ActivityPanel meta={meta} record={record} />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -226,7 +343,19 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
               <ActivityPanel meta={meta} record={record} />
             </div>
           )}
-          {hasRelated && tab !== "related" && meta.related_lists.slice(0, 3).map((rl) => <RelatedCard key={`${rl.object}.${rl.field}`} parent={record} parentMeta={meta} list={rl} compact />)}
+          {hasRelated &&
+            tab !== "related" &&
+            meta.related_lists
+              .slice(0, 3)
+              .map((rl) => (
+                <RelatedCard
+                  key={`${rl.object}.${rl.field}`}
+                  parent={record}
+                  parentMeta={meta}
+                  list={rl}
+                  compact
+                />
+              ))}
         </div>
       </div>
 
@@ -234,10 +363,23 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
         <RecordFormModal
           meta={meta}
           record={editing ? record : null}
-          defaults={cloning ? Object.fromEntries(Object.entries(record.fields).filter(([k]) => meta.fields[k]?.access === "edit" && !meta.fields[k]?.is_readonly)) : {}}
-          defaultNames={cloning ? Object.fromEntries(Object.entries(record.display).map(([k, v]) => [k, v.name])) : {}}
+          defaults={
+            cloning
+              ? Object.fromEntries(
+                  Object.entries(record.fields).filter(
+                    ([k]) => meta.fields[k]?.access === "edit" && !meta.fields[k]?.is_readonly,
+                  ),
+                )
+              : {}
+          }
+          defaultNames={
+            cloning ? Object.fromEntries(Object.entries(record.display).map(([k, v]) => [k, v.name])) : {}
+          }
           open
-          onClose={() => { setEditing(false); setCloning(false); }}
+          onClose={() => {
+            setEditing(false);
+            setCloning(false);
+          }}
           onSaved={(r) => {
             setEditing(false);
             setCloning(false);
@@ -248,7 +390,17 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
         />
       )}
       {ownerOpen && (
-        <ChangeOwnerDialog object={api} ids={[record.id]} allowQueues={meta.allow_queues} onClose={() => setOwnerOpen(false)} onDone={(m) => { setOwnerOpen(false); toast.show(m); refresh(); }} />
+        <ChangeOwnerDialog
+          object={api}
+          ids={[record.id]}
+          allowQueues={meta.allow_queues}
+          onClose={() => setOwnerOpen(false)}
+          onDone={(m) => {
+            setOwnerOpen(false);
+            toast.show(m);
+            refresh();
+          }}
+        />
       )}
       {sharingOpen && <SharingPanel object={api} record={record} onClose={() => setSharingOpen(false)} />}
       <ActionDialog
@@ -264,14 +416,31 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
           else refresh();
         }}
       />
-      <ConfirmDialog open={confirm === "delete"} title={`Delete ${meta.label}?`} tone="danger" confirmLabel="Delete" loading={remove.isPending} onCancel={() => setConfirm(null)} onConfirm={() => remove.mutate()}>
-        "{record.name}" goes to the recycle bin for 30 days{meta.related_lists.length ? ", together with its detail records" : ""}.
+      <ConfirmDialog
+        open={confirm === "delete"}
+        title={`Delete ${meta.label}?`}
+        tone="danger"
+        confirmLabel="Delete"
+        loading={remove.isPending}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => remove.mutate()}
+      >
+        "{record.name}" goes to the recycle bin for 30 days
+        {meta.related_lists.length ? ", together with its detail records" : ""}.
       </ConfirmDialog>
     </div>
   );
 }
 
-function DetailsTab({ meta, record, onEdit }: { meta: ObjectDescribe; record: RecordData; onEdit: () => void }) {
+function DetailsTab({
+  meta,
+  record,
+  onEdit,
+}: {
+  meta: ObjectDescribe;
+  record: RecordData;
+  onEdit: () => void;
+}) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   return (
     <div className="space-y-4">
@@ -280,7 +449,19 @@ function DetailsTab({ meta, record, onEdit }: { meta: ObjectDescribe; record: Re
         return (
           <section key={section.label}>
             <h2>
-              <button type="button" aria-expanded={open} className="flex w-full items-center gap-2 rounded bg-slate-100 px-3 py-1.5 text-left text-sm font-semibold text-slate-800" onClick={() => setCollapsed((c) => { const n = new Set(c); if (n.has(section.label)) n.delete(section.label); else n.add(section.label); return n; })}>
+              <button
+                type="button"
+                aria-expanded={open}
+                className="flex w-full items-center gap-2 rounded bg-slate-100 px-3 py-1.5 text-left text-sm font-semibold text-slate-800"
+                onClick={() =>
+                  setCollapsed((c) => {
+                    const n = new Set(c);
+                    if (n.has(section.label)) n.delete(section.label);
+                    else n.add(section.label);
+                    return n;
+                  })
+                }
+              >
                 <ChevronDownIcon size={14} className={cx("transition-transform", !open && "-rotate-90")} />
                 {section.label}
               </button>
@@ -289,17 +470,28 @@ function DetailsTab({ meta, record, onEdit }: { meta: ObjectDescribe; record: Re
               <dl className={cx("mt-2 grid gap-x-8", section.columns === 2 ? "sm:grid-cols-2" : "")}>
                 {section.fields.map((api) => {
                   const f = meta.fields[api];
-                  const editable = record.access.edit && f && f.access === "edit" && !f.is_readonly && !f.is_system;
+                  const editable =
+                    record.access.edit && f && f.access === "edit" && !f.is_readonly && !f.is_system;
                   return (
-                    <div key={api} className="group flex items-start justify-between gap-2 border-b border-slate-100 py-2">
+                    <div
+                      key={api}
+                      className="group flex items-start justify-between gap-2 border-b border-slate-100 py-2"
+                    >
                       <div className="min-w-0 flex-1">
-                        <dt className="text-xs text-slate-500">{api === "owner_id" ? "Owner" : f?.label ?? api}</dt>
+                        <dt className="text-xs text-slate-500">
+                          {api === "owner_id" ? "Owner" : (f?.label ?? api)}
+                        </dt>
                         <dd className="min-h-[1.25rem] text-sm text-slate-900">
                           <FieldDisplay field={f} record={record} apiName={api} />
                         </dd>
                       </div>
                       {editable && (
-                        <button type="button" aria-label={`Edit ${f.label}`} className="invisible mt-3 rounded p-0.5 text-slate-400 hover:text-brand-700 group-hover:visible focus:visible" onClick={onEdit}>
+                        <button
+                          type="button"
+                          aria-label={`Edit ${f.label}`}
+                          className="invisible mt-3 rounded p-0.5 text-slate-400 hover:text-brand-700 group-hover:visible focus:visible"
+                          onClick={onEdit}
+                        >
                           <EditIcon size={14} />
                         </button>
                       )}
@@ -315,7 +507,17 @@ function DetailsTab({ meta, record, onEdit }: { meta: ObjectDescribe; record: Re
   );
 }
 
-export function RelatedCard({ parent, parentMeta, list, compact = false }: { parent: RecordData; parentMeta: ObjectDescribe; list: RelatedList; compact?: boolean }) {
+export function RelatedCard({
+  parent,
+  parentMeta,
+  list,
+  compact = false,
+}: {
+  parent: RecordData;
+  parentMeta: ObjectDescribe;
+  list: RelatedList;
+  compact?: boolean;
+}) {
   const childMeta = useObjectMeta(list.object);
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -323,7 +525,8 @@ export function RelatedCard({ parent, parentMeta, list, compact = false }: { par
   const [limit, setLimit] = useState(compact ? 3 : 5);
   const rows = useQuery({
     queryKey: ["related", parent.id, list.object, list.field, limit],
-    queryFn: ({ signal }) => recordsApi.related(parentMeta.api_name, parent.id, list.object, list.field, limit, null, signal),
+    queryFn: ({ signal }) =>
+      recordsApi.related(parentMeta.api_name, parent.id, list.object, list.field, limit, null, signal),
   });
   const total = rows.data?.total ?? 0;
   const cols = list.columns.filter((c) => childMeta.data?.fields[c]);
@@ -341,7 +544,9 @@ export function RelatedCard({ parent, parentMeta, list, compact = false }: { par
         )}
       </header>
       {rows.isPending ? (
-        <div className="p-4"><Spinner label="Loading" /></div>
+        <div className="p-4">
+          <Spinner label="Loading" />
+        </div>
       ) : rows.isError ? (
         <p className="p-4 text-sm text-red-700">{errorMessage(rows.error)}</p>
       ) : total === 0 ? (
@@ -350,14 +555,21 @@ export function RelatedCard({ parent, parentMeta, list, compact = false }: { par
         <ul className="divide-y divide-slate-100">
           {rows.data.items.map((r) => (
             <li key={r.id} className="px-4 py-2 text-sm">
-              <Link to={recordPath(list.object, r.id)} className="font-medium text-brand-700 hover:underline">{r.name}</Link>
+              <Link to={recordPath(list.object, r.id)} className="font-medium text-brand-700 hover:underline">
+                {r.name}
+              </Link>
               <dl className="mt-0.5 grid grid-cols-[auto_1fr] gap-x-2 text-xs text-slate-600">
-                {cols.filter((c) => c !== "name").slice(0, 3).map((c) => (
-                  <div key={c} className="contents">
-                    <dt>{childMeta.data?.fields[c]?.label}:</dt>
-                    <dd className="truncate"><FieldDisplay field={childMeta.data?.fields[c]} record={r} apiName={c} /></dd>
-                  </div>
-                ))}
+                {cols
+                  .filter((c) => c !== "name")
+                  .slice(0, 3)
+                  .map((c) => (
+                    <div key={c} className="contents">
+                      <dt>{childMeta.data?.fields[c]?.label}:</dt>
+                      <dd className="truncate">
+                        <FieldDisplay field={childMeta.data?.fields[c]} record={r} apiName={c} />
+                      </dd>
+                    </div>
+                  ))}
               </dl>
             </li>
           ))}
@@ -367,19 +579,33 @@ export function RelatedCard({ parent, parentMeta, list, compact = false }: { par
           <table className="min-w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-600">
-                <th scope="col" className="px-4 py-2 font-semibold">{childMeta.data?.fields.name?.label ?? "Name"}</th>
-                {cols.filter((c) => c !== "name").map((c) => (
-                  <th key={c} scope="col" className="px-4 py-2 font-semibold">{childMeta.data?.fields[c]?.label}</th>
-                ))}
+                <th scope="col" className="px-4 py-2 font-semibold">
+                  {childMeta.data?.fields.name?.label ?? "Name"}
+                </th>
+                {cols
+                  .filter((c) => c !== "name")
+                  .map((c) => (
+                    <th key={c} scope="col" className="px-4 py-2 font-semibold">
+                      {childMeta.data?.fields[c]?.label}
+                    </th>
+                  ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.data.items.map((r) => (
                 <tr key={r.id}>
-                  <td className="px-4 py-2"><Link to={recordPath(list.object, r.id)} className="text-brand-700 hover:underline">{r.name}</Link></td>
-                  {cols.filter((c) => c !== "name").map((c) => (
-                    <td key={c} className="px-4 py-2"><FieldDisplay field={childMeta.data?.fields[c]} record={r} apiName={c} /></td>
-                  ))}
+                  <td className="px-4 py-2">
+                    <Link to={recordPath(list.object, r.id)} className="text-brand-700 hover:underline">
+                      {r.name}
+                    </Link>
+                  </td>
+                  {cols
+                    .filter((c) => c !== "name")
+                    .map((c) => (
+                      <td key={c} className="px-4 py-2">
+                        <FieldDisplay field={childMeta.data?.fields[c]} record={r} apiName={c} />
+                      </td>
+                    ))}
                 </tr>
               ))}
             </tbody>
@@ -388,7 +614,11 @@ export function RelatedCard({ parent, parentMeta, list, compact = false }: { par
       )}
       {rows.data && total > rows.data.items.length && (
         <footer className="border-t border-slate-100 px-4 py-2 text-center">
-          <button type="button" className="text-sm text-brand-700 hover:underline" onClick={() => setLimit(200)}>
+          <button
+            type="button"
+            className="text-sm text-brand-700 hover:underline"
+            onClick={() => setLimit(200)}
+          >
             View All
           </button>
         </footer>
@@ -444,14 +674,40 @@ export function FilesCard({ object, record }: { object: string; record: RecordDa
   return (
     <section aria-label="Files" className="rounded-lg border border-slate-200 bg-white shadow-sm">
       <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><PaperclipIcon size={16} /> Files ({files.data?.total ?? "…"})</h3>
-        <Button size="sm" variant="secondary" loading={upload.isPending} onClick={() => input.current?.click()}>Upload</Button>
-        <input ref={input} type="file" className="sr-only" aria-label="Upload file" onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = ""; }} />
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <PaperclipIcon size={16} /> Files ({files.data?.total ?? "…"})
+        </h3>
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={upload.isPending}
+          onClick={() => input.current?.click()}
+        >
+          Upload
+        </Button>
+        <input
+          ref={input}
+          type="file"
+          className="sr-only"
+          aria-label="Upload file"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) upload.mutate(f);
+            e.target.value = "";
+          }}
+        />
       </header>
       <ul className="divide-y divide-slate-100">
         {files.data?.items.map((f) => (
           <li key={f.id} className="flex items-center justify-between px-4 py-2 text-sm">
-            <a href={fileUrl(f.id, true)} target="_blank" rel="noopener noreferrer" className="truncate text-brand-700 hover:underline">{f.name}</a>
+            <a
+              href={fileUrl(f.id, true)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="truncate text-brand-700 hover:underline"
+            >
+              {f.name}
+            </a>
             <span className="flex-none text-xs text-slate-500">{formatDateTimeValue(f.created_at)}</span>
           </li>
         ))}
@@ -462,10 +718,18 @@ export function FilesCard({ object, record }: { object: string; record: RecordDa
 }
 
 function HistoryTab({ meta, record }: { meta: ObjectDescribe; record: RecordData }) {
-  const history = useQuery({ queryKey: ["history", meta.api_name, record.id], queryFn: ({ signal }) => recordsApi.history(meta.api_name, record.id, signal) });
+  const history = useQuery({
+    queryKey: ["history", meta.api_name, record.id],
+    queryFn: ({ signal }) => recordsApi.history(meta.api_name, record.id, signal),
+  });
   if (history.isPending) return <Spinner label="Loading history" />;
   if (history.isError) return <Alert tone="error">{errorMessage(history.error)}</Alert>;
-  if (history.data.length === 0) return <p className="text-sm text-slate-500">No tracked changes yet. Fields with history tracking appear here when they change.</p>;
+  if (history.data.length === 0)
+    return (
+      <p className="text-sm text-slate-500">
+        No tracked changes yet. Fields with history tracking appear here when they change.
+      </p>
+    );
   const show = (field: string, v: unknown) => {
     const f = meta.fields[field];
     if (v === null || v === undefined || v === "") return <span className="text-slate-400">blank</span>;
@@ -478,11 +742,21 @@ function HistoryTab({ meta, record }: { meta: ObjectDescribe; record: RecordData
       <table className="min-w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-slate-600">
-            <th scope="col" className="px-3 py-2">Date</th>
-            <th scope="col" className="px-3 py-2">Field</th>
-            <th scope="col" className="px-3 py-2">User</th>
-            <th scope="col" className="px-3 py-2">Original value</th>
-            <th scope="col" className="px-3 py-2">New value</th>
+            <th scope="col" className="px-3 py-2">
+              Date
+            </th>
+            <th scope="col" className="px-3 py-2">
+              Field
+            </th>
+            <th scope="col" className="px-3 py-2">
+              User
+            </th>
+            <th scope="col" className="px-3 py-2">
+              Original value
+            </th>
+            <th scope="col" className="px-3 py-2">
+              New value
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">

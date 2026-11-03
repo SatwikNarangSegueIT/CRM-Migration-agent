@@ -60,14 +60,20 @@ export function Modal({
 
   const width = { sm: "max-w-md", md: "max-w-2xl", lg: "max-w-4xl", xl: "max-w-6xl" }[size];
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:p-8" onKeyDown={onKeyDown}>
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:p-8"
+      onKeyDown={onKeyDown}
+    >
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={cx("flex max-h-[calc(100vh-4rem)] w-full flex-col rounded-lg bg-white shadow-xl outline-none", width)}
+        className={cx(
+          "flex max-h-[calc(100vh-4rem)] w-full flex-col rounded-lg bg-white shadow-xl outline-none",
+          width,
+        )}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
           <h2 id={titleId} className="text-lg font-semibold text-slate-900">
@@ -84,7 +90,11 @@ export function Modal({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">{footer}</div>}
+        {footer && (
+          <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );

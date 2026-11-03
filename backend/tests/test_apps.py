@@ -495,6 +495,12 @@ def test_customer_portal(admin_client: TestClient, client: TestClient, db: Sessi
     listing = portal.get(f"{API}/portal/objects/case/records").json()
     assert [i["id"] for i in listing["items"]] == [mine["id"]]
     assert portal.get(f"{API}/portal/objects/case/records/{others['id']}").status_code == 404
+    described = portal.get(f"{API}/portal/objects/case/describe").json()
+    assert described["label"] == "Case"
+    assert "subject" in described["fields"] and "status" in described["fields"]
+    assert "list_views" not in described and "actions" not in described
+    assert portal.get(f"{API}/portal/objects/lead/describe").status_code == 403  # no object access
+    assert c.get(f"{API}/portal/objects/case/describe").status_code == 403
     create(c, "note", {"related_to": mine["id"], "body": "internal only"}, name="Internal")
     create(c, "note", {"related_to": mine["id"], "body": "We're on it", "is_public": True}, name="Reply")
     portal.post(f"{API}/portal/objects/case/records/{mine['id']}/comments", json={"body": "Thanks!"})

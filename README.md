@@ -1,7 +1,8 @@
-# MigrateCRM
+# Meridian CRM
 
-Enterprise CRM for Australian registered migration agents (MARA / OMARA regulated).
-Plan: [`docs/Implementation_Plan_v2.pdf`](docs/Implementation_Plan_v2.pdf).
+Configurable, multi-industry CRM (Salesforce-style) with a **Migration Agency (Australia)** industry pack.
+Plan: [`docs/Implementation_Plan_v3.pdf`](docs/Implementation_Plan_v3.pdf) (v3 supersedes v2). "Meridian CRM" is a
+working name; the brand name and colour are settings (Setup → Company & Branding).
 
 | Layer | Stack |
 |---|---|
@@ -9,17 +10,21 @@ Plan: [`docs/Implementation_Plan_v2.pdf`](docs/Implementation_Plan_v2.pdf).
 | Frontend | React 18, TypeScript, Vite, React Router, TanStack Query, Tailwind CSS |
 | Database | Neon serverless PostgreSQL (AWS Sydney) – see [`docs/neon-setup.md`](docs/neon-setup.md) |
 
-**Status**
+**Status** (plan v3 phases)
 
 | Phase | Scope | State |
 |---|---|---|
-| 0 | Foundations: config, logging, errors, DB layer, migrations, health checks, worker, CI, Docker | Done |
-| 1 | Auth (sessions, CSRF, MFA, password reset, invitations), roles & permissions, audit log, user admin, UI kit | Backend done; UI in progress |
-| 2–7 | Core CRM, matters, billing, client portal, reports, hardening | Planned |
+| 0–1 | Foundations; identity (sessions, CSRF, MFA, password reset, invitations), audit log, user admin | Done |
+| 2 | Security model: profiles (system / object / field permissions), role hierarchy, sharing defaults, sharing rules, groups, queues | Done |
+| 3 | Metadata & record engine: custom objects and fields, validation, sharing, history, recycle bin, list views, search | Done |
+| 4 | Lightning-style UI: app rail, apps & tabs, list views (columns, filters, saved views, inline edit, Kanban), record pages, Setup (Object Manager, App Manager, profiles, roles, sharing, packs, settings) | Done |
+| 5–9 | Sales, Billing, Service (incl. customer portal), Marketing, Analytics (reports & dashboards), CSV import/export | Done |
+| 10 | Industry pack framework + Migration Agency pack | Done |
+| 11 | Hardening: load and security testing, accessibility audit, backups/retention jobs, UAT | Planned |
 
-Roles and the permission matrix: section 7 of the plan, implemented in
-[`backend/app/permissions/matrix.py`](backend/app/permissions/matrix.py) and verified against the plan by
-`backend/tests/test_permissions.py`.
+Roles and permissions: plan v3 sections 9–10. Defaults are seeded by
+[`backend/app/security/seed_v1.py`](backend/app/security/seed_v1.py) and checked against the plan's tables by
+`backend/tests/test_permissions.py`; admins change them in Setup → Profiles / Roles / Sharing Settings.
 
 ## Repository layout
 
@@ -61,8 +66,9 @@ First user:
 uv run python -m app.cli create-admin --email you@agency.com.au --name "Your Name"   # prompts for password
 ```
 
-Development only – one demo account per staff role (`admin@demo.example.com`, `manager@…`, `agent@…`,
-`officer@…`, `intake@…`, `accounts@…`, `auditor@…`; password `Demo-Password-2026!`):
+Development only – one demo account per default staff profile, password `Demo-Password-2026!`:
+`admin@` (System Administrator), `salesmanager@`, `sales@`, `service@`, `marketing@`, `finance@`, `auditor@`
+(Read Only) — all `@demo.example.com`. Install the Migration Agency pack in Setup → Industry Packs.
 
 ```bash
 uv run python -m app.cli seed-demo
@@ -98,6 +104,20 @@ Frontend:
 cd frontend && npm run lint && npm run format:check && npm run typecheck && npm test && npm run build
 ```
 
+End-to-end smoke test (needs the API, worker and Vite running, demo users seeded and
+`MFA_REQUIRED_FOR_STAFF=false`; uses Playwright's Chromium). `WORKER_LOG` is the worker's log file, from which
+the test reads the console-backend invitation e-mail:
+
+```bash
+cd frontend && BASE_URL=http://localhost:5173 WORKER_LOG=/path/to/worker.log node e2e/smoke.mjs
+```
+
+It covers: sign-in, creating records, Object Manager (custom object + picklist field), App Manager, settings,
+installing the Migration Agency pack, reports/dashboards, global search, inviting a portal user, accepting the
+invitation, raising and discussing a case in the portal (phone width), and read-only auditor restrictions.
+
+After deploying schema changes that add indexed fields, run `uv run python -m app.cli sync-indexes`.
+
 Optional git hooks: `pre-commit install` (see `.pre-commit-config.yaml`).
 
 ## API conventions
@@ -106,11 +126,11 @@ Optional git hooks: `pre-commit install` (see `.pre-commit-config.yaml`).
 - Errors: `{"error": {"code", "message", "fields", "request_id"}}`; every response carries `X-Request-ID`.
 - OpenAPI docs are disabled when `APP_ENV=production`.
 
-## Security model (phase 1)
+## Security model
 
 - Sessions: opaque 256-bit token in an `HttpOnly`, `SameSite=Lax` (`Secure` outside dev) cookie; only its
   SHA-256 hash is stored. 12 h absolute / 60 min idle expiry; revoked on logout, password change/reset,
-  role change and deactivation.
+  profile/role change and deactivation.
 - CSRF: per-session token (cookie `crm_csrf`, sent back as `X-CSRF-Token`) on every unsafe request, plus an
   Origin check against `PUBLIC_APP_URL`.
 - Passwords: Argon2id; ≥ 12 characters, common/simple passwords and ones containing the user's e-mail or name
@@ -118,8 +138,11 @@ Optional git hooks: `pre-commit install` (see `.pre-commit-config.yaml`).
   MFA, password reset and invitation endpoints.
 - MFA: TOTP (authenticator app) with ±30 s drift and replay protection, 10 single-use recovery codes; mandatory
   for staff. Secrets are encrypted with a key derived from `SECRET_KEY`.
-- Audit: every sign-in, failure, lockout, MFA event, password event and user change is written to
-  `audit_logs`, which a database trigger makes append-only.
+- Authorisation: deny-by-default on the server for every request, list, report, search and export — profile
+  system and object permissions, field-level security (hidden fields are stripped from responses), and record
+  sharing (org-wide defaults, ownership, role hierarchy, queues, sharing rules, manual shares, portal scoping).
+- Audit: every sign-in, failure, lockout, MFA event, password event, user, permission, sharing and metadata change
+  is written to `audit_logs`, which a database trigger makes append-only.
 
 ## Configuration
 

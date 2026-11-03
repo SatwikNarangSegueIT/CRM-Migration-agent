@@ -97,7 +97,8 @@ export const analyticsApi = {
   folders: (signal?: AbortSignal) => apiRequest<Folder[]>("/report-folders", { signal }),
   createFolder: (body: { name: string; visibility: Folder["visibility"] }) =>
     apiRequest<Folder>("/report-folders", { method: "POST", body }),
-  reports: (q?: string, signal?: AbortSignal) => apiRequest<Report[]>(`/reports${toQueryString({ q })}`, { signal }),
+  reports: (q?: string, signal?: AbortSignal) =>
+    apiRequest<Report[]>(`/reports${toQueryString({ q })}`, { signal }),
   report: (id: string, signal?: AbortSignal) => apiRequest<Report>(`/reports/${id}`, { signal }),
   columns: (object: string, signal?: AbortSignal) =>
     apiRequest<ReportColumn[]>(`/reports/columns/${object}`, { signal }),
@@ -109,10 +110,9 @@ export const analyticsApi = {
   preview: (body: ReportInput, signal?: AbortSignal) =>
     apiRequest<ReportResult>("/reports/run", { method: "POST", body, signal }),
   schedules: (id: string, signal?: AbortSignal) =>
-    apiRequest<{ id: string; frequency: string; recipients: string[]; next_run_at: string; is_mine: boolean }[]>(
-      `/reports/${id}/schedules`,
-      { signal },
-    ),
+    apiRequest<
+      { id: string; frequency: string; recipients: string[]; next_run_at: string; is_mine: boolean }[]
+    >(`/reports/${id}/schedules`, { signal }),
   schedule: (id: string, body: { frequency: string; recipients: string[] }) =>
     apiRequest<unknown>(`/reports/${id}/schedules`, { method: "POST", body }),
   unschedule: (id: string, scheduleId: string) =>
@@ -121,7 +121,12 @@ export const analyticsApi = {
   dashboard: (id: string, signal?: AbortSignal) => apiRequest<Dashboard>(`/dashboards/${id}`, { signal }),
   saveDashboard: (
     id: string | null,
-    body: { name: string; description?: string | null; folder_id: string | null; components: DashboardComponent[] },
+    body: {
+      name: string;
+      description?: string | null;
+      folder_id: string | null;
+      components: DashboardComponent[];
+    },
   ) =>
     id
       ? apiRequest<Dashboard>(`/dashboards/${id}`, { method: "PUT", body })

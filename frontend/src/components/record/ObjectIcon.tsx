@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import type { ComponentType, SVGProps } from "react";
 import {
   AppsIcon,
@@ -85,14 +86,13 @@ export function ObjectIcon({
   size?: number;
   className?: string;
 }) {
-  const Icon = iconFor(icon);
   return (
     <span
       aria-hidden="true"
       className={cx("inline-flex flex-none items-center justify-center rounded-md text-white", className)}
       style={{ width: size, height: size, backgroundColor: color ?? "#64748b" }}
     >
-      <Icon size={Math.round(size * 0.6)} />
+      {createElement(iconFor(icon), { size: Math.round(size * 0.6) })}
     </span>
   );
 }

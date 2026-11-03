@@ -1,4 +1,12 @@
-import { apiRequest, readCookie, CSRF_COOKIE, CSRF_HEADER, API_BASE, toApiError, toQueryString } from "./client";
+import {
+  apiRequest,
+  readCookie,
+  CSRF_COOKIE,
+  CSRF_HEADER,
+  API_BASE,
+  toApiError,
+  toQueryString,
+} from "./client";
 import type {
   AppInfo,
   FilterNode,
@@ -89,7 +97,8 @@ const o = (api: string) => `/objects/${encodeURIComponent(api)}`;
 
 export const metaApi = {
   objects: (signal?: AbortSignal) => apiRequest<ObjectSummary[]>("/meta/objects", { signal }),
-  object: (api: string, signal?: AbortSignal) => apiRequest<ObjectDescribe>(`/meta/objects/${api}`, { signal }),
+  object: (api: string, signal?: AbortSignal) =>
+    apiRequest<ObjectDescribe>(`/meta/objects/${api}`, { signal }),
   apps: (signal?: AbortSignal) => apiRequest<AppInfo[]>("/meta/apps", { signal }),
   users: (q: string, signal?: AbortSignal) =>
     apiRequest<UserOption[]>(`/meta/users${toQueryString({ q })}`, { signal }),
@@ -109,10 +118,15 @@ export const recordsApi = {
     apiRequest<RecordPage>(`${o(api)}/records/query`, { method: "POST", body, signal }),
   get: (api: string, id: string, signal?: AbortSignal, track = true) =>
     apiRequest<RecordData>(`${o(api)}/records/${id}${track ? "" : "?track=false"}`, { signal }),
-  create: (api: string, body: { name?: string; fields: Record<string, unknown>; owner_id?: string; queue_id?: string }) =>
-    apiRequest<RecordData>(`${o(api)}/records`, { method: "POST", body }),
-  update: (api: string, id: string, body: { version: number; name?: string; fields: Record<string, unknown> }) =>
-    apiRequest<RecordData>(`${o(api)}/records/${id}`, { method: "PATCH", body }),
+  create: (
+    api: string,
+    body: { name?: string; fields: Record<string, unknown>; owner_id?: string; queue_id?: string },
+  ) => apiRequest<RecordData>(`${o(api)}/records`, { method: "POST", body }),
+  update: (
+    api: string,
+    id: string,
+    body: { version: number; name?: string; fields: Record<string, unknown> },
+  ) => apiRequest<RecordData>(`${o(api)}/records/${id}`, { method: "PATCH", body }),
   remove: (api: string, id: string) => apiRequest<void>(`${o(api)}/records/${id}`, { method: "DELETE" }),
   restore: (api: string, id: string) =>
     apiRequest<RecordData>(`${o(api)}/records/${id}/restore`, { method: "POST" }),
@@ -120,13 +134,26 @@ export const recordsApi = {
     apiRequest<RecordData>(`${o(api)}/records/${id}/change-owner`, { method: "POST", body }),
   bulk: (
     api: string,
-    body: { ids: string[]; operation: "update" | "change_owner" | "delete"; values?: Record<string, unknown>; owner_id?: string },
+    body: {
+      ids: string[];
+      operation: "update" | "change_owner" | "delete";
+      values?: Record<string, unknown>;
+      owner_id?: string;
+    },
   ) =>
     apiRequest<{ succeeded: number; failed: number; results: { id: string; ok: boolean; error?: string }[] }>(
       `${o(api)}/records/bulk`,
       { method: "POST", body },
     ),
-  related: (api: string, id: string, child: string, field: string, limit = 10, cursor?: string | null, signal?: AbortSignal) =>
+  related: (
+    api: string,
+    id: string,
+    child: string,
+    field: string,
+    limit = 10,
+    cursor?: string | null,
+    signal?: AbortSignal,
+  ) =>
     apiRequest<RecordPage>(
       `${o(api)}/records/${id}/related/${child}/${field}${toQueryString({ limit, cursor })}`,
       { signal },
@@ -136,7 +163,10 @@ export const recordsApi = {
   history: (api: string, id: string, signal?: AbortSignal) =>
     apiRequest<HistoryEntry[]>(`${o(api)}/records/${id}/history`, { signal }),
   action: (api: string, id: string, name: string, payload: Record<string, unknown> = {}) =>
-    apiRequest<Record<string, unknown>>(`${o(api)}/records/${id}/actions/${name}`, { method: "POST", body: payload }),
+    apiRequest<Record<string, unknown>>(`${o(api)}/records/${id}/actions/${name}`, {
+      method: "POST",
+      body: payload,
+    }),
   lookup: (api: string, q: string, signal?: AbortSignal) =>
     apiRequest<LookupOption[]>(`${o(api)}/lookup${toQueryString({ q })}`, { signal }),
   kanban: (api: string, field: string, viewId: string | null, q: string, signal?: AbortSignal) =>
@@ -145,12 +175,15 @@ export const recordsApi = {
       { signal },
     ),
   listViews: (api: string, signal?: AbortSignal) =>
-    apiRequest<{ default_view_id: string | null; views: ListViewDetail[] }>(`${o(api)}/list-views`, { signal }),
+    apiRequest<{ default_view_id: string | null; views: ListViewDetail[] }>(`${o(api)}/list-views`, {
+      signal,
+    }),
   createView: (api: string, body: ListViewInput) =>
     apiRequest<ListViewDetail>(`${o(api)}/list-views`, { method: "POST", body }),
   updateView: (api: string, id: string, body: ListViewInput) =>
     apiRequest<ListViewDetail>(`${o(api)}/list-views/${id}`, { method: "PUT", body }),
-  deleteView: (api: string, id: string) => apiRequest<void>(`${o(api)}/list-views/${id}`, { method: "DELETE" }),
+  deleteView: (api: string, id: string) =>
+    apiRequest<void>(`${o(api)}/list-views/${id}`, { method: "DELETE" }),
   pinView: (api: string, id: string) =>
     apiRequest<{ default_view_id: string }>(`${o(api)}/list-views/${id}/pin`, { method: "POST" }),
   shares: (api: string, id: string, signal?: AbortSignal) =>
@@ -158,8 +191,11 @@ export const recordsApi = {
       `${o(api)}/records/${id}/shares`,
       { signal },
     ),
-  addShare: (api: string, id: string, body: { principal_type: string; principal_id: string; access: string }) =>
-    apiRequest<unknown>(`${o(api)}/records/${id}/shares`, { method: "POST", body }),
+  addShare: (
+    api: string,
+    id: string,
+    body: { principal_type: string; principal_id: string; access: string },
+  ) => apiRequest<unknown>(`${o(api)}/records/${id}/shares`, { method: "POST", body }),
   removeShare: (api: string, id: string, shareId: string) =>
     apiRequest<void>(`${o(api)}/records/${id}/shares/${shareId}`, { method: "DELETE" }),
 };
@@ -171,7 +207,14 @@ export const workspaceApi = {
     apiRequest<RecentItem[]>(`/me/recent${toQueryString({ limit })}`, { signal }),
   recycleBin: (signal?: AbortSignal) =>
     apiRequest<
-      { id: string; name: string; object: string; object_label: string; deleted_at: string; purge_at: string }[]
+      {
+        id: string;
+        name: string;
+        object: string;
+        object_label: string;
+        deleted_at: string;
+        purge_at: string;
+      }[]
     >("/recycle-bin", { signal }),
   notifications: (signal?: AbortSignal) =>
     apiRequest<{ unread: number; items: Notification[] }>("/me/notifications", { signal }),
@@ -181,9 +224,12 @@ export const workspaceApi = {
   savePreferences: (data: Record<string, unknown>) =>
     apiRequest<Record<string, unknown>>("/me/preferences", { method: "PATCH", body: { data } }),
   calendar: (start: string, end: string, mine: boolean, signal?: AbortSignal) =>
-    apiRequest<{ events: RecordData[]; tasks: RecordData[] }>(`/calendar${toQueryString({ start, end, mine })}`, {
-      signal,
-    }),
+    apiRequest<{ events: RecordData[]; tasks: RecordData[] }>(
+      `/calendar${toQueryString({ start, end, mine })}`,
+      {
+        signal,
+      },
+    ),
 };
 
 /** Raw-body upload (file name in a header) so no multipart parser is needed. */
@@ -193,12 +239,15 @@ export async function uploadFile(
 ): Promise<RecordData> {
   const headers: Record<string, string> = {
     "Content-Type": file.type || "application/octet-stream",
-    "X-File-Name": encodeURIComponent(file.name).replace(/%20/g, " ").replace(/%[0-9A-F]{2}/g, "_"),
+    "X-File-Name": encodeURIComponent(file.name)
+      .replace(/%20/g, " ")
+      .replace(/%[0-9A-F]{2}/g, "_"),
     Accept: "application/json",
   };
   const csrf = readCookie(CSRF_COOKIE);
   if (csrf) headers[CSRF_HEADER] = csrf;
-  const path = opts.path ?? `/files${toQueryString({ related_to: opts.relatedTo, is_public: opts.isPublic })}`;
+  const path =
+    opts.path ?? `/files${toQueryString({ related_to: opts.relatedTo, is_public: opts.isPublic })}`;
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers,

@@ -54,6 +54,12 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Overrides TimestampMixin: changes only on administrative edits (it is the optimistic-concurrency token
+    # of the user admin screen), not on sign-in bookkeeping such as last_login_at or the failure counter.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
     sessions: Mapped[list[UserSession]] = relationship(back_populates="user", cascade="all, delete-orphan")
     profile: Mapped[Profile] = relationship(lazy="joined")
     role: Mapped[Role | None] = relationship(lazy="joined")

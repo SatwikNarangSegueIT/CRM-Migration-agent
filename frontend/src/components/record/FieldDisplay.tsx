@@ -16,7 +16,13 @@ export function PicklistPill({ field, value }: { field?: FieldDescribe; value: u
   const color = pv?.color;
   return (
     <span className="inline-flex items-center gap-1.5">
-      {color && <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full" style={{ backgroundColor: color }} />}
+      {color && (
+        <span
+          aria-hidden="true"
+          className="h-2 w-2 flex-none rounded-full"
+          style={{ backgroundColor: color }}
+        />
+      )}
       {pv?.label ?? String(value)}
     </span>
   );
@@ -40,19 +46,23 @@ export function FieldDisplay({
   if (apiName === "created_by_id")
     return (
       <span>
-        {record.created_by?.name} <span className="text-slate-500">{formatDateTimeValue(record.created_at)}</span>
+        {record.created_by?.name}{" "}
+        <span className="text-slate-500">{formatDateTimeValue(record.created_at)}</span>
       </span>
     );
   if (apiName === "updated_by_id")
     return (
       <span>
-        {record.updated_by?.name} <span className="text-slate-500">{formatDateTimeValue(record.updated_at)}</span>
+        {record.updated_by?.name}{" "}
+        <span className="text-slate-500">{formatDateTimeValue(record.updated_at)}</span>
       </span>
     );
-  if (apiName === "created_at" || apiName === "updated_at") return <span>{formatDateTimeValue(record[apiName])}</span>;
+  if (apiName === "created_at" || apiName === "updated_at")
+    return <span>{formatDateTimeValue(record[apiName])}</span>;
 
   const value = record.fields[apiName];
-  if (value === null || value === undefined || value === "") return <span className="text-slate-400" aria-label="empty" />;
+  if (value === null || value === undefined || value === "")
+    return <span className="text-slate-400" aria-label="empty" />;
 
   switch (field?.type) {
     case "lookup":
@@ -60,7 +70,10 @@ export function FieldDisplay({
       const link = record.display[apiName];
       if (!link) return null;
       return (
-        <Link to={`${linkBase}${recordPath(link.object, link.id)}`} className="text-brand-700 hover:underline">
+        <Link
+          to={`${linkBase}${recordPath(link.object, link.id)}`}
+          className="text-brand-700 hover:underline"
+        >
           {link.name}
         </Link>
       );
@@ -109,7 +122,12 @@ export function FieldDisplay({
       );
     case "url":
       return (
-        <a href={String(value)} target="_blank" rel="noopener noreferrer" className="break-all text-brand-700 hover:underline">
+        <a
+          href={String(value)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="break-all text-brand-700 hover:underline"
+        >
           {String(value).replace(/^https?:\/\//, "")}
         </a>
       );

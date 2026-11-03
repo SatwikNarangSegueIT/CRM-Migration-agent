@@ -2,7 +2,10 @@
 
 **Current project (created 3 Nov 2026 via the Neon connector):** `meridian-crm` (id `icy-bar-22749704`),
 region AWS Sydney `aws-ap-southeast-2`, PostgreSQL 17, database `meridian`, owner role `meridian_owner`.
-Branches: `main` (production, schema at revision `29ed9cffa1b4`) and `staging`.
+Branches: `main` (production) and `staging`, both still at revision `29ed9cffa1b4` (phase 1). The later
+migrations seed data from Python, so they can't be applied as rendered SQL through the connector: run
+`DATABASE_URL_DIRECT=<direct URL> uv run alembic upgrade head` from a machine that can reach Neon (or let the
+CI Neon workflow run against a branch).
 Connection strings (with passwords) are in the Neon console → Connect; they are never committed.
 Note: this development container cannot reach Neon hosts directly (network policy), so migrations were
 applied through the connector from `alembic upgrade head --sql` output.
