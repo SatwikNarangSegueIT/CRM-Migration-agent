@@ -53,10 +53,24 @@ def _invalid(message: str, field: str, code: str = "invalid") -> AppError:
     return AppError(message, code=code, status_code=422, fields={field: message})
 
 
+def known_objects(db: Session) -> set[str]:
+    """Standard catalog objects (including reports/dashboards) plus every object in the metadata engine."""
+    from app.models import ObjectDefinition
+
+    return set(STANDARD_OBJECT_NAMES) | set(db.scalars(select(ObjectDefinition.api_name)))
+
+
 def ensure_known_object(db: Session, api_name: str, field: str = "object_api_name") -> None:
-    """Objects that exist. Custom objects join this set when the metadata engine lands (phase 3)."""
-    if api_name not in STANDARD_OBJECT_NAMES:
+    if api_name not in known_objects(db):
         raise _invalid(f"Unknown object '{api_name}'.", field, "unknown_object")
+
+
+def ensure_known_field(db: Session, object_api: str, field_api: str, field: str = "fields") -> None:
+    from app.engine.meta import load_registry
+
+    meta = load_registry(db).objects.get(object_api)
+    if meta is not None and field_api not in meta.fields:
+        raise _invalid(f"Unknown field '{object_api}.{field_api}'.", field, "unknown_field")
 
 
 def _record(
@@ -328,6 +342,7 @@ def set_field_permissions(
     changes: dict[str, Any] = {}
     for item in data.fields:
         ensure_known_object(db, item.object_api_name, "fields")
+        ensure_known_field(db, item.object_api_name, item.field_api_name)
         key = (item.object_api_name, item.field_api_name)
         row = existing.get(key)
         old = row.access if row else None
@@ -494,12 +509,11 @@ def subordinate_role_ids(db: Session, role: Role, *, include_self: bool = False)
 def list_sharing_defaults(db: Session) -> list[SharingDefault]:
     stored = {sd.object_api_name: sd for sd in db.scalars(select(SharingDefault))}
     result = []
-    for api in sorted(STANDARD_OBJECT_NAMES):
+    for api in sorted(known_objects(db)):
+        default = _DEFAULT_SHARING.get(api, SharingAccess.PRIVATE)
         result.append(
             stored.get(api)
-            or SharingDefault(
-                object_api_name=api, access=_DEFAULT_SHARING[api].value, grant_access_using_hierarchy=True
-            )
+            or SharingDefault(object_api_name=api, access=default.value, grant_access_using_hierarchy=True)
         )
     return result
 

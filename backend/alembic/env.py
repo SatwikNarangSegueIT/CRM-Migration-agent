@@ -15,6 +15,13 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Expression indexes on record fields are created and dropped at runtime by the record engine.
+ENGINE_INDEX_PREFIX = "ix_rec_"
+
+
+def include_object(obj: object, name: str | None, type_: str, reflected: bool, compare_to: object) -> bool:
+    return not (type_ == "index" and name is not None and name.startswith(ENGINE_INDEX_PREFIX))
+
 
 def _url() -> str:
     # Allow `alembic -x url=...` for one-off runs (e.g. tests); otherwise use settings.
@@ -28,6 +35,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -37,7 +45,12 @@ def run_migrations_online() -> None:
     # Migrations use a single short-lived connection; no pooling needed.
     engine = build_engine(get_settings(), url=_url(), null_pool=True)
     with engine.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+            include_object=include_object,
+        )
         with context.begin_transaction():
             context.run_migrations()
     engine.dispose()

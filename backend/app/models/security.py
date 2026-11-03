@@ -208,7 +208,7 @@ class SharingRule(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     rule_type: Mapped[str] = mapped_column(String(10))
     source_type: Mapped[str | None] = mapped_column(String(30))
     source_id: Mapped[uuid.UUID | None] = mapped_column()
-    criteria: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    criteria: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
     target_type: Mapped[str] = mapped_column(String(30))
     target_id: Mapped[uuid.UUID] = mapped_column()
     access: Mapped[str] = mapped_column(String(10))

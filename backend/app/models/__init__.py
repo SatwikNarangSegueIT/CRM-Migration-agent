@@ -1,7 +1,23 @@
 """All ORM models. Importing this package registers every table on Base.metadata (used by Alembic)."""
 
 from app.db.base import Base
+from app.models.analytics import Dashboard, EmailDelivery, Report, ReportFolder, ReportSchedule
 from app.models.audit import AuditLog
+from app.models.metadata import App, FieldDefinition, ListView, MetadataRevision, ObjectDefinition
+from app.models.records import (
+    FieldHistory,
+    ImportJob,
+    Notification,
+    PackInstallation,
+    RecentItem,
+    Record,
+    RecordLink,
+    RecordShare,
+    Sequence,
+    Setting,
+    StoredFile,
+    UserPreference,
+)
 from app.models.security import (
     Group,
     GroupMember,
@@ -18,7 +34,29 @@ from app.models.security import (
 from app.models.user import RecoveryCode, User, UserSession, UserToken
 
 __all__ = [
+    "App",
     "AuditLog",
+    "Dashboard",
+    "EmailDelivery",
+    "FieldDefinition",
+    "FieldHistory",
+    "ImportJob",
+    "ListView",
+    "MetadataRevision",
+    "Notification",
+    "ObjectDefinition",
+    "PackInstallation",
+    "RecentItem",
+    "Record",
+    "RecordLink",
+    "RecordShare",
+    "Report",
+    "ReportFolder",
+    "ReportSchedule",
+    "Sequence",
+    "Setting",
+    "StoredFile",
+    "UserPreference",
     "Base",
     "Group",
     "GroupMember",

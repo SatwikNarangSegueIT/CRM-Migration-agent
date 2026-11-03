@@ -33,6 +33,41 @@ def deliver_email(to: str, subject: str, body: str) -> None:
     logger.info("E-mail sent", extra={"to": to, "subject": subject})
 
 
+def deliver_message(
+    to: str,
+    subject: str,
+    text: str,
+    *,
+    html_body: str | None = None,
+    from_name: str | None = None,
+    from_email: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> None:
+    """Send a (marketing) message with an optional HTML part and extra headers."""
+    settings = get_settings()
+    if settings.email_backend == "console":
+        logger.info("E-mail (console backend)", extra={"to": to, "subject": subject, "body": text})
+        return
+    message = EmailMessage()
+    sender = settings.email_from
+    if from_email:
+        sender = f"{from_name} <{from_email}>" if from_name else from_email
+    message["From"] = sender
+    message["To"] = to
+    message["Subject"] = subject
+    for key, value in (headers or {}).items():
+        message[key] = value
+    message.set_content(text)
+    if html_body:
+        message.add_alternative(html_body, subtype="html")
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
+        if settings.smtp_starttls:
+            smtp.starttls(context=ssl.create_default_context())
+        if settings.smtp_username and settings.smtp_password:
+            smtp.login(settings.smtp_username, settings.smtp_password.get_secret_value())
+        smtp.send_message(message)
+
+
 def queue_email(to: str, subject: str, body: str) -> None:
     """Hand the e-mail to the worker. Call only after the database transaction has committed."""
     from app.worker.tasks import send_email_task  # local import: avoids a worker <-> service cycle

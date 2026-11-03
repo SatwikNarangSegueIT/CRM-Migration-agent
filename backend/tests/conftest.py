@@ -37,6 +37,7 @@ from app.auth.security import hash_password  # noqa: E402
 from app.core.config import Settings, get_settings  # noqa: E402
 from app.core.redis_client import get_redis  # noqa: E402
 from app.db.seeds import apply_seeds  # noqa: E402
+from app.engine.meta import invalidate_cache  # noqa: E402
 from app.db.session import get_sessionmaker  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models import Base, User  # noqa: E402
@@ -77,6 +78,7 @@ def _clean_state() -> None:
         db.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
         apply_seeds(db.connection())
         db.commit()
+    invalidate_cache()
     get_redis().flushdb()
 
 

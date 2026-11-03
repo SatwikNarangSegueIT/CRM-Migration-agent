@@ -13,7 +13,8 @@ from app.core.config import Settings, get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
-from app.routers import admin_users, audit_logs, auth, health, setup
+import app.apps  # noqa: F401 - registers the standard apps' object hooks
+from app.routers import admin_users, audit_logs, auth, health, meta, records, setup, setup_objects, workspace
 
 API_PREFIX = "/api/v1"
 
@@ -47,6 +48,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(setup.router)
     api.include_router(admin_users.router)
     api.include_router(audit_logs.router)
+    api.include_router(meta.router)
+    api.include_router(records.router)
+    api.include_router(workspace.router)
+    api.include_router(setup_objects.router)
     app.include_router(api)
     return app
 

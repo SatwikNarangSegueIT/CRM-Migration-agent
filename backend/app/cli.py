@@ -111,6 +111,25 @@ def seed_demo() -> int:
     return 0
 
 
+def sync_indexes() -> int:
+    """Create every missing expression index for indexed / unique fields (run after each deploy)."""
+    from app.db.session import get_engine
+    from app.engine.indexes import apply_concurrently, index_statements
+    from app.engine.meta import load_registry
+
+    with get_sessionmaker()() as db:
+        registry = load_registry(db)
+    statements = [
+        stmt
+        for obj in registry.objects.values()
+        for f in obj.data_fields
+        for stmt in index_statements(obj, f, concurrently=True)
+    ]
+    apply_concurrently(get_engine(), statements)
+    print(f"Checked {len(statements)} index(es).")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -118,10 +137,13 @@ def main(argv: list[str] | None = None) -> int:
     p_admin.add_argument("--email", required=True)
     p_admin.add_argument("--name", required=True)
     p_admin.add_argument("--password", help="Omit to be prompted (recommended)")
-    sub.add_parser("seed-demo", help="Create one demo user per staff role (development only)")
+    sub.add_parser("seed-demo", help="Create demo users and sample data (development only)")
+    sub.add_parser("sync-indexes", help="Create missing field indexes (run after deploys)")
     args = parser.parse_args(argv)
     if args.command == "create-admin":
         return create_admin(args.email, args.name, args.password)
+    if args.command == "sync-indexes":
+        return sync_indexes()
     return seed_demo()
 
 
