@@ -15,10 +15,19 @@ Token = Annotated[str, StringConstraints(strip_whitespace=True, min_length=20, m
 class LoginRequest(BaseModel):
     email: LoginEmail
     password: Password
+    # Workspace address chosen in the picker when the e-mail belongs to several firms.
+    workspace: Annotated[str, StringConstraints(max_length=41)] | None = None
+
+
+class WorkspaceRef(BaseModel):
+    slug: str
+    name: str
+    domain: str
 
 
 class LoginResponse(BaseModel):
-    state: Literal["authenticated", "mfa_required", "mfa_setup_required"]
+    state: Literal["authenticated", "mfa_required", "mfa_setup_required", "choose_workspace"]
+    workspaces: list[WorkspaceRef] | None = None
 
 
 class MfaCodeRequest(BaseModel):

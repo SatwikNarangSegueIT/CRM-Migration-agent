@@ -117,9 +117,10 @@ def start_import(body: ImportIn, svc: Records) -> dict[str, Any]:
     if job.total_rows <= imports.INLINE_ROWS:
         imports.run_import(svc.db, job.id)
     else:
+        from app.tenancy import tenant_schema
         from app.worker.tasks import run_import_task
 
-        run_import_task.delay(str(job.id))
+        run_import_task.delay(str(job.id), tenant_schema(svc.db))
     svc.db.refresh(job)
     return _job_out(job)
 

@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from functools import lru_cache
 from typing import Any
 
+from fastapi import Request
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
@@ -47,7 +48,8 @@ def get_engine() -> Engine:
 @lru_cache
 def get_sessionmaker() -> sessionmaker[Session]:
     # Registers the session events that keep cached security data fresh (import has side effects).
-    import app.security.revision  # noqa: F401
+    import app.security.revision
+    import app.tenancy  # noqa: F401 - per-tenant search_path and user directory sync
 
     return sessionmaker(bind=get_engine(), autoflush=False, expire_on_commit=False)
 
@@ -60,7 +62,7 @@ def sibling_session(db: Session) -> Session:
     from app.core.cache import cache_allowed
 
     session = get_sessionmaker()()
-    for key in ("tenant", "tenant_schema"):
+    for key in ("tenant", "tenant_id", "tenant_slug"):
         if key in db.info:
             session.info[key] = db.info[key]
     if "revisions" in db.info and cache_allowed(db):
@@ -68,9 +70,24 @@ def sibling_session(db: Session) -> Session:
     return session
 
 
-def get_db() -> Iterator[Session]:
-    """FastAPI dependency: one session per request, rolled back on error."""
+def request_tenant_slug(request: Request) -> str | None:
+    """Tenant named by the request: session cookie prefix, else the X-Tenant header or ?tenant=."""
+    from app.tenancy import SESSION_COOKIE, TENANT_HEADER, split_token
+
+    cookie = request.cookies.get(SESSION_COOKIE)
+    if cookie:
+        slug, _ = split_token(cookie)
+        if slug:
+            return slug
+    return request.headers.get(TENANT_HEADER) or request.query_params.get("tenant") or None
+
+
+def get_db(request: Request) -> Iterator[Session]:
+    """FastAPI dependency: one session per request, bound to the request's tenant, rolled back on error."""
+    from app.tenancy import bind_tenant, resolve
+
     session = get_sessionmaker()()
+    bind_tenant(session, resolve(request_tenant_slug(request)))
     try:
         yield session
     except Exception:

@@ -45,7 +45,7 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run mypy app tests alembic
+      - run: uv run mypy app tests alembic && uv run mypy alembic_platform
       - run: uv run pytest --cov=app --cov-report=term-missing
       - name: Dependency audit
         run: |

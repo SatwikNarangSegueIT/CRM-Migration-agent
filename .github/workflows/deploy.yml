@@ -50,7 +50,7 @@ jobs:
         run: |
           docker run --rm -e APP_ENV=staging -e SECRET_KEY=migration-only-not-used-at-runtime-000 \
             -e DATABASE_URL="${{ secrets.DATABASE_URL_DIRECT }}" -e DATABASE_URL_DIRECT="${{ secrets.DATABASE_URL_DIRECT }}" \
-            "$API_IMAGE:$GITHUB_SHA" sh -c "alembic upgrade head && python -m app.cli sync-indexes"
+            "$API_IMAGE:$GITHUB_SHA" sh -c "python -m app.cli migrate && python -m app.cli sync-indexes"
       - name: Roll out
         run: |
           curl -fsS -X POST "${{ secrets.DEPLOY_WEBHOOK_URL }}" -H 'Content-Type: application/json' \
@@ -68,7 +68,7 @@ jobs:
         run: |
           docker run --rm -e APP_ENV=staging -e SECRET_KEY=migration-only-not-used-at-runtime-000 \
             -e DATABASE_URL="${{ secrets.DATABASE_URL_DIRECT }}" -e DATABASE_URL_DIRECT="${{ secrets.DATABASE_URL_DIRECT }}" \
-            "$API_IMAGE:$GITHUB_SHA" sh -c "alembic upgrade head && python -m app.cli sync-indexes"
+            "$API_IMAGE:$GITHUB_SHA" sh -c "python -m app.cli migrate && python -m app.cli sync-indexes"
       - name: Roll out
         run: |
           curl -fsS -X POST "${{ secrets.DEPLOY_WEBHOOK_URL }}" -H 'Content-Type: application/json' \

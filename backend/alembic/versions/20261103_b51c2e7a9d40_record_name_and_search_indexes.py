@@ -26,14 +26,24 @@ def upgrade() -> None:
     op.execute(
         """
         DO $$
+        DECLARE ext_schema text;
         BEGIN
-            BEGIN
-                CREATE EXTENSION IF NOT EXISTS pg_trgm;
-            EXCEPTION WHEN OTHERS THEN
-                RAISE NOTICE 'pg_trgm not available; name search uses sequential scans';
-            END;
-            IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
-                EXECUTE 'CREATE INDEX IF NOT EXISTS ix_rec_trgm_records_name ON records USING gin (name gin_trgm_ops)';
+            IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
+                BEGIN
+                    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+                EXCEPTION WHEN OTHERS THEN
+                    RAISE NOTICE 'pg_trgm not available; name search uses sequential scans';
+                END;
+            END IF;
+            -- The operator class is named with the extension's schema: tenant schemas do not have the
+            -- extension on their search_path.
+            SELECT n.nspname INTO ext_schema FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+                WHERE e.extname = 'pg_trgm';
+            IF ext_schema IS NOT NULL THEN
+                EXECUTE format(
+                    'CREATE INDEX IF NOT EXISTS ix_rec_trgm_records_name ON records USING gin (name %I.gin_trgm_ops)',
+                    ext_schema
+                );
             END IF;
         END $$;
         """

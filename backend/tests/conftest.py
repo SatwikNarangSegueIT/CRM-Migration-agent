@@ -43,6 +43,7 @@ from app.engine.meta import invalidate_cache  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models import Base, User  # noqa: E402
 from app.security.seed_v1 import stable_id  # noqa: E402
+from app.tenancy import invalidate_catalogue  # noqa: E402
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PASSWORD = "Correct-Horse-Battery-9"
@@ -62,7 +63,9 @@ def run_alembic(*args: str) -> str:
 
 @pytest.fixture(scope="session", autouse=True)
 def _migrated_database() -> None:
-    run_alembic("upgrade", "head")
+    from app.db.migrate import migrate_all
+
+    migrate_all(TEST_DATABASE_URL)
 
 
 @pytest.fixture
@@ -76,10 +79,18 @@ def _clean_state() -> None:
     (profiles, roles, metadata) and empty the Redis test DB."""
     tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
     with get_sessionmaker()() as db:
+        # Workspaces created by a test are dropped; the public schema is the first workspace.
+        for schema in db.scalars(
+            text("SELECT schema_name FROM platform.tenants WHERE schema_name <> 'public'")
+        ):
+            db.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        db.execute(text("DELETE FROM platform.tenants WHERE schema_name <> 'public'"))
+        db.execute(text("DELETE FROM platform.user_directory"))
         db.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
         apply_seeds(db.connection())
         db.commit()
     invalidate_cache()
+    invalidate_catalogue()
     # TRUNCATE resets the revision counters, so revision-keyed caches must be emptied too.
     clear_all_caches()
     get_redis().flushdb()

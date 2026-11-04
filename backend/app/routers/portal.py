@@ -28,6 +28,7 @@ from app.services.auth import issue_invitation, revoke_sessions
 from app.services.email import app_link, queue_email
 from app.services.pdf import render_document
 from app.services.settings import get_setting
+from app.tenancy import qualify_token
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 staff_router = APIRouter(prefix="/portal-users", tags=["portal users"])
@@ -365,7 +366,7 @@ def invite(contact_id: uuid.UUID, request: Request, svc: Records, auth: PortalAd
         f"Your {brand} portal access",
         f"Hello {user.name},\n\n{auth.user.name} has invited you to the {brand} customer portal, "
         "where you can see your cases and invoices.\nSet your password with this link (single use):\n\n"
-        f"{app_link('/accept-invitation#token=' + token)}\n",
+        f"{app_link('/accept-invitation#token=' + qualify_token(svc.db, token))}\n",
     )
     return _portal_user_out(user)
 

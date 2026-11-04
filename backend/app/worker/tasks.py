@@ -13,19 +13,39 @@ from app.worker.celery_app import celery_app
 logger = logging.getLogger("app.worker")
 
 
-def _with_db(fn: Callable[..., Any], *args: Any) -> Any:
+def _with_db(fn: Callable[..., Any], *args: Any, tenant: str | None = None) -> Any:
+    """Run ``fn(db, *args)`` in the tenant schema ``tenant`` (default: public, the first tenant)."""
     import app.apps  # noqa: F401 - registers object hooks
     from app import packs
 
     packs.available()
     from app.db.session import get_sessionmaker
+    from app.tenancy import IMPLICIT_PUBLIC, bind_tenant, by_schema
 
     with get_sessionmaker()() as db:
+        bind_tenant(db, by_schema(tenant) if tenant else (by_schema("public") or IMPLICIT_PUBLIC))
         try:
             return fn(db, *args)
         except Exception:
             db.rollback()
             raise
+
+
+def _each_tenant(fn: Callable[..., Any]) -> dict[str, Any]:
+    """Scheduled jobs run once per active tenant; one firm's failure does not stop the others."""
+    from app.tenancy import active_tenants
+
+    results: dict[str, Any] = {}
+    for tenant in active_tenants():
+        try:
+            results[tenant.schema] = _with_db(fn, tenant=tenant.schema)
+        except Exception:
+            logger.exception("Scheduled job failed for tenant", extra={"tenant": tenant.schema})
+    return results
+
+
+def _total(results: dict[str, Any]) -> int:
+    return sum(int(v) for v in results.values() if isinstance(v, int))
 
 
 @celery_app.task(name="system.ping")
@@ -46,25 +66,25 @@ def send_email_task(to: str, subject: str, body: str) -> None:
 
 
 @celery_app.task(name="engine.index_ddl")
-def apply_index_ddl(statements: list[str]) -> None:
+def apply_index_ddl(statements: list[str], tenant: str = "public") -> None:
     from app.db.session import get_engine
     from app.engine.indexes import apply_concurrently
 
-    apply_concurrently(get_engine(), statements)
+    apply_concurrently(get_engine(), statements, tenant)
 
 
 @celery_app.task(name="marketing.process_send", acks_late=True)
-def process_email_send_task(send_id: str) -> dict[str, int]:
+def process_email_send_task(send_id: str, tenant: str | None = None) -> dict[str, int]:
     from app.apps.marketing import process_send
 
-    result: dict[str, int] = _with_db(process_send, uuid.UUID(send_id))
+    result: dict[str, int] = _with_db(process_send, uuid.UUID(send_id), tenant=tenant)
     return result
 
 
-def enqueue_email_send(send_id: uuid.UUID) -> None:
+def enqueue_email_send(send_id: uuid.UUID, tenant: str | None = None) -> None:
     """Called after the scheduling transaction; the beat job also picks up anything missed."""
     try:
-        process_email_send_task.apply_async((str(send_id),), countdown=2)
+        process_email_send_task.apply_async((str(send_id), tenant), countdown=2)
     except Exception:
         logger.warning(
             "Could not enqueue e-mail send; the scheduler will retry", extra={"send_id": str(send_id)}
@@ -75,41 +95,40 @@ def enqueue_email_send(send_id: uuid.UUID) -> None:
 def dispatch_due_sends() -> int:
     from app.apps.marketing import due_sends
 
-    ids: list[uuid.UUID] = _with_db(due_sends)
-    for sid in ids:
-        process_email_send_task.delay(str(sid))
-    return len(ids)
+    count = 0
+    for schema, ids in _each_tenant(due_sends).items():
+        for sid in ids:
+            process_email_send_task.delay(str(sid), schema)
+            count += 1
+    return count
 
 
 @celery_app.task(name="imports.run")
-def run_import_task(job_id: str) -> None:
+def run_import_task(job_id: str, tenant: str | None = None) -> None:
     from app.services.imports import run_import
 
-    _with_db(run_import, uuid.UUID(job_id))
+    _with_db(run_import, uuid.UUID(job_id), tenant=tenant)
 
 
 @celery_app.task(name="service.escalate_cases")
 def escalate_cases() -> int:
     from app.apps.service import escalate_overdue_cases
 
-    count: int = _with_db(escalate_overdue_cases)
-    return count
+    return _total(_each_tenant(escalate_overdue_cases))
 
 
 @celery_app.task(name="activities.reminders")
 def activity_reminders() -> int:
     from app.apps.activities import send_due_reminders
 
-    count: int = _with_db(send_due_reminders)
-    return count
+    return _total(_each_tenant(send_due_reminders))
 
 
 @celery_app.task(name="reports.scheduled")
 def scheduled_reports() -> int:
     from app.services.reports import run_due_schedules
 
-    count: int = _with_db(run_due_schedules)
-    return count
+    return _total(_each_tenant(run_due_schedules))
 
 
 @celery_app.task(name="maintenance.purge")
@@ -130,13 +149,15 @@ def purge() -> dict[str, int]:
         retained = apply_retention(db)
         return {"records": records, "fields": fields, "retention": retained}
 
-    result: dict[str, int] = _with_db(job)
-    return result
+    totals: dict[str, int] = {"records": 0, "fields": 0, "retention": 0}
+    for result in _each_tenant(job).values():
+        for key in totals:
+            totals[key] += int(result.get(key, 0))
+    return totals
 
 
 @celery_app.task(name="packs.daily")
 def pack_daily_jobs() -> int:
     from app.packs import run_daily_jobs
 
-    count: int = _with_db(run_daily_jobs)
-    return count
+    return _total(_each_tenant(run_daily_jobs))

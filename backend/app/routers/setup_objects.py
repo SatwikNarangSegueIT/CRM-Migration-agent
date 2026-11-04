@@ -22,6 +22,7 @@ from app.models import App, FieldDefinition, ObjectDefinition
 from app.models.metadata import FIELD_TYPES
 from app.security.catalog import SystemPermission
 from app.services.audit import RequestMeta
+from app.tenancy import tenant_schema
 
 router = APIRouter(prefix="/setup", tags=["setup: objects"])
 P = SystemPermission
@@ -201,7 +202,9 @@ def create_field(
     )
     db.commit()
     meta = load_registry(db).get(api_name)
-    schedule_index_ddl(index_statements(meta, meta.field(field.api_name), concurrently=True))
+    schedule_index_ddl(
+        index_statements(meta, meta.field(field.api_name), concurrently=True), tenant_schema(db)
+    )
     return _object_out(db, auth, api_name)
 
 
@@ -213,7 +216,7 @@ def update_field(
         db, auth.user.id, api_name, field_api, body.model_dump(exclude_unset=True), _meta(request)
     )
     db.commit()
-    schedule_index_ddl(ddl)
+    schedule_index_ddl(ddl, tenant_schema(db))
     return _object_out(db, auth, api_name)
 
 
@@ -223,7 +226,7 @@ def delete_field(
 ) -> dict[str, Any]:
     ddl = admin.delete_field(db, auth.user.id, api_name, field_api, _meta(request))
     db.commit()
-    schedule_index_ddl(ddl)
+    schedule_index_ddl(ddl, tenant_schema(db))
     return _object_out(db, auth, api_name)
 
 

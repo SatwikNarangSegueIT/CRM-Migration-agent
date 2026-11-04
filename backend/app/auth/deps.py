@@ -19,8 +19,9 @@ from app.db.session import get_db
 from app.models import MetadataRevision, User, UserSession
 from app.security.catalog import SystemPermission
 from app.security.policy import AccessPolicy, load_policy
+from app.tenancy import SESSION_COOKIE as SESSION_COOKIE
+from app.tenancy import is_resolved, split_token
 
-SESSION_COOKIE = "crm_session"
 CSRF_COOKIE = "crm_csrf"
 CSRF_HEADER = "X-CSRF-Token"
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -89,9 +90,11 @@ def verify_origin(request: Request) -> None:
 
 
 def get_optional_auth(request: Request, db: DbSession) -> AuthContext | None:
-    token = request.cookies.get(SESSION_COOKIE)
-    if not token:
+    cookie = request.cookies.get(SESSION_COOKIE)
+    if not cookie or not is_resolved(db):
         return None
+    # "<tenant>.<token>": get_db already bound the session to the tenant named by the prefix.
+    _, token = split_token(cookie)
     # One round trip: the session with its user, profile and role, plus the metadata/security revisions
     # that key the in-memory caches (app.core.cache).
     row = db.execute(

@@ -17,6 +17,7 @@ from app.engine.meta import FieldMeta, ObjectMeta, Registry
 
 logger = logging.getLogger("app.engine.indexes")
 SAFE_NAME = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
+SAFE_SCHEMA = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 MAX_INDEXED_FIELDS = 25
 
 
@@ -71,7 +72,7 @@ def sync_indexes(conn: Connection, registry: Registry) -> None:
                 conn.execute(text(stmt))
 
 
-def schedule_index_ddl(statements: list[str]) -> None:
+def schedule_index_ddl(statements: list[str], tenant: str = "public") -> None:
     """Hand index DDL to the worker. CREATE INDEX CONCURRENTLY waits for every open transaction, so it
     must never run inside a web request. `app.cli sync-indexes` (run on deploy) creates anything missed."""
     if not statements:
@@ -79,12 +80,20 @@ def schedule_index_ddl(statements: list[str]) -> None:
     try:
         from app.worker.tasks import apply_index_ddl
 
-        apply_index_ddl.delay(statements)
+        apply_index_ddl.delay(statements, tenant)
     except Exception:
         logger.warning("Could not queue index DDL; run 'sync-indexes'", extra={"statements": statements})
 
 
-def apply_concurrently(engine: Engine, statements: list[str]) -> None:
+def qualify(statement: str, schema: str) -> str:
+    """Name the tenant schema in index DDL (it runs outside a transaction, so search_path can't be used)."""
+    if not SAFE_SCHEMA.match(schema):
+        raise ValueError(f"Invalid schema name: {schema!r}")
+    statement = statement.replace(" ON records ", f' ON "{schema}".records ')
+    return re.sub(r"IF EXISTS (ix_rec_\w+)", rf'IF EXISTS "{schema}".\1', statement)
+
+
+def apply_concurrently(engine: Engine, statements: list[str], schema: str = "public") -> None:
     """Run index DDL outside a transaction so writes are not blocked. Failures are logged, not raised:
     a missing index only costs performance; uniqueness is also checked by the record engine."""
     if not statements:
@@ -92,6 +101,6 @@ def apply_concurrently(engine: Engine, statements: list[str]) -> None:
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         for stmt in statements:
             try:
-                conn.execute(text(stmt))
+                conn.execute(text(qualify(stmt, schema)))
             except Exception:
                 logger.exception("Index statement failed", extra={"statement": stmt})

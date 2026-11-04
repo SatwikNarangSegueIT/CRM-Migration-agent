@@ -49,7 +49,7 @@ services:
 
   api:
     <<: *backend
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "python -m app.cli migrate && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     ports: ["8000:8000"]
 
   worker:

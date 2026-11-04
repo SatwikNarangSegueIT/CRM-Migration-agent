@@ -30,6 +30,7 @@ from app.engine.types import format_datetime, parse_datetime
 from app.models import EmailDelivery, Record
 from app.services.email import app_link
 from app.services.settings import get_setting
+from app.tenancy import qualify_token, tenant_schema
 
 PERSON_OBJECTS = ("contact", "lead")
 MERGE_RE = re.compile(r"\{\{\s*([a-z_]+)\s*\}\}")
@@ -276,7 +277,7 @@ def schedule_send(svc: RecordService, send: Record, payload: dict[str, Any]) -> 
     if when_dt <= datetime.now(UTC):
         from app.worker.tasks import enqueue_email_send
 
-        enqueue_email_send(send.id)
+        enqueue_email_send(send.id, tenant_schema(svc.db))
     return svc.serialize(send)
 
 
@@ -373,16 +374,21 @@ def render_message(
     delivery: EmailDelivery,
     company: dict[str, Any],
     marketing: dict[str, Any],
+    token: str | None = None,
 ) -> tuple[str, str, str]:
-    """(subject, text, html) with merge fields, tracked links, open pixel, unsubscribe and sender identity."""
+    """(subject, text, html) with merge fields, tracked links, open pixel, unsubscribe and sender identity.
+
+    ``token`` is the tenant-qualified tracking token used in links (defaults to the bare token).
+    """
     data = person.data if person else {}
+    token = token or delivery.tracking_token
     merge = {
         "first_name": data.get("first_name") or "",
         "last_name": data.get("last_name") or "",
         "name": person.name if person else "",
         "email": delivery.email,
         "company": data.get("company") or "",
-        "unsubscribe_url": app_link(f"/unsubscribe/{delivery.tracking_token}"),
+        "unsubscribe_url": app_link(f"/unsubscribe/{token}"),
     }
 
     def fill(text: str, escape: bool) -> str:
@@ -410,10 +416,10 @@ def render_message(
         True,
     )
     body_html = HREF_RE.sub(
-        lambda m: f'href="{html.escape(click_link(delivery.tracking_token, html.unescape(m.group(1))))}"',
+        lambda m: f'href="{html.escape(click_link(token, html.unescape(m.group(1))))}"',
         body_html,
     )
-    pixel = app_link(f"/api/v1/public/e/{delivery.tracking_token}/open.gif")
+    pixel = app_link(f"/api/v1/public/e/{token}/open.gif")
     body_html += (
         f'<hr><p style="font-size:12px;color:#64748b">Sent by {html.escape(sender)}'
         f"{', ' + html.escape(address) if address else ''}. "
@@ -449,7 +455,8 @@ def process_send(db: Session, send_id: uuid.UUID) -> dict[str, int]:
             break
         for d in rows:
             person = db.get(Record, d.recipient_record_id) if d.recipient_record_id else None
-            subject, text, body_html = render_message(send, person, d, company, marketing)
+            link_token = qualify_token(db, d.tracking_token)
+            subject, text, body_html = render_message(send, person, d, company, marketing, link_token)
             try:
                 deliver_message(
                     d.email,
@@ -458,7 +465,7 @@ def process_send(db: Session, send_id: uuid.UUID) -> dict[str, int]:
                     html_body=body_html,
                     from_name=send.data.get("from_name"),
                     from_email=send.data.get("from_email"),
-                    headers={"List-Unsubscribe": f"<{app_link('/unsubscribe/' + d.tracking_token)}>"},
+                    headers={"List-Unsubscribe": f"<{app_link('/unsubscribe/' + link_token)}>"},
                 )
                 d.status = "sent"
                 d.sent_at = datetime.now(UTC)

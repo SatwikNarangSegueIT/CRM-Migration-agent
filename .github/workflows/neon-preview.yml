@@ -47,7 +47,7 @@ jobs:
           DATABASE_URL_DIRECT: ${{ steps.neon.outputs.db_url }}
         run: |
           uv sync --locked
-          uv run alembic upgrade head
+          uv run python -m app.cli migrate
       - name: Tests (pooled endpoint)
         working-directory: backend
         env:

@@ -4,6 +4,11 @@ uv run python -m app.cli create-admin --email you@agency.com.au --name "Your Nam
 uv run python -m app.cli seed-demo            # development/test only: demo users + sample data
 uv run python -m app.cli sync-indexes         # after each deploy
 uv run python -m app.cli seed-load --count 1000000   # disposable databases only (load tests)
+uv run python -m app.cli migrate              # platform + every tenant schema (run on deploy)
+uv run python -m app.cli create-tenant --name "Smith Lawyers" --domain legal
+uv run python -m app.cli list-tenants
+
+Commands that touch CRM data take --tenant <workspace address> (default: the first workspace).
 """
 
 from __future__ import annotations
@@ -11,16 +16,38 @@ from __future__ import annotations
 import argparse
 import getpass
 import sys
+from collections.abc import Callable
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.auth.security import hash_password, password_policy_errors
 from app.core.config import get_settings
-from app.db.session import get_sessionmaker
+from app.db.session import get_sessionmaker as _sessionmaker
 from app.models import Profile, Role, User
 from app.security.policy import SYSTEM_ADMIN_KEY
 from app.services import audit
 from app.services.audit import AuditAction
+
+_TENANT: str | None = None
+
+
+def get_sessionmaker() -> Callable[[], Session]:
+    """Sessions bound to the --tenant workspace (default: the first one)."""
+    from app.tenancy import IMPLICIT_PUBLIC, bind_tenant, by_schema, by_slug
+
+    maker = _sessionmaker()
+
+    def factory() -> Session:
+        db = maker()
+        tenant = by_slug(_TENANT) if _TENANT else (by_schema("public") or IMPLICIT_PUBLIC)
+        if tenant is None:
+            raise SystemExit(f"Unknown workspace: {_TENANT}")
+        bind_tenant(db, tenant)
+        return db
+
+    return factory
+
 
 DEMO_PASSWORD = "Demo-Password-2026!"  # noqa: S105 - documented development-only credential
 # One demo user per default staff profile (plan v3 section 10): email, name, profile key, hierarchy role key.
@@ -141,27 +168,65 @@ def seed_load(count: int, object_api_name: str) -> int:
 
 
 def sync_indexes() -> int:
-    """Create every missing expression index for indexed / unique fields (run after each deploy)."""
+    """Create every missing expression index for indexed / unique fields in every tenant (after deploys)."""
+    global _TENANT
     from app.db.session import get_engine
     from app.engine.indexes import apply_concurrently, index_statements
     from app.engine.meta import load_registry
+    from app.tenancy import active_tenants
 
-    with get_sessionmaker()() as db:
-        registry = load_registry(db)
-    statements = [
-        stmt
-        for obj in registry.objects.values()
-        for f in obj.data_fields
-        for stmt in index_statements(obj, f, concurrently=True)
-    ]
-    apply_concurrently(get_engine(), statements)
-    print(f"Checked {len(statements)} index(es).")
+    for tenant in active_tenants():
+        _TENANT = tenant.slug
+        with get_sessionmaker()() as db:
+            registry = load_registry(db)
+        statements = [
+            stmt
+            for obj in registry.objects.values()
+            for f in obj.data_fields
+            for stmt in index_statements(obj, f, concurrently=True)
+        ]
+        apply_concurrently(get_engine(), statements, tenant.schema)
+        print(f"{tenant.slug or tenant.schema}: checked {len(statements)} index(es).")
+    return 0
+
+
+def migrate() -> int:
+    from app.db.migrate import migrate_all
+
+    schemas = migrate_all()
+    print(f"Platform and {len(schemas)} tenant schema(s) are up to date.")
+    return 0
+
+
+def create_tenant_cmd(name: str, domain: str, slug: str | None) -> int:
+    from app.db.migrate import create_tenant
+
+    _, slug, schema = create_tenant(name, domain, slug=slug)
+    print(f"Created workspace {slug} ({schema}). Add an administrator with: create-admin --tenant {slug}")
+    return 0
+
+
+def list_tenants() -> int:
+    from app.tenancy import tenants
+
+    for t in tenants():
+        print(f"{t.slug or '-':<30} {t.domain:<12} {t.status:<12} {t.schema:<20} {t.name}")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
+    global _TENANT
     parser = argparse.ArgumentParser(prog="python -m app.cli")
+    parser.add_argument("--tenant", help="Workspace address (default: the first workspace)")
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("migrate", help="Run platform and tenant migrations")
+    p_tenant = sub.add_parser("create-tenant", help="Create a workspace (firm) with its own schema")
+    p_tenant.add_argument("--name", required=True)
+    p_tenant.add_argument(
+        "--domain", default="general", choices=["legal", "migration", "accounting", "lending", "general"]
+    )
+    p_tenant.add_argument("--slug")
+    sub.add_parser("list-tenants", help="List workspaces")
     p_admin = sub.add_parser("create-admin", help="Create an administrator account")
     p_admin.add_argument("--email", required=True)
     p_admin.add_argument("--name", required=True)
@@ -172,6 +237,13 @@ def main(argv: list[str] | None = None) -> int:
     p_load.add_argument("--count", type=int, default=100_000)
     p_load.add_argument("--object", default="account")
     args = parser.parse_args(argv)
+    _TENANT = args.tenant
+    if args.command == "migrate":
+        return migrate()
+    if args.command == "create-tenant":
+        return create_tenant_cmd(args.name, args.domain, args.slug)
+    if args.command == "list-tenants":
+        return list_tenants()
     if args.command == "create-admin":
         return create_admin(args.email, args.name, args.password)
     if args.command == "sync-indexes":
