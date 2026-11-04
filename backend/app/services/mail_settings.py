@@ -34,10 +34,10 @@ Security = Literal["starttls", "ssl", "none"]
 # The .com hosts are from Zoho's documentation; check the others in Zoho Mail -> Settings -> Mail Accounts ->
 # IMAP / SMTP, which shows the exact host for the account. Ports: 465 (SSL) or 587 (STARTTLS).
 ZOHO_SMTP_HOSTS: dict[str, tuple[str, str, str]] = {
+    "in": ("India (zoho.in)", "smtp.zoho.in", "smtppro.zoho.in"),
     "com": ("United States (zoho.com)", "smtp.zoho.com", "smtppro.zoho.com"),
     "com.au": ("Australia (zoho.com.au)", "smtp.zoho.com.au", "smtppro.zoho.com.au"),
     "eu": ("Europe (zoho.eu)", "smtp.zoho.eu", "smtppro.zoho.eu"),
-    "in": ("India (zoho.in)", "smtp.zoho.in", "smtppro.zoho.in"),
 }
 # ZeptoMail (Zoho's transactional e-mail service). Accounts in other data centres see their own API URL in
 # ZeptoMail -> Mail Agents -> SMTP/API.

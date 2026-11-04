@@ -70,7 +70,8 @@ Sign-up creates a schema per firm and e-mails a confirmation link, so it needs m
 ## E-mail delivery (Zoho)
 
 **In the environment** (defaults), see [`backend/.env.production.example`](../backend/.env.production.example):
-`EMAIL_BACKEND=smtp`, `SMTP_HOST` (`smtp.zoho.com.au` for zoho.com.au accounts; `smtp.zoho.com` or, for paid
+`EMAIL_BACKEND=smtp`, `SMTP_HOST` (Zoho India: `smtppro.zoho.in` for paid organisation accounts, `smtp.zoho.in`
+for personal ones; other data centres: `smtp.zoho.com` or, for paid
 organisation accounts, `smtppro.zoho.com` on zoho.com), `SMTP_PORT=465` + `SMTP_SECURITY=ssl` (or 587 +
 `starttls`), `SMTP_USERNAME` = the full mailbox, `SMTP_PASSWORD` = an application-specific password when the
 Zoho account uses two-factor sign-in, and `EMAIL_FROM` = that mailbox or one of its aliases. Zoho shows the
@@ -99,7 +100,7 @@ curl -s -b jar.txt -X PUT -H "Origin: $APP" -H "X-CSRF-Token: $CSRF" -H 'Content
     "provider": "smtp",
     "from_name": "Meridian CRM",
     "from_email": "no-reply@yourfirm.com.au",
-    "smtp_host": "smtp.zoho.com.au",
+    "smtp_host": "smtppro.zoho.in",
     "smtp_port": 465,
     "smtp_security": "ssl",
     "smtp_username": "no-reply@yourfirm.com.au",
