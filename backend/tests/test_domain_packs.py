@@ -289,7 +289,9 @@ def test_financial_year_helpers() -> None:
         "2026-10-28", "2027-02-28", "2027-04-28", "2027-07-28",
     ]  # fmt: skip
     monthly = bas_periods("Monthly", 2026)
-    assert len(monthly) == 12 and monthly[0][1] == date(2026, 8, 21) and monthly[5][1] == date(2027, 1, 21)
+    assert (
+        len(monthly) == 12 and monthly[0][1] == date(2026, 8, 21) and monthly[5][1] == date(2027, 2, 21)
+    )  # December: 21 February
 
 
 # ------------------------------------------------------------------ loan broking
@@ -428,3 +430,70 @@ def test_domain_related_lists_follow_the_visible_apps(db: Session) -> None:
     assert "opportunity" not in objects and "case" not in objects and "campaign_member" not in objects
     assert "consent" in objects and "invoice" in objects
     db.rollback()
+
+
+def test_accounting_safeguards(admin_client: TestClient, client: TestClient, db: Session) -> None:
+    from app.core.validators import is_valid_tfn
+    from app.packs.accounting_practice import bas_periods
+    from tests.conftest import login, make_user
+
+    c = admin_client
+    install(c, "accounting_practice")
+    assert is_valid_tfn("123 456 782") and not is_valid_tfn("123456789")
+    assert dict(bas_periods("Monthly", 2026))["Dec 2026"].isoformat() == "2027-02-21"
+    bad = c.post(
+        f"{API}/objects/account/records", json={"name": "Typo Pty Ltd", "fields": {"tfn": "123456789"}}
+    )
+    assert bad.status_code == 422 and "TFN" in bad.text
+    entity = create(c, "account", {"entity_type": "Company", "tfn": "123456782"}, name="Gum Tree Pty Ltd")
+    assert get(c, "account", entity["id"])["fields"]["tfn"] == "123456782"
+
+    # The client manager works the client's file without owning it.
+    manager_user = make_user(db, profile="ap_accountant", email="cm@ledger.example")
+    manager = TestClient(client.app)
+    login(manager, manager_user.email)
+    patch(c, "account", entity["id"], {"client_manager": str(manager_user.id), "bas_frequency": "Quarterly"})
+    assert manager.get(f"{API}/objects/account/records/{entity['id']}").status_code == 200
+    assert action(manager, "account", entity["id"], "generate_bas_deadlines")["created"] >= 0
+
+    # Preparer with lodging rights still can't sign off their own review.
+    reviewer_user = make_user(db, profile="ap_accountant", email="rev@ledger.example")
+    eng = create(manager, "engagement", {"client": entity["id"], "type": "Advisory", "fee": 900})
+    letter = create(manager, "engagement_letter", {"engagement": eng["id"], "scope": "Structure advice."})
+    action(manager, "engagement_letter", letter["id"], "send")
+    # Signed on paper: only a partner records it; with nothing to request the work starts.
+    action(
+        manager,
+        "engagement_letter",
+        letter["id"],
+        "record_paper_signature",
+        {"full_name": "Gus Gum", "reason": "x"},
+        expect=403,
+    )
+    action(
+        c, "engagement_letter", letter["id"], "record_paper_signature", {"full_name": "Gus Gum"}, expect=422
+    )
+    action(
+        c,
+        "engagement_letter",
+        letter["id"],
+        "record_paper_signature",
+        {"full_name": "Gus Gum", "reason": "Scan attached"},
+    )
+    assert get(c, "engagement", eng["id"])["fields"]["stage"] == "In Progress"
+    patch(manager, "engagement", eng["id"], {"reviewer": str(reviewer_user.id), "stage": "Review"})
+    r = manager.patch(
+        f"{API}/objects/engagement/records/{eng['id']}",
+        json={
+            "version": get(manager, "engagement", eng["id"])["version"],
+            "fields": {"stage": "Ready to Lodge"},
+        },
+    )
+    assert r.status_code == 422 and "reviewer" in r.text.lower()
+
+    # The return's deadline follows the engagement's due date.
+    ret = create(manager, "engagement", {"client": entity["id"], "type": "Company Tax Return"})
+    later = (local_today() + timedelta(days=90)).isoformat()
+    patch(manager, "engagement", ret["id"], {"due_date": later})
+    deadlines = related(c, "lodgement_deadline", "engagement", ret["id"])
+    assert [d["fields"]["due_date"] for d in deadlines] == [later]

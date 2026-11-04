@@ -195,3 +195,32 @@ def test_in_process_migrations_leave_app_logging_alone() -> None:
     from app.db.migrate import _config
 
     assert _config("alembic").attributes.get("configure_logger") is False
+
+
+def test_profession_workspaces_use_profession_wording(admin_client: TestClient, db: Session) -> None:
+    """No sales vocabulary left over: sources, statuses, organisation types, requests, reports."""
+    from app.domain_content import apply_content
+    from app.domains import swap_words
+
+    apply_domain(db, "lending", None)
+    db.commit()
+    c = admin_client
+    lead = c.get(f"{API}/meta/objects/lead").json()
+    labels = lambda f: [v["label"] for v in lead["fields"][f]["options"]["values"] if v.get("active", True)]  # noqa: E731
+    assert "Purchased List" not in labels("lead_source") and "Client Referral" in labels("lead_source")
+    assert "Phone Enquiry" in labels("lead_source")
+    assert "Not Proceeding" in labels("status") and "Nurturing" not in labels("status")
+    assert {"loan_purpose", "loan_amount"} <= set(lead["fields"])
+    form = [f for s in lead["page_layout"] for f in s["fields"]]
+    assert "loan_purpose" in form and "website" not in form and "converted_opportunity" not in form
+    org = c.get(f"{API}/meta/objects/account").json()
+    assert "Supplier" in [v["label"] for v in org["fields"]["type"]["options"]["values"]]
+    assert c.get(f"{API}/meta/objects/case").json()["label"] == "Client Request"
+    # Reports and dashboards for apps the firm doesn't use (pipeline, cases, invoices for a broker) are hidden.
+    reports = {r["name"] for r in c.get(f"{API}/reports").json()}
+    assert not {"Win Rate", "Total Open Pipeline", "SLA Compliance", "Aged Receivables"} & reports
+    dashboards = {d["name"] for d in c.get(f"{API}/dashboards").json()}
+    assert not {"Sales Dashboard", "Service Dashboard", "Billing Dashboard"} & dashboards
+    assert apply_content(db, "lending") == 0  # idempotent
+    # A client's trust account is not an organisation.
+    assert swap_words("Client Account Balances", [("Account", "Organisation")]) == "Client Account Balances"

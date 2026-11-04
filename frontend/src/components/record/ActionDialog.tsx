@@ -37,6 +37,16 @@ const ACTION_PARAMS: Record<string, ParamSpec[]> = {
       required: true,
     },
   ],
+  "engagement_letter.record_paper_signature": [
+    { name: "full_name", label: "Signed by (full name)", type: "text", required: true },
+    {
+      name: "reason",
+      label: "Where the signed copy is kept",
+      type: "textarea",
+      required: true,
+      hint: "e.g. Scanned and attached to this letter. Recorded in the audit log.",
+    },
+  ],
   "email_send.schedule": [
     { name: "scheduled_at", label: "Send at", type: "datetime", hint: "Leave empty to send now." },
   ],

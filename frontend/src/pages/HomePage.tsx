@@ -55,11 +55,14 @@ function RecordsCard({
   title,
   body,
   columns,
+  titleFields,
 }: {
   object: string;
   title: string;
   body: QueryBody;
   columns: string[];
+  /** Fields that name the record better than its number (a deadline is "BAS Q1 Jul-Sep"). */
+  titleFields?: string[];
 }) {
   const { object: access } = useAuth();
   const meta = useObjectMeta(access(object).read ? object : undefined);
@@ -92,7 +95,10 @@ function RecordsCard({
           {rows.data.items.map((r) => (
             <li key={r.id} className="px-4 py-2 text-sm">
               <Link to={recordPath(object, r.id)} className="font-medium text-brand-700 hover:underline">
-                {r.name}
+                {(titleFields ?? [])
+                  .map((f) => r.fields[f])
+                  .filter(Boolean)
+                  .join(" ") || r.name}
               </Link>
               <p className="flex flex-wrap gap-x-3 text-xs text-slate-600">
                 {columns.map((c) => (
@@ -582,6 +588,7 @@ export function HomePage() {
               },
               sort: [{ field: "due_date", direction: "asc" }],
             }}
+            titleFields={["lodgement_type", "period"]}
             columns={["client", "due_date", "status"]}
           />
         )}

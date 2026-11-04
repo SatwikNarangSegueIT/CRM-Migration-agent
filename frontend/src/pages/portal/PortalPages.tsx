@@ -74,7 +74,10 @@ export function PortalHomePage() {
   if (me.isPending) return <Spinner label="Loading" />;
   if (me.isError) return <Alert tone="error">{errorMessage(me.error)}</Alert>;
   const firstName = auth?.user.name.split(" ")[0] ?? "";
-  const canCreateCase = me.data.objects.some((o) => o.api_name === "case" && o.can_create);
+  const caseObject = me.data.objects.find((o) => o.api_name === "case");
+  const canCreateCase = Boolean(caseObject?.can_create);
+  // "Get help" in a support portal; "New Client Request" where the firm calls cases that.
+  const newCaseLabel = caseObject && caseObject.label !== "Case" ? `New ${caseObject.label}` : "Get help";
   return (
     <div className="space-y-6">
       <div className="rounded-lg bg-gradient-to-r from-brand-50 to-indigo-50 px-6 py-5">
@@ -88,7 +91,7 @@ export function PortalHomePage() {
             to="/portal/cases/new"
             className="mt-3 inline-flex items-center gap-1 rounded-full bg-brand-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-800"
           >
-            <PlusIcon size={14} /> Get help
+            <PlusIcon size={14} /> {newCaseLabel}
           </Link>
         )}
       </div>
@@ -192,7 +195,7 @@ export function PortalListPage() {
               to="/portal/cases/new"
               className="inline-flex items-center gap-1 rounded-md bg-brand-700 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-800"
             >
-              <PlusIcon size={14} /> New case
+              <PlusIcon size={14} /> New {m.label.toLowerCase()}
             </Link>
           )}
         </div>
@@ -612,7 +615,7 @@ export function PortalNewCasePage() {
         <Link to="/portal" className="hover:underline">
           Home
         </Link>{" "}
-        / New case
+        / New {(meta.data?.label ?? "case").toLowerCase()}
       </nav>
       <h1 className="text-2xl font-semibold text-slate-900">How can we help?</h1>
       <form

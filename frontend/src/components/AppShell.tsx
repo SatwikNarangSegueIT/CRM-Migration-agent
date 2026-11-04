@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { metaApi, recordsApi, workspaceApi } from "../api/records";
 import type { AppInfo, AppTab } from "../api/types";
 import { useAuth } from "../auth/context";
 import { recordPath, useApps } from "../lib/records";
 import { useDismiss } from "../lib/useDismiss";
-import { activeTab, appHref, currentApp, rememberApp, tabHref } from "../navigation";
+import { activeTab, appHref, currentApp, rememberApp } from "../navigation";
+import { AppTabs } from "./AppTabs";
 import { HeaderIconButton, PanelHeader } from "./HeaderMenus";
 import {
   BellIcon,
@@ -58,7 +59,10 @@ function RailItem({ entry, onNavigate }: { entry: RailEntry; onNavigate?: () => 
           />
         )}
         <Icon size={20} />
-        <span className="w-full truncate" title={entry.label}>
+        <span
+          className={cx("w-full truncate", entry.label.length > 9 && "text-[10px] tracking-tight")}
+          title={entry.label}
+        >
           {entry.label}
         </span>
       </Link>
@@ -406,35 +410,12 @@ export function AppShell() {
           </div>
 
           {app && (
-            <div className="flex items-end gap-6 overflow-x-auto border-t border-slate-200 px-4">
+            <div className="flex items-end gap-6 border-t border-slate-200 px-4">
               <p className="flex flex-none items-center gap-2 py-2.5 text-lg font-semibold text-slate-900">
                 <ObjectIcon icon={app.icon} color={app.color} size={24} />
                 {app.label}
               </p>
-              <nav aria-label={`${app.label} tabs`} className="flex gap-1">
-                {app.tabs.map((t) => {
-                  const href = tabHref(app, t);
-                  const isActive = t === tab;
-                  return (
-                    <NavLink
-                      key={href}
-                      to={href}
-                      onClick={() => rememberApp(app.key)}
-                      onMouseEnter={() => prefetchTab(t)}
-                      onFocus={() => prefetchTab(t)}
-                      aria-current={isActive ? "page" : undefined}
-                      className={cx(
-                        "whitespace-nowrap border-b-[3px] px-3 py-3 text-sm",
-                        isActive
-                          ? "border-brand-700 font-semibold text-slate-900"
-                          : "border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900",
-                      )}
-                    >
-                      {t.label}
-                    </NavLink>
-                  );
-                })}
-              </nav>
+              <AppTabs app={app} active={tab} onPrefetch={prefetchTab} />
             </div>
           )}
         </header>

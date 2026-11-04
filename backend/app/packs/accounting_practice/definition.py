@@ -258,7 +258,7 @@ PROFILES: Final[list[ProfileSpec]] = [
      {"engagement": "RE", "document_request": "RCE", "lodgement_deadline": "RE", "engagement_time_entry": "RCE"}, (), ()),
     ("ap_practice_admin", "Practice Administrator", "Client onboarding, engagement letters, invoices and payments.", "finance",
      {"engagement": "RC VA", "engagement_letter": "RCE VA", "lodgement_deadline": "RCE VA", "document_request": "RCE VA",
-      "engagement_time_entry": "R VA"}, ("manage_portal_users",), ()),
+      "engagement_time_entry": "R VA", "account": "RCE VA", "contact": "RCE VA"}, ("manage_portal_users",), ()),
 ]  # fmt: skip
 
 REPORT_FOLDER: Final = "accounting_reports"

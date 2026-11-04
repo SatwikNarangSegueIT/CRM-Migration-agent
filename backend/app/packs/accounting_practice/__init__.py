@@ -19,7 +19,9 @@ from sqlalchemy.orm import Session
 
 from app.apps.sales import BusinessRuleError, rule
 from app.apps.service import notify
+from app.auth.security import decrypt_field, encrypt_field
 from app.core.clock import local_today
+from app.core.validators import digits, format_abn, is_valid_abn, is_valid_tfn
 from app.engine.hooks import Change, Event, action, locked_when, on, ref
 from app.engine.records import RecordService
 from app.engine.types import decimal_to_json, format_datetime, money, to_decimal
@@ -94,6 +96,52 @@ def default_due_date(db: Session, kind: str, fy: str) -> str | None:
         return None
 
 
+# ------------------------------------------------------------------ client entities
+
+
+@on("account", Event.BEFORE_CREATE, Event.BEFORE_UPDATE, pack_key=K)
+def entity_identifiers(change: Change) -> None:
+    """TFN and ABN are checked with the ATO check digits (a typo would be lodged against someone else)."""
+    data = change.data
+    for field, valid, label in (("tfn", is_valid_tfn, "TFN"), ("abn", is_valid_abn, "ABN")):
+        value = data.get(field)
+        if not change.is_changed(field) or not value:
+            continue
+        encrypted = isinstance(value, dict) and "enc" in value  # the TFN is encrypted at rest
+        plain = decrypt_field(str(value["enc"])) if encrypted else str(value)
+        if not plain:
+            continue
+        if not valid(plain):
+            raise rule(f"That {label} isn't valid. Check the digits.", field)
+        if encrypted:
+            data[field] = {"enc": encrypt_field(digits(plain))}
+        else:
+            data[field] = format_abn(plain) if field == "abn" else digits(plain)
+
+
+@on("account", Event.AFTER_CREATE, Event.AFTER_UPDATE, pack_key=K)
+def client_manager_access(change: Change) -> None:
+    """The client manager works the client's file (BAS deadlines, contacts) like an owner."""
+    if change.record is None or not (change.is_changed("client_manager") or change.old == {}):
+        return
+    account = change.record
+    change.svc.db.execute(
+        delete(RecordShare).where(RecordShare.record_id == account.id, RecordShare.created_by_id.is_(None))
+    )
+    uid = account.data.get("client_manager")
+    if uid:
+        change.svc.db.add(
+            RecordShare(
+                record_id=account.id,
+                principal_type="user",
+                principal_id=uuid.UUID(str(uid)),
+                access="read_write",
+                created_by_id=None,
+            )
+        )
+    change.svc.db.flush()
+
+
 # ------------------------------------------------------------------ engagements
 
 
@@ -136,8 +184,9 @@ def engagement_rules(change: Change) -> None:
             raise rule("Assign a reviewer before the work is ready to lodge.", "reviewer")
         if reviewer == data.get("responsible_accountant"):
             raise rule("The reviewer must be someone other than the preparer.", "reviewer")
-        if str(svc.user_id) != str(reviewer) and not _can_lodge(svc):
-            raise rule("Only the reviewer can sign off the review.", "stage")
+        if str(svc.user_id) != str(reviewer) and not svc.policy.object("engagement").modify_all:
+            # Lodging rights don't make the preparer a reviewer: a second person (or a partner) signs off.
+            raise rule("Only the reviewer (or a partner) can sign off the review.", "stage")
     if new_stage in ("Lodged", "Complete") and data.get("type") in d.LODGED_TYPES:
         if old.get("stage") not in ("Lodged",) and not _can_lodge(svc):
             raise rule("Lodging needs the Lodge Returns permission (registered tax agent).", "stage")
@@ -188,6 +237,16 @@ def engagement_updated(change: Change) -> None:
         _sync_team_shares(change.svc, eng)
     if change.is_changed("fee"):
         _refresh_costs(change.svc, eng.id)
+    if change.is_changed("due_date") or change.is_changed("responsible_accountant"):
+        # The engagement's own lodgement deadline follows its due date and preparer.
+        for dl in live(change.svc.db, "lodgement_deadline", engagement=str(eng.id)):
+            if dl.data.get("status") != "Lodged":
+                values = {
+                    "due_date": eng.data.get("due_date"),
+                    "responsible": eng.data.get("responsible_accountant"),
+                }
+                if any(dl.data.get(k) != v for k, v in values.items()) and eng.data.get("due_date"):
+                    _set(change.svc, dl, {**values, "status": "Upcoming"})
     if change.is_changed("stage") and change.data.get("stage") in ("Lodged", "Complete"):
         for dl in live(change.svc.db, "lodgement_deadline", engagement=str(eng.id)):
             if dl.data.get("status") != "Lodged":
@@ -361,12 +420,67 @@ def sign_letter(svc: RecordService, letter: Record, payload: dict[str, Any]) -> 
         if eng.data.get("stage") == "Not Started":
             values["stage"] = "Awaiting Information"
         _set(svc, eng, values)
+        _start_if_information_in(svc, eng)
     audit.record(
         svc.db,
         action=AuditAction.UPDATE,
         entity_type="record:engagement_letter",
         entity_id=letter.id,
         summary=f"Engagement letter {letter.name} signed by {name}"[:500],
+        actor_id=svc.user_id,
+        meta=svc.request_meta,
+    )
+    return svc.serialize(letter)
+
+
+@action(
+    "engagement_letter",
+    "record_paper_signature",
+    "Record Paper Signature",
+    pack_key=K,
+    visible=lambda r: r.data.get("status") in ("Draft", "Sent"),
+    guard=lambda svc, r: (
+        None
+        if svc.policy.object("engagement_letter").modify_all
+        else "Only a partner can record a letter signed on paper."
+    ),
+)
+def record_paper_signature(svc: RecordService, letter: Record, payload: dict[str, Any]) -> dict[str, Any]:
+    """A client who signed a printed letter (no portal account): a partner records who signed and keeps
+    the scanned copy on the letter. Audited like an e-signature."""
+    name = str(payload.get("full_name") or "").strip()
+    note = str(payload.get("reason") or "").strip()
+    if len(name) < 3 or not note:
+        raise BusinessRuleError(
+            "Enter who signed and where the signed copy is kept.",
+            fields={
+                "full_name": "Required" if len(name) < 3 else "",
+                "reason": "Required" if not note else "",
+            },
+        )
+    _set(
+        svc,
+        letter,
+        {
+            "status": "Signed",
+            "signed_name": name[:120],
+            "signed_at": format_datetime(datetime.now(UTC)),
+            "signed_ip": "Paper",
+        },
+    )
+    eng = _get(svc, letter.data.get("engagement"))
+    if eng is not None:
+        values: dict[str, Any] = {"letter_signed": True}
+        if eng.data.get("stage") == "Not Started":
+            values["stage"] = "Awaiting Information"
+        _set(svc, eng, values)
+        _start_if_information_in(svc, eng)
+    audit.record(
+        svc.db,
+        action=AuditAction.UPDATE,
+        entity_type="record:engagement_letter",
+        entity_id=letter.id,
+        summary=f"Paper signature recorded on {letter.name} for {name}: {note}"[:500],
         actor_id=svc.user_id,
         meta=svc.request_meta,
     )
@@ -401,21 +515,27 @@ def mark_uploaded(svc: RecordService, req: Record, payload: dict[str, Any]) -> d
     return svc.serialize(req)
 
 
-@on("document_request", Event.AFTER_UPDATE, pack_key=K)
-def requests_complete(change: Change) -> None:
-    """When every request is accepted (or not applicable) the engagement moves on to In Progress."""
-    if not change.is_changed("status") or change.data.get("status") not in ("Accepted", "Not Applicable"):
-        return
-    eng = _get(change.svc, change.data.get("engagement"))
-    if eng is None or eng.data.get("stage") != "Awaiting Information" or not eng.data.get("letter_signed"):
+def _start_if_information_in(svc: RecordService, eng: Record) -> None:
+    """Awaiting Information -> In Progress once the letter is signed and every document request is
+    accepted or not applicable (also when there was nothing to request, e.g. advisory work)."""
+    if eng.data.get("stage") != "Awaiting Information" or not eng.data.get("letter_signed"):
         return
     pending = [
         r
-        for r in live(change.svc.db, "document_request", engagement=str(eng.id))
+        for r in live(svc.db, "document_request", engagement=str(eng.id))
         if r.data.get("status") not in ("Accepted", "Not Applicable")
     ]
     if not pending:
-        _set(change.svc, eng, {"stage": "In Progress"})
+        _set(svc, eng, {"stage": "In Progress"})
+
+
+@on("document_request", Event.AFTER_UPDATE, pack_key=K)
+def requests_complete(change: Change) -> None:
+    if not change.is_changed("status") or change.data.get("status") not in ("Accepted", "Not Applicable"):
+        return
+    eng = _get(change.svc, change.data.get("engagement"))
+    if eng is not None:
+        _start_if_information_in(change.svc, eng)
 
 
 # ------------------------------------------------------------------ time, WIP and recoverability
@@ -496,7 +616,8 @@ def bas_periods(frequency: str, fy_start: int) -> list[tuple[str, date]]:
         for i in range(12):
             month = (7 + i - 1) % 12 + 1
             year = fy_start if month >= 7 else fy_start + 1
-            due_m, due_y = (1, year + 1) if month == 12 else (month + 1, year)
+            # Due the 21st of the next month; December's is due 21 February (ATO).
+            due_m, due_y = (2, year + 1) if month == 12 else (month + 1, year)
             out.append((date(year, month, 1).strftime("%b %Y"), date(due_y, due_m, 21)))
         return out
     if frequency == "Annually":

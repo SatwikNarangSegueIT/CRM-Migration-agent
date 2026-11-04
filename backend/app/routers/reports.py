@@ -194,6 +194,46 @@ def delete_folder(folder_id: uuid.UUID, svc: Records) -> Response:
 # ---------------------------------------------------------------- reports
 
 
+# Objects only the generic apps use. Their reports and dashboards are listed while an app showing them is
+# switched on (a law firm with the Sales app hidden doesn't see pipeline and win-rate reports).
+_APP_ONLY_OBJECTS = frozenset(
+    {
+        "opportunity",
+        "opportunity_product",
+        "quote",
+        "quote_line",
+        "case",
+        "campaign",
+        "campaign_member",
+        "email_send",
+        "invoice",
+        "invoice_line",
+        "payment",
+    }
+)
+
+# Shown only while a visible app has a tab for its object (a broker paid by commission has no invoices).
+_DASHBOARD_OBJECT = {"billing_dashboard": "invoice"}
+
+
+# The standard dashboards that belong to one generic app.
+_DASHBOARD_APP = {
+    "sales_dashboard": "sales",
+    "service_dashboard": "service",
+    "marketing_dashboard": "marketing",
+}
+
+
+def _unused_objects(svc: Records) -> set[str]:
+    from app.models import App
+
+    tabs = [t for app in svc.db.scalars(select(App).where(App.is_active.is_(True))) for t in (app.tabs or [])]
+    shown = {str(t.get("object")) for t in tabs if t.get("kind") == "object"}
+    if any(t.get("kind") == "queues" for t in tabs):
+        shown.add("case")
+    return set(_APP_ONLY_OBJECTS - shown)
+
+
 @router.get("/reports")
 def list_reports(
     svc: Records, q: Annotated[str | None, Query(max_length=100)] = None, folder_id: uuid.UUID | None = None
@@ -212,11 +252,13 @@ def list_reports(
         stmt = stmt.where(Report.name.ilike(f"%{q.strip()}%"))
     rows = svc.db.scalars(stmt.order_by(Report.name)).all()
     enabled = svc.enabled_packs
+    unused = _unused_objects(svc)
     out = []
     for r in rows:
         meta = svc.registry.objects.get(r.object_api_name)
         if (
             meta is None
+            or (r.owner_id is None and r.object_api_name in unused)
             or (meta.pack_key and meta.pack_key not in enabled)
             or not svc.policy.object(r.object_api_name).read
         ):
@@ -474,10 +516,30 @@ def list_dashboards(svc: Records) -> list[dict[str, Any]]:
         raise PermissionDeniedError("You don't have access to dashboards.")
     folders = _visible_folders(svc)
     rows = svc.db.scalars(select(Dashboard).order_by(Dashboard.name)).all()
+    unused = _unused_objects(svc)
+    hidden_reports = {
+        str(r.id) for r in svc.db.scalars(select(Report).where(Report.object_api_name.in_(unused)))
+    } | {
+        str(r.key) for r in svc.db.scalars(select(Report).where(Report.object_api_name.in_(unused))) if r.key
+    }
+
+    from app.models import App
+
+    inactive = {a.key for a in svc.db.scalars(select(App).where(App.is_active.is_(False)))}
+
+    def about_unused(d: Dashboard) -> bool:
+        if d.owner_id is None and _DASHBOARD_APP.get(str(d.key)) in inactive:
+            return True
+        if d.owner_id is None and _DASHBOARD_OBJECT.get(str(d.key)) in unused:
+            return True
+        refs = [str(c.get("report_id") or c.get("report") or "") for c in d.components or []]
+        return d.owner_id is None and bool(refs) and all(ref in hidden_reports for ref in refs)
+
     return [
         _dash_out(d, svc, folders)
         for d in rows
         if svc_reports.folder_visible(svc, folders.get(d.folder_id) if d.folder_id else None, d.owner_id)
+        and not about_unused(d)
     ]
 
 

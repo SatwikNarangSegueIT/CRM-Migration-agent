@@ -19,6 +19,7 @@ from typing import Any, Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain_content import apply_content
 from app.engine.meta import bump_revision, invalidate_cache
 from app.models import App, FieldDefinition, ListView, ObjectDefinition, Report
 from app.services import audit
@@ -109,15 +110,22 @@ DOMAINS: dict[str, Domain] = {
 }
 
 
+# Phrases where "account" isn't the CRM's account (organisation): a client's trust money.
+KEEP_PHRASES = ("Client Account", "Client Accounts", "Trust Account", "Trust Accounts")
+
+
 def swap_words(text_value: str, pairs: list[tuple[str, str]]) -> str:
     """Replace several whole words in one pass, so a replacement is never renamed again
     ("Contacts" -> "Contact People" must not then become "Contact Person People")."""
     mapping = {old.lower(): new for old, new in pairs}
     if not mapping:
         return text_value
-    pattern = "|".join(re.escape(old) for old in sorted(mapping, key=len, reverse=True))
+    keep = {p.lower() for p in KEEP_PHRASES}
+    pattern = "|".join(re.escape(old) for old in sorted(set(mapping) | keep, key=len, reverse=True))
 
     def repl(m: re.Match[str]) -> str:
+        if m.group(0).lower() in keep:
+            return m.group(0)
         new = mapping[m.group(0).lower()]
         return new if m.group(0)[0].isupper() else new[0].lower() + new[1:]
 
@@ -125,7 +133,11 @@ def swap_words(text_value: str, pairs: list[tuple[str, str]]) -> str:
 
 
 # Labels written by the earlier two-pass rename; repaired by `app.cli refresh-domain-layouts`.
-DOUBLE_RENAMES = (("Contact Person People", "Contact People"), ("contact Person People", "contact People"))
+DOUBLE_RENAMES = (
+    ("Contact Person People", "Contact People"),
+    ("contact Person People", "contact People"),
+    ("Client Organisation Balances", "Client Account Balances"),
+)
 
 
 def repair_double_renames(db: Session) -> int:
@@ -286,12 +298,21 @@ def apply_related_lists(db: Session) -> int:
 # ------------------------------------------------------------------ forms
 
 # Bump when apply_forms changes: existing workspaces are brought up to date at start-up.
-FORMS_VERSION = 4
+FORMS_VERSION = 6
 
 # Sales-oriented fields that a profession workspace doesn't use. They're taken off the page layouts (so off
 # the forms and record pages), not deleted: an administrator can put them back in Object Manager.
 HIDDEN_FROM_LAYOUT: dict[str, set[str]] = {
-    "lead": {"rating", "campaign", "industry", "annual_revenue", "employees"},
+    "lead": {
+        "rating",
+        "campaign",
+        "industry",
+        "annual_revenue",
+        "employees",
+        "title",
+        "website",
+        "converted_opportunity",
+    },
     "contact": {"department", "reports_to"},
     "account": {"annual_revenue", "employees", "shipping_address"},
     "invoice": {"opportunity", "quote"},
@@ -576,6 +597,37 @@ def apply_principal_access(db: Session, domain: str) -> int:
     return changed
 
 
+# Rights a shipped profile should always have had (found in the deep pass), added on upgrade. Additive:
+# nothing is taken away.
+ACCESS_FIXES: dict[str, list[tuple[str, str, str]]] = {
+    "migration": [
+        ("ma_registered_agent", "invoice_line", "RCED"),
+        ("ma_registered_agent", "client_account_transaction", "R VA"),
+    ],
+    "accounting": [
+        ("ap_practice_admin", "account", "RCE VA"),
+        ("ap_practice_admin", "contact", "RCE VA"),
+    ],
+}
+
+
+def _grant(db: Session, profile_id: uuid.UUID, obj: str, code: str) -> bool:
+    from app.models import ProfileObjectPermission
+    from app.security.seed_v1 import _flags
+
+    flags = _flags(code)
+    perm = db.get(ProfileObjectPermission, (profile_id, obj))
+    if perm is None:
+        db.add(ProfileObjectPermission(profile_id=profile_id, object_api_name=obj, **flags))
+        return True
+    changed = False
+    for k, v in flags.items():
+        if v and not getattr(perm, k):
+            setattr(perm, k, True)
+            changed = True
+    return changed
+
+
 _PORTAL_HIDDEN_VISA_FIELDS = (
     "default_professional_fee",
     "default_government_fee",
@@ -632,6 +684,11 @@ def apply_pack_grants(db: Session, domain: str) -> int:
             else:
                 for k, v in flags.items():
                     setattr(perm, k, v)
+            changed += 1
+    db.flush()  # rows added above are found by db.get() below
+    for key, obj, code in ACCESS_FIXES.get(domain, []):
+        profile = db.scalar(select(Profile).where(Profile.key == key))
+        if profile is not None and _grant(db, profile.id, obj, code):
             changed += 1
     return changed
 
@@ -705,6 +762,7 @@ def upgrade_domain_workspace(db: Session, *, force: bool = False) -> int:
         + apply_principal_access(db, str(domain))
         + apply_pack_grants(db, str(domain))
         + apply_compact_layouts(db)
+        + apply_content(db, str(domain))
         + apply_firm_name(db, _firm_name(db))
     )
     db.flush()
@@ -733,6 +791,7 @@ def apply_domain(db: Session, domain: str, actor_id: uuid.UUID | None) -> None:
     db.flush()
     apply_related_lists(db)
     apply_forms(db, spec.key)
+    apply_content(db, spec.key)
     set_setting(
         db, "workspace", {"domain": spec.key, "primary_app": spec.app_key, "forms_version": FORMS_VERSION}
     )

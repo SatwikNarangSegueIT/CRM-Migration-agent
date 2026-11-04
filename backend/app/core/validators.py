@@ -31,6 +31,19 @@ def is_valid_acn(value: str) -> bool:
     return (10 - total % 10) % 10 == int(acn[8])
 
 
+_TFN_WEIGHTS_9 = (1, 4, 3, 7, 5, 8, 6, 9, 10)
+_TFN_WEIGHTS_8 = (10, 7, 8, 4, 6, 3, 5, 1)
+
+
+def is_valid_tfn(value: str) -> bool:
+    """Tax File Number check digit (ATO): 9 digits (or an older 8), weighted sum divisible by 11."""
+    tfn = digits(value)
+    weights = {9: _TFN_WEIGHTS_9, 8: _TFN_WEIGHTS_8}.get(len(tfn))
+    if weights is None or not tfn.isdigit():
+        return False
+    return sum(int(c) * w for c, w in zip(tfn, weights, strict=True)) % 11 == 0
+
+
 def format_abn(value: str) -> str:
     abn = digits(value)
     return f"{abn[:2]} {abn[2:5]} {abn[5:8]} {abn[8:]}" if len(abn) == 11 else value
