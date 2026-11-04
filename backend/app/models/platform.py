@@ -51,3 +51,32 @@ class UserDirectory(PlatformBase):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(254))
+
+
+class SignupRequest(PlatformBase):
+    """A sign-up waiting for e-mail verification (single-use link, 24 h; removed after 7 days)."""
+
+    __tablename__ = "signup_requests"
+    __table_args__ = (Index("ix_signup_requests_email", "email"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    email: Mapped[str] = mapped_column(String(254))
+    name: Mapped[str] = mapped_column(String(200))
+    firm_name: Mapped[str] = mapped_column(String(200))
+    domain: Mapped[str] = mapped_column(String(40))
+    abn: Mapped[str | None] = mapped_column(String(20))
+    password_hash: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"))
+
+
+class WarmSchema(PlatformBase):
+    """A fully migrated, unassigned tenant schema, so a new workspace is ready instantly."""
+
+    __tablename__ = "warm_schemas"
+
+    schema_name: Mapped[str] = mapped_column(String(63), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

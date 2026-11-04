@@ -37,5 +37,6 @@ celery_app.conf.update(
         "scheduled-reports": {"task": "reports.scheduled", "schedule": 900.0},
         "purge-recycle-bin": {"task": "maintenance.purge", "schedule": crontab(hour=3, minute=0)},
         "industry-pack-daily-jobs": {"task": "packs.daily", "schedule": crontab(hour=6, minute=0)},
+        "platform-maintenance": {"task": "platform.maintain", "schedule": 600.0},
     },
 )

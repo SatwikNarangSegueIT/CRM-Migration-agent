@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 
 from alembic.config import Config
-from sqlalchemy import text
+from sqlalchemy import Connection, text
 
 from alembic import command
 from app.core.config import get_settings
@@ -118,41 +118,110 @@ def migrate_all(url: str | None = None) -> list[str]:
     migrate_tenant(DEFAULT_SCHEMA, url)
     ensure_first_tenant(url)
     schemas = tenant_schemas(url)
-    for schema in schemas:
+    for schema in [*schemas, *warm_schemas(url)]:
         if schema != DEFAULT_SCHEMA:
             migrate_tenant(schema, url)
     return schemas
 
 
+def _unique_slug(conn: Connection, wanted: str) -> str:
+    slug = wanted if SLUG.match(wanted) and wanted not in RESERVED_SLUGS else slugify(wanted)
+    if slug in RESERVED_SLUGS:
+        slug = f"{slug}-firm"
+    while conn.execute(text("SELECT 1 FROM platform.tenants WHERE slug = :s"), {"s": slug}).scalar():
+        slug = f"{slug[:34]}-{secrets.token_hex(2)}"
+    return slug
+
+
+def _new_schema_name() -> str:
+    return f"t_{secrets.token_hex(6)}"
+
+
+def build_schema(url: str | None = None) -> str:
+    """Create and migrate an unassigned tenant schema (shipped defaults included)."""
+    schema = _new_schema_name()
+    migrate_tenant(schema, url)
+    return schema
+
+
+def warm_schemas(url: str | None = None) -> list[str]:
+    engine = _engine(url)
+    try:
+        with engine.connect() as conn:
+            return list(conn.execute(text("SELECT schema_name FROM platform.warm_schemas")).scalars())
+    finally:
+        engine.dispose()
+
+
+def fill_warm_pool(size: int, url: str | None = None) -> int:
+    """Keep ``size`` pre-built schemas ready so sign-up is instant. Returns how many were built."""
+    built = 0
+    while len(warm_schemas(url)) < size:
+        schema = build_schema(url)
+        engine = _engine(url)
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("INSERT INTO platform.warm_schemas (schema_name) VALUES (:s)"), {"s": schema}
+                )
+        finally:
+            engine.dispose()
+        built += 1
+    return built
+
+
+def _take_warm_schema(conn: Connection) -> str | None:
+    return conn.execute(
+        text(
+            "DELETE FROM platform.warm_schemas WHERE schema_name = ("
+            "SELECT schema_name FROM platform.warm_schemas ORDER BY created_at "
+            "LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING schema_name"
+        )
+    ).scalar()
+
+
 def create_tenant(
-    name: str, domain: str, *, slug: str | None = None, url: str | None = None, status: str = "active"
+    name: str,
+    domain: str,
+    *,
+    slug: str | None = None,
+    url: str | None = None,
+    use_warm_pool: bool = True,
 ) -> tuple[uuid.UUID, str, str]:
-    """Create a firm: a new schema with every table and the shipped defaults. Returns (id, slug, schema)."""
-    slug = slug or slugify(name)
-    if not SLUG.match(slug) or slug in RESERVED_SLUGS:
-        raise ValueError(f"Workspace address {slug!r} is not allowed.")
+    """Create a firm with its own schema (warm pool first). Returns (id, slug, schema)."""
     tenant_id = uuid.uuid4()
-    schema = f"t_{secrets.token_hex(6)}"
     engine = _engine(url)
     try:
         with engine.begin() as conn:
-            taken = conn.execute(text("SELECT 1 FROM platform.tenants WHERE slug = :s"), {"s": slug}).scalar()
-            if taken:
-                base = slug[:34]
-                slug = f"{base}-{secrets.token_hex(2)}"
+            schema = _take_warm_schema(conn) if use_warm_pool else None
+            slug = _unique_slug(conn, slug or slugify(name))
             conn.execute(
                 text(
                     "INSERT INTO platform.tenants (id, slug, name, domain, schema_name, status) "
-                    "VALUES (:id, :slug, :name, :domain, :schema, 'provisioning')"
+                    "VALUES (:id, :slug, :name, :domain, :schema, :status)"
                 ),
-                {"id": tenant_id, "slug": slug, "name": name, "domain": domain, "schema": schema},
+                {
+                    "id": tenant_id,
+                    "slug": slug,
+                    "name": name,
+                    "domain": domain,
+                    "schema": schema or _new_schema_name(),
+                    "status": "active" if schema else "provisioning",
+                },
             )
-        migrate_tenant(schema, url)
-        with engine.begin() as conn:
-            conn.execute(
-                text("UPDATE platform.tenants SET status = :st WHERE id = :id"),
-                {"st": status, "id": tenant_id},
-            )
+            if schema is None:
+                schema = conn.execute(
+                    text("SELECT schema_name FROM platform.tenants WHERE id = :id"), {"id": tenant_id}
+                ).scalar_one()
+                warm = False
+            else:
+                warm = True
+        if not warm:
+            migrate_tenant(schema, url)
+            with engine.begin() as conn:
+                conn.execute(
+                    text("UPDATE platform.tenants SET status = 'active' WHERE id = :id"), {"id": tenant_id}
+                )
     finally:
         engine.dispose()
     invalidate_catalogue()
@@ -168,6 +237,7 @@ def drop_tenant(schema: str, url: str | None = None) -> None:
         with engine.begin() as conn:
             conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
             conn.execute(text("DELETE FROM platform.tenants WHERE schema_name = :s"), {"s": schema})
+            conn.execute(text("DELETE FROM platform.warm_schemas WHERE schema_name = :s"), {"s": schema})
     finally:
         engine.dispose()
     invalidate_catalogue()

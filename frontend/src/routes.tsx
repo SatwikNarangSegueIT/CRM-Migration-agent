@@ -21,6 +21,8 @@ import { LoginPage } from "./pages/auth/LoginPage";
 import { MfaSetupPage } from "./pages/auth/MfaSetupPage";
 import { MfaVerifyPage } from "./pages/auth/MfaVerifyPage";
 import { ResetPasswordPage } from "./pages/auth/ResetPasswordPage";
+import { SignupPage } from "./pages/auth/SignupPage";
+import { VerifySignupPage } from "./pages/auth/VerifySignupPage";
 import { ForbiddenPage } from "./pages/ForbiddenPage";
 import { HomePage } from "./pages/HomePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -94,8 +96,10 @@ export const routes: RouteObject[] = [
     children: [
       { path: "/login", element: <LoginPage /> },
       { path: "/forgot-password", element: <ForgotPasswordPage /> },
+      { path: "/signup", element: <SignupPage /> },
     ],
   },
+  { path: "/verify-signup", element: <VerifySignupPage /> },
   // Token links work whether or not someone is signed in on this browser.
   { path: "/reset-password", element: <ResetPasswordPage /> },
   { path: "/accept-invitation", element: <AcceptInvitationPage /> },

@@ -3,6 +3,11 @@ import type { MessageResponse, ObjectAccess, Ref } from "./types";
 
 export type LoginState = "authenticated" | "mfa_required" | "mfa_setup_required";
 
+export type LoginResult = {
+  state: LoginState | "choose_workspace";
+  workspaces?: { slug: string; name: string; domain: string }[];
+};
+
 export type MeResponse = {
   user: {
     id: string;
@@ -32,8 +37,11 @@ export type InvitationInfo = { email: string; name: string };
 
 export const authApi = {
   me: (signal?: AbortSignal) => apiRequest<MeResponse>("/auth/me", { signal }),
-  login: (email: string, password: string) =>
-    apiRequest<{ state: LoginState }>("/auth/login", { method: "POST", body: { email, password } }),
+  login: (email: string, password: string, workspace?: string) =>
+    apiRequest<LoginResult>("/auth/login", {
+      method: "POST",
+      body: workspace ? { email, password, workspace } : { email, password },
+    }),
   logout: () => apiRequest<MessageResponse>("/auth/logout", { method: "POST" }),
   verifyMfa: (code: string) => apiRequest<MeResponse>("/auth/mfa/verify", { method: "POST", body: { code } }),
   beginMfaSetup: () => apiRequest<MfaSetup>("/auth/mfa/setup", { method: "POST" }),

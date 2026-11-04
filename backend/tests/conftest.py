@@ -84,6 +84,10 @@ def _clean_state() -> None:
             text("SELECT schema_name FROM platform.tenants WHERE schema_name <> 'public'")
         ):
             db.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        for schema in db.scalars(text("SELECT schema_name FROM platform.warm_schemas")):
+            db.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        db.execute(text("DELETE FROM platform.warm_schemas"))
+        db.execute(text("DELETE FROM platform.signup_requests"))
         db.execute(text("DELETE FROM platform.tenants WHERE schema_name <> 'public'"))
         db.execute(text("DELETE FROM platform.user_directory"))
         db.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
@@ -122,6 +126,7 @@ def outbox(monkeypatch: pytest.MonkeyPatch) -> Outbox:
     monkeypatch.setattr("app.routers.auth.queue_email", box.send)
     monkeypatch.setattr("app.routers.admin_users.queue_email", box.send)
     monkeypatch.setattr("app.routers.portal.queue_email", box.send)
+    monkeypatch.setattr("app.routers.signup.queue_email", box.send)
     return box
 
 

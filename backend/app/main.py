@@ -22,6 +22,7 @@ from app.routers import (
     data,
     health,
     meta,
+    onboarding,
     org_settings,
     portal,
     privacy,
@@ -30,6 +31,7 @@ from app.routers import (
     reports,
     setup,
     setup_objects,
+    signup,
     workspace,
 )
 from app.routers import packs as packs_router
@@ -78,6 +80,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(portal.router)
     api.include_router(portal.staff_router)
     api.include_router(public.router)
+    api.include_router(signup.router)
+    api.include_router(onboarding.router)
     api.include_router(privacy.router)
     api.include_router(packs_router.router)
     app.include_router(api)

@@ -161,3 +161,19 @@ def pack_daily_jobs() -> int:
     from app.packs import run_daily_jobs
 
     return _total(_each_tenant(run_daily_jobs))
+
+
+@celery_app.task(name="platform.maintain")
+def platform_maintenance() -> dict[str, int]:
+    """Remove stale sign-ups and keep the warm pool of pre-built workspaces topped up."""
+    from app.core.config import get_settings
+    from app.db.migrate import fill_warm_pool
+    from app.db.session import get_sessionmaker
+    from app.services.signup import purge_unverified
+    from app.tenancy import bind_tenant
+
+    with get_sessionmaker()() as db:
+        bind_tenant(db, None)
+        purged = purge_unverified(db)
+    built = fill_warm_pool(get_settings().signup_warm_pool_size)
+    return {"signups_purged": purged, "schemas_built": built}

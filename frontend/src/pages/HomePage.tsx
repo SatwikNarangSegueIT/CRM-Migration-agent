@@ -12,6 +12,7 @@ import { CheckCircleIcon, ClockIcon } from "../components/icons";
 import { Spinner } from "../components/ui";
 import { cx } from "../components/ui/cx";
 import { formatDate, recordPath, today, useApps, useObjectMeta } from "../lib/records";
+import { FirstRunGuide } from "../components/home/FirstRunGuide";
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -380,6 +381,8 @@ export function HomePage() {
           </div>
         )}
       </section>
+
+      {key === "home" && me?.is_system_admin && <FirstRunGuide />}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {key === "marketing" && <MarketingChecklist />}

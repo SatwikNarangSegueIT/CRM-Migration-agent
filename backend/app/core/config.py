@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     login_lockout_minutes: int = Field(default=15, ge=1, le=24 * 60)
     password_reset_minutes: int = Field(default=30, ge=5, le=24 * 60)
     invitation_hours: int = Field(default=72, ge=1, le=24 * 14)
+    # Public sign-up (plan v4, section 4).
+    signup_enabled: bool = True
+    signup_verification_hours: int = Field(default=24, ge=1, le=24 * 7)
+    # Pre-built workspaces kept ready so sign-up is instant (topped up by the worker).
+    signup_warm_pool_size: int = Field(default=2, ge=0, le=50)
     rate_limit_enabled: bool = True
 
     # ---- E-mail ----
