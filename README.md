@@ -37,6 +37,10 @@ shaped for that profession. See [docs/domains.md](docs/domains.md).
 |---|---|
 | [User guide](docs/user-guide.md) | Everyone: signing up, lists, records, portal, import/export, reports, troubleshooting |
 | [Legal Practice user guide](docs/user-guide-legal.md) | Law firms: matters, conflict checks, costs disclosure, time, billing, trust accounting, court dates |
+| [Migration Practice user guide](docs/user-guide-migration.md) | Migration agents: visa matters, service agreements, checklists, lodgement, client account, expiries |
+| [Accounting Practice user guide](docs/user-guide-accounting.md) | Accountants: engagements, APES 305 letters, document requests, review, lodgement, BAS deadlines |
+| [Loan Broking user guide](docs/user-guide-lending.md) | Brokers: applications, credit guide, fact find, BID, lodging, settlement, commissions |
+| Word versions | `docs/*_User_Guide.docx` (one per profession) |
 | [How each profession's workspace works](docs/domain-workflows.md) | Step-by-step flow, stage checks, automation and reminders for law, migration, accounting and lending |
 | [Roles and permissions](docs/roles-and-permissions.md) | Profiles, roles, sharing, field security and each profession's default profiles |
 | [Operations runbook](docs/operations.md) | Deploying, upgrading the database, sign-up checklist, backups, performance |
