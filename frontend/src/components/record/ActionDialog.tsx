@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ApiError, errorMessage } from "../../api/client";
 import { recordsApi } from "../../api/records";
 import type { RecordData } from "../../api/types";
-import { recordPath } from "../../lib/records";
+import { recordPath, useApps } from "../../lib/records";
 import { Alert, Button, Checkbox, FormField, Input } from "../ui";
 import { Modal } from "../ui/Modal";
 import { Combobox, controlClass } from "./FieldInput";
@@ -219,7 +219,29 @@ function ConvertLeadDialog({
   });
   const [accountId, setAccountId] = useState("");
   const [contactId, setContactId] = useState("");
+  // Offer an opportunity only where a visible app uses them (not in law, migration, accounting or
+  // lending workspaces, which hide the Sales app).
+  const apps = useApps();
+  const opportunities = (apps.data ?? []).some((a) =>
+    a.tabs.some((t) => t.kind === "object" && t.object === "opportunity"),
+  );
   const [createOpp, setCreateOpp] = useState(true);
+  const withOpp = opportunities && createOpp;
+  // The workspace's words for these records (e.g. Client / Organisation / Enquiry in a law firm).
+  const tabLabel = (api: string, fallback: string) =>
+    (apps.data ?? []).flatMap((a) => a.tabs).find((t) => t.kind === "object" && t.object === api)?.label ??
+    fallback;
+  const plural = { account: tabLabel("account", "Accounts"), contact: tabLabel("contact", "Contacts") };
+  const singular = (p: string) =>
+    p.endsWith("People")
+      ? p.slice(0, -6) + "Person"
+      : p.endsWith("ies")
+        ? p.slice(0, -3) + "y"
+        : p.replace(/s$/, "");
+  const accountWord = singular(plural.account);
+  const contactWord = singular(plural.contact);
+  // An individual (no company) in a profession workspace isn't given an organisation named after them.
+  const individual = !record.fields.company && !opportunities;
   const company = String(record.fields.company ?? record.name);
   const [oppName, setOppName] = useState(`${company} -`);
   const convert = useMutation({
@@ -227,7 +249,7 @@ function ConvertLeadDialog({
       recordsApi.action("lead", record.id, "convert", {
         account_id: accountId || undefined,
         contact_id: contactId || undefined,
-        create_opportunity: createOpp,
+        create_opportunity: withOpp,
         opportunity_name: oppName,
       }),
     onSuccess: (result) => {
@@ -258,10 +280,16 @@ function ConvertLeadDialog({
       <div className="space-y-5 text-sm">
         {convert.isError && <Alert tone="error">{errorMessage(convert.error)}</Alert>}
         <section>
-          <h3 className="font-semibold text-slate-900">Account</h3>
+          <h3 className="font-semibold text-slate-900">{accountWord}</h3>
           <label className="mt-2 flex items-center gap-2">
             <input type="radio" name="account" checked={accountId === ""} onChange={() => setAccountId("")} />
-            Create new account <strong>{company}</strong>
+            {individual ? (
+              <>No {accountWord.toLowerCase()}: an individual</>
+            ) : (
+              <>
+                Create new {accountWord.toLowerCase()} <strong>{company}</strong>
+              </>
+            )}
           </label>
           {d?.accounts.map((a) => (
             <label key={a.id} className="mt-1 flex items-center gap-2">
@@ -271,15 +299,15 @@ function ConvertLeadDialog({
                 checked={accountId === a.id}
                 onChange={() => setAccountId(a.id)}
               />
-              Use existing account <strong>{a.name}</strong>
+              Use existing {accountWord.toLowerCase()} <strong>{a.name}</strong>
             </label>
           ))}
         </section>
         <section>
-          <h3 className="font-semibold text-slate-900">Contact</h3>
+          <h3 className="font-semibold text-slate-900">{contactWord}</h3>
           <label className="mt-2 flex items-center gap-2">
             <input type="radio" name="contact" checked={contactId === ""} onChange={() => setContactId("")} />
-            Create new contact <strong>{record.name}</strong>
+            Create new {contactWord.toLowerCase()} <strong>{record.name}</strong>
           </label>
           {d?.contacts.map((c) => (
             <label key={c.id} className="mt-1 flex items-center gap-2">
@@ -289,35 +317,37 @@ function ConvertLeadDialog({
                 checked={contactId === c.id}
                 onChange={() => setContactId(c.id)}
               />
-              Use existing contact <strong>{c.name}</strong> (same e-mail)
+              Use existing {contactWord.toLowerCase()} <strong>{c.name}</strong> (same e-mail)
             </label>
           ))}
         </section>
-        <section>
-          <h3 className="font-semibold text-slate-900">Opportunity</h3>
-          <div className="mt-2">
-            <Checkbox
-              label="Create an opportunity"
-              checked={createOpp}
-              onChange={(e) => setCreateOpp(e.target.checked)}
-            />
-          </div>
-          {createOpp && (
+        {opportunities && (
+          <section>
+            <h3 className="font-semibold text-slate-900">Opportunity</h3>
             <div className="mt-2">
-              <label htmlFor="opp-name" className="block text-sm font-medium text-slate-700">
-                Opportunity name
-              </label>
-              <input
-                id="opp-name"
-                className={controlClass(false, "mt-1")}
-                value={oppName}
-                onChange={(e) => setOppName(e.target.value)}
+              <Checkbox
+                label="Create an opportunity"
+                checked={createOpp}
+                onChange={(e) => setCreateOpp(e.target.checked)}
               />
             </div>
-          )}
-        </section>
+            {createOpp && (
+              <div className="mt-2">
+                <label htmlFor="opp-name" className="block text-sm font-medium text-slate-700">
+                  Opportunity name
+                </label>
+                <input
+                  id="opp-name"
+                  className={controlClass(false, "mt-1")}
+                  value={oppName}
+                  onChange={(e) => setOppName(e.target.value)}
+                />
+              </div>
+            )}
+          </section>
+        )}
         <p className="text-xs text-slate-500">
-          Activities, campaign history and consent move to the contact. The lead becomes read-only.
+          Activities and consent move to the new {contactWord.toLowerCase()}. This record becomes read-only.
         </p>
       </div>
     </Modal>

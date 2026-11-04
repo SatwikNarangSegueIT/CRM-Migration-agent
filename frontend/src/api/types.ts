@@ -80,6 +80,8 @@ export type FieldDescribe = {
     max?: number;
     is_path?: boolean;
     delete_rule?: string;
+    /** Not asked for on the create form (set later in the work, or by the system). */
+    hide_on_create?: boolean;
   };
 };
 

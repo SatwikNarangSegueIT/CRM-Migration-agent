@@ -237,6 +237,20 @@ def regenerate_checklist(svc: RecordService, matter: Record, payload: dict[str, 
     return {"created": _generate_checklist(svc, matter, only_if_empty=False)}
 
 
+# ------------------------------------------------------------------ applicants
+
+
+@on("matter_applicant", Event.BEFORE_CREATE, Event.BEFORE_UPDATE, pack_key=K)
+def applicant_name(change: Change) -> None:
+    """An applicant is named after the person: "Jane Citizen (Primary)"."""
+    person = (
+        change.svc.db.get(Record, ref(change.data.get("contact"))) if change.data.get("contact") else None
+    )
+    if person is not None:
+        role = change.data.get("role") or "Applicant"
+        change.system["name"] = f"{person.name} ({role})"[:255]
+
+
 # ------------------------------------------------------------------ service agreements
 
 

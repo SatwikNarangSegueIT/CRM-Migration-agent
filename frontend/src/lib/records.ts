@@ -134,9 +134,14 @@ export function fieldLabel(meta: ObjectDescribe | undefined, apiName: string): s
 /** Fields the user may edit in a create/edit form (layout order first, then required fields not on the layout). */
 export function editableFields(meta: ObjectDescribe, creating: boolean): string[] {
   const out: string[] = [];
+  const inLayout = new Set(meta.page_layout.flatMap((s) => s.fields));
   const add = (name: string) => {
     const f = meta.fields[name];
     if (!f || out.includes(name)) return;
+    // Filled in later in the work (stage, decision, lodgement details): not asked for when creating.
+    if (creating && f.options?.hide_on_create) return;
+    // A name the layout doesn't show is set by the system (invoices, applicants, people's full names).
+    if (name === "name" && !inLayout.has("name")) return;
     if (f.is_system && name !== "name") return;
     if (name === "name" && meta.name_field_type === "auto_number") return;
     if (f.access !== "edit" || f.is_readonly) return;

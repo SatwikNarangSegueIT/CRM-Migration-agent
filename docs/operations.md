@@ -47,6 +47,16 @@ with `psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -1 -f deploy/neon_upgrade_v
 `platform.settings`, where e-mail settings saved through the API are kept. Safe to run again;
 `python -m app.cli migrate` does the same.
 
+## Profession forms and layouts (automatic)
+
+When the API starts it brings every profession workspace's forms up to date: the profession's own client and
+organisation fields (passport, TFN, sponsorship, ID checks, ACN…) on the layouts, sales-only fields taken
+off, lifecycle fields (stage, decision, lodgement and settlement details) left off create forms, hints on fields
+the system fills in, and related lists that match the apps. It runs once per workspace (recorded as
+`forms_version` in the `workspace` setting), is safe with several API processes, and needs no SQL.
+`python -m app.cli refresh-domain-layouts` re-applies it on demand. Fields taken off a layout aren't
+deleted; an administrator can put them back in Setup → Object Manager.
+
 ## Sign-up checklist
 
 Sign-up creates a schema per firm and e-mails a confirmation link, so it needs more than the rest of the app.

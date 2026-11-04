@@ -131,8 +131,17 @@ def convert_lead(svc: RecordService, lead: Record, payload: dict[str, Any]) -> d
     owner_id = payload.get("owner_id") or lead.owner_id or svc.user_id
 
     account_id = payload.get("account_id")
+    account: Record | None
     if account_id:
         account = svc.get("account", uuid.UUID(str(account_id)))
+    elif (
+        not lead.data.get("company")
+        and not payload.get("create_opportunity")
+        and (get_setting(svc.db, "workspace") or {}).get("domain")
+    ):
+        # A profession workspace (law, migration, lending...): an individual enquirer becomes a client
+        # without an organisation named after them.
+        account = None
     else:
         values = _mapped(svc, lead, "account", _LEAD_TO_ACCOUNT)
         values["name"] = lead.data.get("company") or lead.name
@@ -142,11 +151,12 @@ def convert_lead(svc: RecordService, lead: Record, payload: dict[str, Any]) -> d
     contact_id = payload.get("contact_id")
     if contact_id:
         contact = svc.get("contact", uuid.UUID(str(contact_id)))
-        if not contact.data.get("account"):
+        if account is not None and not contact.data.get("account"):
             svc.update("contact", contact.id, {"account": str(account.id)})
     else:
         values = _mapped(svc, lead, "contact", _LEAD_TO_CONTACT)
-        values["account"] = str(account.id)
+        if account is not None:
+            values["account"] = str(account.id)
         contact = svc.create("contact", values, owner_id=owner_id)
 
     opportunity = None
@@ -193,14 +203,14 @@ def convert_lead(svc: RecordService, lead: Record, payload: dict[str, Any]) -> d
             "is_converted": True,
             "status": "Qualified",
             "converted_date": date.today().isoformat(),
-            "converted_account": str(account.id),
+            "converted_account": str(account.id) if account else None,
             "converted_contact": str(contact.id),
             "converted_opportunity": str(opportunity.id) if opportunity else None,
         },
         record=lead,
     )
     return {
-        "account_id": str(account.id),
+        "account_id": str(account.id) if account else None,
         "contact_id": str(contact.id),
         "opportunity_id": str(opportunity.id) if opportunity else None,
     }

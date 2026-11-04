@@ -573,6 +573,23 @@ def trust_statement(svc: RecordService, matter_id: uuid.UUID) -> dict[str, Any]:
 # ------------------------------------------------------------------ court dates and reminders
 
 
+@on("court_date", Event.BEFORE_CREATE, pack_key=K)
+def court_date_name(change: Change) -> None:
+    """Named from the type and date ("Hearing 2026-03-12") unless a name is given."""
+    if change.system.get("name"):
+        return
+    when = str(change.data.get("date_time") or "")
+    try:  # the local date: a 10 am Sydney hearing is stored as the previous evening in UTC
+        from zoneinfo import ZoneInfo
+
+        from app.core.config import get_settings
+
+        when = datetime.fromisoformat(when).astimezone(ZoneInfo(get_settings().timezone)).date().isoformat()
+    except ValueError:
+        when = when[:10]
+    change.system["name"] = f"{change.data.get('type') or 'Court date'} {when}".strip()[:255]
+
+
 @on("court_date", Event.AFTER_CREATE, Event.AFTER_UPDATE, Event.AFTER_DELETE, pack_key=K)
 def court_date_changed(change: Change) -> None:
     matter = _matter(change.svc, change.data.get("legal_matter") or change.old.get("legal_matter"))

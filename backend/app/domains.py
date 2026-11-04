@@ -283,6 +283,231 @@ def apply_related_lists(db: Session) -> int:
     return changed
 
 
+# ------------------------------------------------------------------ forms
+
+# Bump when apply_forms changes: existing workspaces are brought up to date at start-up.
+FORMS_VERSION = 1
+
+# Sales-oriented fields that a profession workspace doesn't use. They're taken off the page layouts (so off
+# the forms and record pages), not deleted: an administrator can put them back in Object Manager.
+HIDDEN_FROM_LAYOUT: dict[str, set[str]] = {
+    "lead": {"rating", "campaign", "industry", "annual_revenue", "employees"},
+    "contact": {"department", "reports_to"},
+    "account": {"annual_revenue", "employees", "shipping_address"},
+    "invoice": {"opportunity", "quote"},
+}
+
+# Where the profession's own client/organisation fields go: (domain, object) -> section label.
+PACK_SECTIONS: dict[tuple[str, str], str] = {
+    ("legal", "contact"): "Identity",
+    ("legal", "account"): "Company Details",
+    ("migration", "contact"): "Immigration and Privacy",
+    ("migration", "account"): "Sponsorship",
+    ("accounting", "account"): "Tax and Entity",
+    ("lending", "contact"): "Borrower Details",
+}
+
+# Filled in later in the work (or by the system): not asked for when creating the record.
+HIDE_ON_CREATE: dict[str, set[str]] = {
+    "legal_matter": {"stage", "status"},
+    "conflict_check": {"result"},
+    "matter": {"stage", "status", "immi_trn", "decision_date", "outcome", "grant_number", "visa_expiry"},
+    "engagement": {"stage", "ato_reference"},
+    "lodgement_deadline": {"status", "lodged_on"},
+    "loan_application": {
+        "stage",
+        "lender_reference",
+        "approval_expiry",
+        "settlement_date",
+        "rate_review_date",
+        "decline_reason",
+    },
+    "commission": {"received_date"},
+    "checklist_item": {"status", "sort_order"},
+    "document_request": {"status", "sort_order"},
+    "fact_find": {"status"},
+}
+# What the system fills in when a field is left empty, said on the form (only where there's no hint yet).
+FORM_HINTS: dict[tuple[str, str], str] = {
+    ("legal_matter", "responsible_solicitor"): "Leave empty to make it you.",
+    ("legal_matter", "hourly_rate"): "Leave empty for the practice's default rate.",
+    ("legal_matter", "estimated_costs"): "Costs disclosure is required above $750 (unless pro bono).",
+    ("legal_time_entry", "timekeeper"): "Leave empty to make it you.",
+    ("legal_time_entry", "rate"): "Leave empty for the matter's rate.",
+    ("legal_time_entry", "units"): "1 unit = 6 minutes (1.5 hours = 15 units).",
+    ("matter", "visa_type"): "Fills the fees and creates the document checklist.",
+    ("matter", "professional_fee"): "Leave empty to use the visa type's fee.",
+    ("matter", "government_fee"): "Leave empty to use the visa type's fee.",
+    (
+        "service_agreement",
+        "consumer_guide_provided",
+    ): "Required before the agreement can be sent (Code of Conduct).",
+    ("engagement", "financial_year"): "Leave empty: set automatically for the engagement type.",
+    ("engagement", "due_date"): "Leave empty to use the practice's due date for this return.",
+    ("engagement", "responsible_accountant"): "Leave empty to make it you.",
+    ("engagement", "reviewer"): "Someone other than the responsible accountant.",
+    ("engagement_time_entry", "staff"): "Leave empty to make it you.",
+    ("engagement_time_entry", "rate"): "Leave empty for the practice's charge-out rate.",
+    ("engagement_time_entry", "units"): "1 unit = 6 minutes (1.5 hours = 15 units).",
+    ("loan_application", "broker"): "Leave empty to make it you.",
+    ("loan_application", "security_value"): "The LVR is calculated from the loan amount and this value.",
+    ("commission", "amount"): "Always positive: a clawback is recorded as a negative amount.",
+}
+FIELD_RENAMES: dict[tuple[str, str], str] = {
+    ("contact", "lead_source"): "Source",
+    ("lead", "lead_source"): "Source",
+}
+
+SECTION_RENAMES = {
+    "contact": "Contact Information",
+    "account": "Account Information",
+    "lead": "Lead Information",
+}
+
+# Clearer names for the name field of the profession's detail records.
+NAME_LABELS = {"checklist_item": "Document", "document_request": "Document", "party": "Party Name"}
+
+# Records the system names (see the hooks): their name is taken off the layout, so forms don't ask for it.
+AUTO_NAMED = ("court_date",)
+
+
+def apply_forms(db: Session, domain: str) -> int:
+    """Shape the forms (page layouts) for the profession. Returns the number of objects changed."""
+    objects = {o.api_name: o for o in db.scalars(select(ObjectDefinition))}
+    fields_by_object: dict[str, list[FieldDefinition]] = {}
+    by_id = {o.id: o for o in objects.values()}
+    for f in db.scalars(select(FieldDefinition).order_by(FieldDefinition.sort_order)):
+        owner = by_id.get(f.object_id)
+        if owner is not None:
+            fields_by_object.setdefault(owner.api_name, []).append(f)
+    pack_objects = {api for api, o in objects.items() if o.pack_key}
+    order = _pack_field_order(domain)
+    changed = 0
+
+    for api, obj in objects.items():
+        if obj.pack_key:
+            continue
+        fields = {f.api_name: f for f in fields_by_object.get(api, [])}
+        hidden = set(HIDDEN_FROM_LAYOUT.get(api, set()))
+        if api == "contact" and "date_of_birth" in fields:
+            hidden.add("birthdate")  # the profession's Date of Birth replaces the generic Birthdate
+        layout = [
+            {**sec, "fields": [f for f in sec.get("fields", []) if f not in hidden]}
+            for sec in obj.page_layout or []
+        ]
+        layout = [sec for sec in layout if sec["fields"]]
+        # Section headings use the profession's words ("Client Information", not "Contact Information").
+        generic = SECTION_RENAMES.get(api)
+        if generic:
+            layout = [
+                {**sec, "label": f"{obj.label} Information"} if sec.get("label") == generic else sec
+                for sec in layout
+            ]
+        placed = _layout_fields_from(layout)
+        # Fields the profession added to this standard object, not on the layout yet.
+        extra = [
+            f.api_name
+            for f in fields_by_object.get(api, [])
+            if f.api_name not in placed and not f.is_standard
+        ]
+        links = [n for n in extra if (fields[n].options or {}).get("target") in pack_objects]
+        others = sorted((n for n in extra if n not in links), key=lambda n: order.get((api, n), 999))
+        # A section added earlier keeps the profession's field order.
+        label = PACK_SECTIONS.get((domain, api), "Practice Details")
+        layout = [
+            {**sec, "fields": sorted(sec["fields"], key=lambda n: order.get((api, n), 999))}
+            if sec.get("label") == label
+            else sec
+            for sec in layout
+        ]
+        if links and layout:
+            first = layout[0]["fields"]
+            at = first.index("contact") + 1 if "contact" in first else len(first)
+            layout[0] = {**layout[0], "fields": first[:at] + links + first[at:]}
+        if others:
+            at = next(
+                (
+                    i
+                    for i, sec in enumerate(layout)
+                    if sec.get("label") in ("Description", "System Information")
+                ),
+                len(layout),
+            )
+            layout.insert(at, {"label": label, "columns": 2, "fields": others})
+        if layout != (obj.page_layout or []):
+            obj.page_layout = layout
+            changed += 1
+
+    # An enquiry is often a person, not a company.
+    lead_company = next((f for f in fields_by_object.get("lead", []) if f.api_name == "company"), None)
+    if lead_company is not None and lead_company.required:
+        lead_company.required = False
+        changed += 1
+
+    for api, names in HIDE_ON_CREATE.items():
+        for f in fields_by_object.get(api, []):
+            if f.api_name in names and not (f.options or {}).get("hide_on_create"):
+                f.options = {**(f.options or {}), "hide_on_create": True}
+                changed += 1
+    for api, fields_ in fields_by_object.items():
+        for f in fields_:
+            hint = FORM_HINTS.get((api, f.api_name))
+            if hint and not f.help_text:
+                f.help_text = hint
+                changed += 1
+            label = FIELD_RENAMES.get((api, f.api_name))
+            if label and f.label != label:
+                f.label = label
+                changed += 1
+    for api, label in NAME_LABELS.items():
+        obj = objects.get(api)
+        if obj is not None and obj.name_label == "Name":
+            obj.name_label = label
+            changed += 1
+    for api in AUTO_NAMED:
+        obj = objects.get(api)
+        if obj is not None and "name" in _layout_fields_from(obj.page_layout or []):
+            obj.page_layout = [
+                {**sec, "fields": [f for f in sec.get("fields", []) if f != "name"]}
+                for sec in obj.page_layout
+            ]
+            changed += 1
+    return changed
+
+
+def _pack_field_order(domain: str) -> dict[tuple[str, str], int]:
+    """(object, field) -> position, as the profession's pack lists the fields it adds to standard objects."""
+    from app import packs
+
+    spec = DOMAINS.get(domain)
+    if spec is None or spec.pack_key is None:
+        return {}
+    try:
+        fields = packs.get(spec.pack_key).bundle().get("fields", [])
+    except Exception:
+        return {}
+    return {(f.get("object", ""), f["api_name"]): i for i, f in enumerate(fields)}
+
+
+def _layout_fields_from(layout: list[dict[str, Any]]) -> set[str]:
+    return {f for s in layout for f in s.get("fields", [])}
+
+
+def upgrade_domain_workspace(db: Session, *, force: bool = False) -> int:
+    """Bring a profession workspace's related lists and forms up to date (idempotent). Caller commits."""
+    from app.services.settings import get_setting, set_setting
+
+    workspace = dict(get_setting(db, "workspace") or {})
+    domain = workspace.get("domain")
+    if not domain or (not force and int(workspace.get("forms_version") or 0) >= FORMS_VERSION):
+        return 0
+    changed = apply_related_lists(db) + repair_double_renames(db) + apply_forms(db, str(domain))
+    set_setting(db, "workspace", {**workspace, "forms_version": FORMS_VERSION})
+    if changed:
+        bump_revision(db)
+    return changed
+
+
 def apply_domain(db: Session, domain: str, actor_id: uuid.UUID | None) -> None:
     """Install the domain's pack and shape the workspace for the profession. Caller commits."""
     from app import packs
@@ -299,7 +524,10 @@ def apply_domain(db: Session, domain: str, actor_id: uuid.UUID | None) -> None:
     apply_terminology(db, spec.terminology)
     db.flush()
     apply_related_lists(db)
-    set_setting(db, "workspace", {"domain": spec.key, "primary_app": spec.app_key})
+    apply_forms(db, spec.key)
+    set_setting(
+        db, "workspace", {"domain": spec.key, "primary_app": spec.app_key, "forms_version": FORMS_VERSION}
+    )
     branding: dict[str, Any] = dict(get_setting(db, "branding") or {})
     if not branding.get("primary_color") or branding.get("primary_color") == "#0176d3":
         branding["primary_color"] = spec.color
@@ -314,3 +542,33 @@ def apply_domain(db: Session, domain: str, actor_id: uuid.UUID | None) -> None:
         summary=f"Workspace set up for {spec.label}: {spec.app_key} app first, terminology applied",
         actor_id=actor_id,
     )
+
+
+def upgrade_all_domain_workspaces(*, force: bool = False) -> dict[str, int]:
+    """Run upgrade_domain_workspace in every active workspace (API start-up and `app.cli`). Safe to run from
+    several processes at once: each workspace is upgraded under a transaction-level advisory lock."""
+    import logging
+
+    from sqlalchemy import text
+
+    from app.db.session import get_sessionmaker
+    from app.tenancy import active_tenants, bind_tenant
+
+    results: dict[str, int] = {}
+    for tenant in active_tenants():
+        try:
+            with get_sessionmaker()() as db:
+                bind_tenant(db, tenant)
+                db.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtext(:s))"), {"s": "forms:" + tenant.schema}
+                )
+                changed = upgrade_domain_workspace(db, force=force)
+                db.commit()
+            if changed:
+                invalidate_cache()
+            results[tenant.slug or tenant.schema] = changed
+        except Exception:
+            logging.getLogger("app.domains").exception(
+                "Workspace upgrade failed", extra={"tenant": tenant.schema}
+            )
+    return results

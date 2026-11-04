@@ -131,7 +131,9 @@ export function Combobox({
         className={controlClass(invalid, "pl-8")}
         placeholder={placeholder ?? "Search..."}
         value={text}
-        onFocus={() => setOpen(true)}
+        // Opens on click, typing or the down arrow, not on focus: a form that focuses its first field
+        // shouldn't open a list over the fields below.
+        onClick={() => setOpen(true)}
         onChange={(e) => {
           setText(e.target.value);
           setActive(0);
@@ -140,7 +142,8 @@ export function Combobox({
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") {
             e.preventDefault();
-            setActive((a) => Math.min(a + 1, options.length - 1));
+            if (!open) setOpen(true);
+            else setActive((a) => Math.min(a + 1, options.length - 1));
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
             setActive((a) => Math.max(a - 1, 0));
@@ -160,7 +163,7 @@ export function Combobox({
             <li className="px-3 py-2 text-slate-500">Searching…</li>
           )}
           {!results.isFetching && options.length === 0 && (
-            <li className="px-3 py-2 text-slate-500">No matches</li>
+            <li className="px-3 py-2 text-slate-500">{text.trim() ? "No matches" : "Type to search"}</li>
           )}
           {options.map((option, i) => (
             <li

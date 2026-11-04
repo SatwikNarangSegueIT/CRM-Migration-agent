@@ -191,24 +191,11 @@ def sync_indexes() -> int:
 
 
 def refresh_domain_layouts() -> int:
-    """Re-apply domain related lists in every workspace set up for a profession (safe to repeat)."""
-    from app.db.session import get_sessionmaker as sessions
-    from app.domains import apply_related_lists, repair_double_renames
-    from app.engine.meta import bump_revision, invalidate_cache
-    from app.services.settings import get_setting
-    from app.tenancy import active_tenants, bind_tenant
+    """Re-apply profession related lists and forms in every domain workspace (safe to repeat)."""
+    from app.domains import upgrade_all_domain_workspaces
 
-    for tenant in active_tenants():
-        with sessions()() as db:
-            bind_tenant(db, tenant)
-            if not (get_setting(db, "workspace") or {}).get("domain"):
-                continue
-            changed = apply_related_lists(db) + repair_double_renames(db)
-            if changed:
-                bump_revision(db)
-            db.commit()
-        invalidate_cache()
-        print(f"{tenant.slug or tenant.schema}: {changed} object(s) updated.")
+    for workspace, changed in upgrade_all_domain_workspaces(force=True).items():
+        print(f"{workspace}: {changed} change(s).")
     return 0
 
 

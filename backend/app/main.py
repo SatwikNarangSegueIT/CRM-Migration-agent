@@ -44,8 +44,8 @@ API_PREFIX = "/api/v1"
 
 
 def _warm_up_in_background() -> None:
-    """Open the first pooled connections (waking a suspended Neon compute) and top up the warm pool of
-    pre-built workspaces, so neither the first request nor the first sign-up after a deploy is slow."""
+    """Open the first pooled connections (waking a suspended Neon compute), bring existing profession
+    workspaces' forms up to date, and top up the warm pool of pre-built workspaces."""
     import threading
 
     def run() -> None:
@@ -59,6 +59,9 @@ def _warm_up_in_background() -> None:
             from app.tenancy import tenants
 
             tenants()  # load the workspace catalogue
+            from app.domains import upgrade_all_domain_workspaces
+
+            upgrade_all_domain_workspaces()  # forms and related lists for existing profession workspaces
             from app.db.migrate import refill_warm_pool_soon
 
             refill_warm_pool_soon()
