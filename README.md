@@ -26,6 +26,11 @@ Roles and permissions: plan v3 sections 9–10. Defaults are seeded by
 [`backend/app/security/seed_v1.py`](backend/app/security/seed_v1.py) and checked against the plan's tables by
 `backend/tests/test_permissions.py`; admins change them in Setup → Profiles / Roles / Sharing Settings.
 
+## Domain CRMs
+
+At sign-up a firm picks Law firm, Migration agency, Accounting practice or Loan broking and gets a CRM
+shaped for that profession. See [docs/domains.md](docs/domains.md).
+
 ## Repository layout
 
 ```

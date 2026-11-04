@@ -349,14 +349,85 @@ const STARTERS: Record<string, { title: string; text: string; to: string; object
       object: "email_send",
     },
   ],
+  legal_practice: [
+    {
+      title: "Open a matter",
+      text: "Conflict check and costs disclosure come first.",
+      to: "/o/legal_matter",
+      object: "legal_matter",
+    },
+    {
+      title: "Record time",
+      text: "6-minute units, billed straight to an invoice.",
+      to: "/o/legal_time_entry",
+      object: "legal_time_entry",
+    },
+    {
+      title: "Trust ledger",
+      text: "Receipts, payments and transfers to office.",
+      to: "/o/trust_transaction",
+      object: "trust_transaction",
+    },
+  ],
+  migration_practice: [
+    {
+      title: "Open a matter",
+      text: "Visa matters from consultation to decision.",
+      to: "/o/matter",
+      object: "matter",
+    },
+    {
+      title: "Add a client",
+      text: "Client details, passport and visa expiry.",
+      to: "/o/contact",
+      object: "contact",
+    },
+  ],
+  accounting_practice: [
+    {
+      title: "Start an engagement",
+      text: "Engagement letter, documents, review and lodgement.",
+      to: "/o/engagement",
+      object: "engagement",
+    },
+    {
+      title: "Lodgement deadlines",
+      text: "What is due and overdue for your clients.",
+      to: "/o/lodgement_deadline",
+      object: "lodgement_deadline",
+    },
+    {
+      title: "Record time",
+      text: "Track WIP and recoverability.",
+      to: "/o/engagement_time_entry",
+      object: "engagement_time_entry",
+    },
+  ],
+  loan_broking: [
+    {
+      title: "New loan application",
+      text: "Fact find, credit guide and BID before lodging.",
+      to: "/o/loan_application",
+      object: "loan_application",
+    },
+    { title: "Lender panel", text: "Lenders, BDMs and commission rates.", to: "/o/lender", object: "lender" },
+    {
+      title: "Commissions",
+      text: "Upfront, trail and clawback ledger.",
+      to: "/o/commission",
+      object: "commission",
+    },
+  ],
 };
 
 export function HomePage() {
   const { appKey } = useParams();
   const { me, object } = useAuth();
   const apps = useApps();
-  const app = apps.data?.find((a) => a.key === appKey);
+  // The workspace's own app (law firm, accounting practice...) is the home page when one is set.
+  const app = appKey ? apps.data?.find((a) => a.key === appKey) : apps.data?.find((a) => a.is_primary);
   const key = app?.key ?? "home";
+  const isHome = !appKey;
   const starters = (STARTERS[key] ?? STARTERS.sales!).filter((s) => !s.object || object(s.object).read);
   const firstName = me?.user.name.split(" ")[0] ?? "";
 
@@ -382,7 +453,7 @@ export function HomePage() {
         )}
       </section>
 
-      {key === "home" && me?.is_system_admin && <FirstRunGuide />}
+      {isHome && me?.is_system_admin && <FirstRunGuide />}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {key === "marketing" && <MarketingChecklist />}
@@ -467,6 +538,62 @@ export function HomePage() {
             columns={["client", "stage", "visa_type"]}
           />
         )}
+        {key === "legal_practice" && (
+          <RecordsCard
+            object="legal_matter"
+            title="My Open Matters"
+            body={{
+              scope: "mine",
+              filters: { logic: "and", conditions: [{ field: "status", op: "not_equals", value: "Closed" }] },
+              sort: [{ field: "created_at", direction: "desc" }],
+            }}
+            columns={["title", "stage", "limitation_date"]}
+          />
+        )}
+        {key === "accounting_practice" && (
+          <RecordsCard
+            object="lodgement_deadline"
+            title="Lodgements Due"
+            body={{
+              filters: {
+                logic: "and",
+                conditions: [{ field: "status", op: "in", value: ["Upcoming", "Overdue"] }],
+              },
+              sort: [{ field: "due_date", direction: "asc" }],
+            }}
+            columns={["client", "due_date", "status"]}
+          />
+        )}
+        {key === "accounting_practice" && (
+          <RecordsCard
+            object="engagement"
+            title="My Engagements"
+            body={{
+              scope: "mine",
+              filters: {
+                logic: "and",
+                conditions: [{ field: "stage", op: "not_equals", value: "Complete" }],
+              },
+              sort: [{ field: "due_date", direction: "asc" }],
+            }}
+            columns={["client", "stage", "due_date"]}
+          />
+        )}
+        {key === "loan_broking" && (
+          <RecordsCard
+            object="loan_application"
+            title="My Pipeline"
+            body={{
+              scope: "mine",
+              filters: {
+                logic: "and",
+                conditions: [{ field: "stage", op: "not_in", value: ["Settled", "Declined"] }],
+              },
+              sort: [{ field: "created_at", direction: "desc" }],
+            }}
+            columns={["primary_borrower", "loan_amount", "stage"]}
+          />
+        )}
         <TasksCard />
         <RecentCard />
         {(key === "home" || key === "sales") && <DashboardCharts dashboardKey="sales_dashboard" />}
@@ -474,6 +601,9 @@ export function HomePage() {
         {key === "billing" && <DashboardCharts dashboardKey="billing_dashboard" />}
         {key === "marketing" && <DashboardCharts dashboardKey="marketing_dashboard" max={1} />}
         {key === "migration_practice" && <DashboardCharts dashboardKey="ma_practice_dashboard" />}
+        {key === "legal_practice" && <DashboardCharts dashboardKey="lp_practice_dashboard" />}
+        {key === "accounting_practice" && <DashboardCharts dashboardKey="ap_practice_dashboard" />}
+        {key === "loan_broking" && <DashboardCharts dashboardKey="lb_broker_dashboard" />}
       </div>
     </div>
   );

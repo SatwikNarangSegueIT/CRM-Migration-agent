@@ -151,6 +151,8 @@ export type AppInfo = {
   icon: string;
   color: string;
   tabs: AppTab[];
+  /** The workspace's domain app (law firm, accounting practice...), shown as the home page. */
+  is_primary?: boolean;
 };
 
 export type LinkInfo = { id: string; name: string; object: string; object_label: string };

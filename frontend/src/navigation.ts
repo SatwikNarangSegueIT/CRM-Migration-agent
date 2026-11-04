@@ -53,6 +53,7 @@ function tabMatches(app: AppInfo, tab: AppTab, pathname: string, search: string)
 export function currentApp(apps: AppInfo[], pathname: string, search: string): AppInfo | undefined {
   const m = /^\/app\/([^/]+)/.exec(pathname);
   if (m) return apps.find((a) => a.key === m[1]);
+  if (pathname === "/") return apps.find((a) => a.is_primary);
   const contains = (a: AppInfo) => a.tabs.some((t) => tabMatches(a, t, pathname, search));
   const remembered = apps.find((a) => a.key === lastApp());
   if (remembered && contains(remembered)) return remembered;

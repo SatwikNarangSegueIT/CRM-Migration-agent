@@ -194,6 +194,9 @@ def visible_apps(svc: RecordService) -> list[dict[str, Any]]:
         )
         .order_by(App.sort_order, App.label)
     ).all()
+    from app.services.settings import get_setting
+
+    primary = (get_setting(svc.db, "workspace") or {}).get("primary_app")
     out = []
     for app in apps:
         if (
@@ -240,6 +243,7 @@ def visible_apps(svc: RecordService) -> list[dict[str, Any]]:
                 "icon": app.icon,
                 "color": app.color,
                 "tabs": tabs,
+                "is_primary": app.key == primary,
             }
         )
     return out

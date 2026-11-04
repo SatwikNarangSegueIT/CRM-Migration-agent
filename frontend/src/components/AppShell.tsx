@@ -274,13 +274,16 @@ export function AppShell() {
     if (app) rememberApp(app.key);
   }, [app]);
 
+  // Object names follow the workspace's terminology (e.g. "Clients" for a law firm); app tabs carry them.
+  const objectLabel = (api: string, fallback: string) =>
+    list.flatMap((a) => a.tabs).find((t) => t.kind === "object" && t.object === api)?.label ?? fallback;
   const entries: RailEntry[] = [
     { id: "home", label: "Home", href: "/", icon: HomeIcon, active: pathname === "/" },
     ...(object("contact").read
       ? [
           {
             id: "contacts",
-            label: "Contacts",
+            label: objectLabel("contact", "Contacts"),
             href: "/o/contact",
             icon: PersonIcon,
             active: !app && pathname.startsWith("/o/contact"),
@@ -291,7 +294,7 @@ export function AppShell() {
       ? [
           {
             id: "accounts",
-            label: "Accounts",
+            label: objectLabel("account", "Accounts"),
             href: "/o/account",
             icon: BuildingIcon,
             active: !app && pathname.startsWith("/o/account"),

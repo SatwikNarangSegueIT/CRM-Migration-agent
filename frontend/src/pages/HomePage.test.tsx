@@ -107,6 +107,44 @@ describe("HomePage", () => {
     );
   });
 
+  it("uses the workspace's domain app as the home page", async () => {
+    const legal = {
+      ...SALES_APP,
+      id: "app-legal",
+      key: "legal_practice",
+      label: "Legal Practice",
+      description: "Matters, clients, conflict checks, time, court dates and trust accounting.",
+      icon: "scale",
+      is_primary: true,
+      tabs: [
+        { kind: "home", label: "Home" },
+        { kind: "object", object: "legal_matter", label: "Matters", icon: "scale", color: "#1e3a8a" },
+      ],
+    };
+    mockApi({
+      ...shellHandlers([legal]),
+      "GET /auth/me": makeMe({
+        profile: "Solicitor",
+        objects: {
+          legal_matter: { read: true, create: true },
+          legal_time_entry: { read: true, create: true },
+        },
+      }),
+      "GET /meta/objects/legal_matter": {
+        ...LEAD_META,
+        api_name: "legal_matter",
+        label: "Matter",
+        plural_label: "Matters",
+        fields: {},
+      },
+    });
+    renderRoute("/");
+    expect(await screen.findByText(/Matters, clients, conflict checks/)).toBeInTheDocument();
+    expect(await screen.findByText("My Open Matters")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Open a matter/ })).toHaveAttribute("href", "/o/legal_matter");
+    expect(screen.queryByText("My Open Opportunities")).not.toBeInTheDocument();
+  });
+
   it("shows an error inside a card when its records cannot be loaded", async () => {
     mockApi({
       ...shellHandlers(),

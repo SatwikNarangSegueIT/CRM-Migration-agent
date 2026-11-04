@@ -14,11 +14,29 @@
 Uploaded files are stored **in the database** (`stored_files`, up to 25 MB each), so they are covered by the
 same backups and point-in-time restore as the records they belong to.
 
+## Upgrading the existing Neon database to v4 (multi-tenant)
+
+The single-firm database (public schema at revision `b51c2e7a9d40`) is upgraded by
+[`deploy/neon_upgrade_v4.sql`](../deploy/neon_upgrade_v4.sql). The script:
+- brings the public schema to the latest revision;
+- creates the `platform` schema (tenants, user directory, sign-up requests, warm pool);
+- registers the existing data as the first workspace (`main`). No firm data moves.
+
+The script stops if the database is at another revision, so running it twice is harmless. Take a Neon
+branch first, then run it against the direct (non-pooled) connection:
+
+```bash
+psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -1 -f deploy/neon_upgrade_v4.sql
+```
+
+`python -m app.cli migrate` from the deployed API does the same thing.
+
 ## Deploying
 
 The `Deploy` workflow builds both images, then for **staging** and (after approval) **production**:
 
-1. `alembic upgrade head` against the environment's direct Neon endpoint;
+1. `python -m app.cli migrate` against the environment's direct Neon endpoint (the platform schema, then
+   every tenant schema and the warm pool);
 2. `python -m app.cli sync-indexes` (creates field indexes concurrently; safe to re-run);
 3. triggers the platform's deploy hook with the new image tags;
 4. waits for `GET /api/v1/health/ready`.

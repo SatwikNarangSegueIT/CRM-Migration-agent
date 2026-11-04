@@ -1,6 +1,6 @@
 """Alembic environment for the shared ``platform`` schema (tenant catalogue).
 
-Run via ``python -m app.cli migrate``.
+Run via ``python -m app.cli migrate`` (or ``-x url=... upgrade head --sql`` to print the SQL).
 """
 
 from __future__ import annotations
@@ -15,6 +15,21 @@ target_metadata = PlatformBase.metadata
 
 def _url() -> str:
     return context.get_x_argument(as_dictionary=True).get("url") or get_settings().migration_database_url
+
+
+def run_migrations_offline() -> None:
+    """Emit SQL (``alembic upgrade --sql``) for review, e.g. the Neon upgrade script."""
+    context.configure(
+        url=_url(),
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+        version_table_schema=PLATFORM_SCHEMA,
+        include_schemas=True,
+    )
+    context.execute(f"CREATE SCHEMA IF NOT EXISTS {PLATFORM_SCHEMA}")
+    with context.begin_transaction():
+        context.run_migrations()
 
 
 def run_migrations_online() -> None:
@@ -35,4 +50,7 @@ def run_migrations_online() -> None:
     engine.dispose()
 
 
-run_migrations_online()
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()

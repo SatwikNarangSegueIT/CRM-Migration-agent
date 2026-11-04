@@ -97,3 +97,12 @@ def client_statement(client_id: uuid.UUID, svc: Records) -> dict[str, Any]:
     from app.packs.migration_agency import statement
 
     return statement(svc, client_id)
+
+
+@router.get("/packs/legal_practice/trust-statement/{matter_id}")
+def trust_statement(matter_id: uuid.UUID, svc: Records) -> dict[str, Any]:
+    if "legal_practice" not in svc.enabled_packs:
+        raise NotFoundError("Not found.")
+    from app.packs.legal_practice import trust_statement as build
+
+    return build(svc, matter_id)

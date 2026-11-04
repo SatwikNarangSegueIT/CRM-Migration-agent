@@ -29,6 +29,14 @@ const ACTION_PARAMS: Record<string, ParamSpec[]> = {
   "matter.override_agreement_gate": [
     { name: "reason", label: "Reason (recorded in the audit log)", type: "textarea", required: true },
   ],
+  "legal_time_entry.write_off": [
+    {
+      name: "reason",
+      label: "Reason for the write-off (recorded in the audit log)",
+      type: "textarea",
+      required: true,
+    },
+  ],
   "email_send.schedule": [
     { name: "scheduled_at", label: "Send at", type: "datetime", hint: "Leave empty to send now." },
   ],
@@ -43,6 +51,13 @@ const CONFIRM_TEXT: Record<string, string> = {
   "service_agreement.send": "The agreement is marked as sent; the client can sign it in the portal.",
   "email_send.cancel": "The scheduled e-mail won't be sent.",
   "case.accept": "You become the owner of this case.",
+  "legal_matter.bill_time": "A draft invoice is created with a line for each unbilled time entry.",
+  "conflict_check.run_search": "Searches clients, organisations and other matters' parties again.",
+  "engagement.create_invoice": "A draft invoice is created for the agreed fee (or the unbilled time).",
+  "engagement_letter.send": "The letter is marked as sent; the client can sign it in the portal.",
+  "account.generate_bas_deadlines": "Creates this financial year's activity statement deadlines.",
+  "loan_application.record_assessment":
+    "Records the preliminary assessment and locks the Best Interests Duty record.",
 };
 
 export function ActionDialog({

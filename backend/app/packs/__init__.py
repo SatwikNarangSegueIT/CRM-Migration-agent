@@ -63,7 +63,12 @@ def get(key: str) -> Pack:
 
 
 def _load() -> None:
-    from app.packs import migration_agency  # noqa: F401 - registers the pack and its hooks
+    from app.packs import (  # noqa: F401 - registers the packs and their hooks
+        accounting_practice,
+        legal_practice,
+        loan_broker,
+        migration_agency,
+    )
 
 
 def permission_key(pack_key: str, name: str) -> str:

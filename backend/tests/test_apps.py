@@ -555,10 +555,12 @@ def test_migration_agency_pack(
     admin_client: TestClient, client: TestClient, db: Session, outbox: Outbox
 ) -> None:
     c = admin_client
-    packs = c.get(f"{API}/setup/packs").json()
-    assert packs[0]["key"] == "migration_agency" and packs[0]["installed_version"] is None
+    packs = {p["key"]: p for p in c.get(f"{API}/setup/packs").json()}
+    assert packs["migration_agency"]["installed_version"] is None
     assert c.get(f"{API}/objects/matter/records").status_code == 404
-    installed = c.post(f"{API}/setup/packs/migration_agency/install").json()[0]
+    installed = {p["key"]: p for p in c.post(f"{API}/setup/packs/migration_agency/install").json()}[
+        "migration_agency"
+    ]
     assert installed["installed_version"] == "1.0.0" and installed["is_enabled"] is True
     assert "migration_practice" in {a["key"] for a in c.get(f"{API}/meta/apps").json()}
 

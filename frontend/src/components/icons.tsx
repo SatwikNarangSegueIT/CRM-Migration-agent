@@ -239,6 +239,18 @@ export const BriefcaseIcon = make(
     <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18" />
   </>,
 );
+export const ScaleIcon = make(
+  <>
+    <path d="M12 3v18M7 21h10M5 7h14" />
+    <path d="m5 7-3 6a3 3 0 0 0 6 0L5 7zM19 7l-3 6a3 3 0 0 0 6 0l-3-6z" />
+  </>,
+);
+export const CalculatorIcon = make(
+  <>
+    <rect x="5" y="3" width="14" height="18" rx="2" />
+    <path d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15v3M8 18h4" />
+  </>,
+);
 export const LedgerIcon = make(
   <>
     <path d="M4 4h16v16H4z" />
