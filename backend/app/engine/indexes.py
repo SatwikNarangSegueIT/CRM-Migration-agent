@@ -34,7 +34,8 @@ def _expression(f: FieldMeta) -> str:
     if f.type in ("number", "percent", "currency"):
         return f"(({key})::numeric)"
     if f.type == "date":
-        return f"(({key})::date)"
+        # Immutable ISO conversion (migration c3f1d2e8a901); "::date" itself cannot be indexed.
+        return f"(crm_iso_date({key}))"
     if f.type in ("text", "textarea", "email", "phone", "url"):
         return f"(lower({key}))"
     return f"(({key}))"

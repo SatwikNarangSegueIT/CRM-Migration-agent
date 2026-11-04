@@ -118,7 +118,8 @@ def field_expr(f: FieldMeta, r: Any) -> Any:
     if kind == "numeric":
         return cast(raw, Numeric)
     if kind == "date":
-        return cast(raw, Date)
+        # Same expression as the date-field indexes (app.engine.indexes), so they are used.
+        return func.crm_iso_date(raw, type_=Date)
     if kind == "datetime":
         return cast(raw, DateTime(timezone=True))
     if kind == "bool":

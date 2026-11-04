@@ -10,6 +10,8 @@
 --
 --   psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -1 -f deploy/neon_upgrade_v4.sql
 --
+-- Afterwards `python -m app.cli migrate` applies later migrations (e.g. c3f1d2e8a901, date-field indexes).
+--
 -- Take a Neon branch (or rely on point-in-time restore) first. The script stops if the database is not
 -- at the expected revision.
 

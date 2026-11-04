@@ -61,3 +61,54 @@ def test_query_budgets(admin_client: TestClient, db: Session, no_mfa: None) -> N
     budget(admin_client, "GET", f"{API}/objects/account/records/{rid}/activities", 4)
     budget(admin_client, "GET", f"{API}/objects/account/records/{rid}/history", 4)
     budget(admin_client, "GET", f"{API}/objects/account/records/{rid}/related/contact/account", 5)
+
+
+def test_date_field_indexes_build_and_are_used(admin_client: TestClient, db: Session, no_mfa: None) -> None:
+    import re
+
+    from sqlalchemy import false, select, text
+
+    from app.engine.filters import field_expr
+    from app.engine.indexes import index_name, sync_indexes
+    from app.engine.meta import load_registry
+    from app.models import Record
+
+    registry = load_registry(db)
+    sync_indexes(db.connection(), registry)  # used to fail: "functions in index expression must be IMMUTABLE"
+    db.commit()
+    name = index_name("opportunity", "close_date", False)
+    assert db.execute(text("SELECT 1 FROM pg_indexes WHERE indexname = :n"), {"n": name}).scalar() == 1
+
+    # The query engine's expression is the indexed one, so the planner can use the index.
+    close = registry.get("opportunity").field("close_date")
+    stmt = (
+        select(Record.id)
+        .where(Record.object_api_name == "opportunity", Record.is_deleted == false())
+        .where(field_expr(close, Record) >= "2026-01-01")
+    )
+    db.execute(text("SET LOCAL enable_seqscan = off"))
+    compiled = stmt.compile(db.get_bind(), compile_kwargs={"literal_binds": True})
+    plan = ""
+    for _ in range(6):
+        plan = "\n".join(row[0] for row in db.execute(text(f"EXPLAIN {compiled}")))
+        used = re.findall(r"[Ii]ndex (?:Only )?Scan (?:using|on) (\w+)", plan)
+        other = [i for i in used if i != name]
+        if name in used or not other:
+            break
+        # On a near-empty table another index can be cheaper; hide it (rolled back) to prove ours is usable.
+        db.execute(text(f"DROP INDEX {other[0]}"))
+    assert name in plan, plan
+    db.rollback()
+
+    # Filtering on a date still behaves the same.
+    account = create(admin_client, "account", name="Dated Pty Ltd")
+    create(
+        admin_client,
+        "opportunity",
+        {"account": account["id"], "stage": "Prospecting", "close_date": "2026-12-24", "amount": 10},
+        name="Christmas deal",
+    )
+    body = {"filters": {"field": "close_date", "op": "between", "value": ["2026-12-01", "2026-12-31"]}}
+    r = admin_client.post(f"{API}/objects/opportunity/records/query", json=body)
+    assert r.status_code == 200, r.text
+    assert [i["name"] for i in r.json()["items"]] == ["Christmas deal"]

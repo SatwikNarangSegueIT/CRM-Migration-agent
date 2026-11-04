@@ -10,12 +10,13 @@
 --
 -- Captured from the app code run on a copy matching Neon (fingerprints compared), then replayed on a fresh
 -- copy: identical result. Requires deploy/neon_upgrade_v4.sql first. Refuses to run twice.
+-- Date-field indexes come from migration c3f1d2e8a901 (`python -m app.cli migrate`, then `sync-indexes`).
 --
 --   psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -1 -f deploy/neon_apply_migration_domain_main.sql
 --
 -- Or paste into the Neon SQL Editor (it runs as one transaction). Restart the API afterwards.
 
-DO $$ BEGIN IF (SELECT version_num FROM public.alembic_version) <> '4a708a753f1b' OR EXISTS (SELECT 1 FROM public.pack_installations) OR EXISTS (SELECT 1 FROM public.org_settings WHERE key='workspace') THEN RAISE EXCEPTION 'main workspace is not in the expected state; nothing applied'; END IF; END $$;
+DO $$ BEGIN IF (SELECT version_num FROM public.alembic_version) NOT IN ('4a708a753f1b', 'c3f1d2e8a901') OR EXISTS (SELECT 1 FROM public.pack_installations) OR EXISTS (SELECT 1 FROM public.org_settings WHERE key='workspace') THEN RAISE EXCEPTION 'main workspace is not in the expected state; nothing applied'; END IF; END $$;
 
 SET LOCAL search_path TO public;
 
