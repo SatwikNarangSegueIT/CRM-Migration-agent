@@ -24,8 +24,10 @@ Phone = Annotated[
     Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)] | None,
     BeforeValidator(_blank_to_none),
 ]
+# A professional registration number (MARN, tax agent number, credit representative number, practising
+# certificate). The profession's own format is checked by the user service.
 MaraNumber = Annotated[
-    Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^\d{7}$")] | None,
+    Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9-]{3,20}$")] | None,
     BeforeValidator(_blank_to_none),
 ]
 

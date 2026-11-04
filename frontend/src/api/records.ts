@@ -224,12 +224,22 @@ export const workspaceApi = {
   savePreferences: (data: Record<string, unknown>) =>
     apiRequest<Record<string, unknown>>("/me/preferences", { method: "PATCH", body: { data } }),
   calendar: (start: string, end: string, mine: boolean, signal?: AbortSignal) =>
-    apiRequest<{ events: RecordData[]; tasks: RecordData[] }>(
+    apiRequest<{ events: RecordData[]; tasks: RecordData[]; dates?: KeyDate[] }>(
       `/calendar${toQueryString({ start, end, mine })}`,
       {
         signal,
       },
     ),
+};
+
+/** A profession date shown on the calendar (court date, limitation date, lodgement deadline...). */
+export type KeyDate = {
+  id: string;
+  object: string;
+  label: string;
+  name: string;
+  date: string;
+  all_day: boolean;
 };
 
 /** Raw-body upload (file name in a header) so no multipart parser is needed. */

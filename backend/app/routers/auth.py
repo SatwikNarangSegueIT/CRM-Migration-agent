@@ -46,6 +46,7 @@ from app.services import auth as auth_service
 from app.services.audit import RequestMeta
 from app.services.auth import InvalidCredentialsError, IssuedSession
 from app.services.email import app_link, queue_email
+from app.services.settings import get_setting
 from app.tenancy import (
     TenantInfo,
     bind_for_token,
@@ -129,6 +130,7 @@ def _me(db: DbSession, auth: AuthContext) -> MeResponse:
         object_permissions=objects,
         is_system_admin=policy.is_system_admin if policy else False,
         is_platform_operator=_is_operator(db, auth) if policy else False,
+        workspace_domain=(get_setting(db, "workspace") or {}).get("domain") if policy else None,
     )
 
 

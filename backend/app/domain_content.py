@@ -39,6 +39,78 @@ ORGANISATION_TYPE_LABELS = {
 REQUEST_LABELS = ("Client Request", "Client Requests")
 REQUEST_QUEUE = "Client Requests"
 
+# The role tree keeps its shape (who sees whose records); each profession names it for itself. A role an
+# administrator renamed is left alone.
+ROLE_NAMES: dict[str, dict[str, str]] = {
+    "legal": {
+        "ceo": "Managing Principal",
+        "sales_director": "Principal",
+        "sales_manager": "Senior Associate",
+        "sales_representative": "Solicitor",
+        "service_manager": "Practice Manager",
+        "service_agent": "Paralegal",
+        "marketing_manager": "Business Development Manager",
+        "marketing_user": "Business Development Coordinator",
+        "finance_manager": "Finance Manager",
+        "finance_officer": "Trust Accountant",
+    },
+    "migration": {
+        "ceo": "Principal",
+        "sales_director": "Practice Manager",
+        "sales_manager": "Senior Migration Agent",
+        "sales_representative": "Registered Migration Agent",
+        "service_manager": "Case Manager",
+        "service_agent": "Case Officer",
+        "marketing_manager": "Client Services Manager",
+        "marketing_user": "Intake Consultant",
+        "finance_manager": "Accounts Manager",
+        "finance_officer": "Accounts Officer",
+    },
+    "accounting": {
+        "ceo": "Managing Partner",
+        "sales_director": "Partner",
+        "sales_manager": "Client Manager",
+        "sales_representative": "Accountant",
+        "service_manager": "Bookkeeping Manager",
+        "service_agent": "Bookkeeper",
+        "marketing_manager": "Client Services Manager",
+        "marketing_user": "Client Services Coordinator",
+        "finance_manager": "Practice Manager",
+        "finance_officer": "Practice Administrator",
+    },
+    "lending": {
+        "ceo": "Principal Broker",
+        "sales_director": "Broking Manager",
+        "sales_manager": "Senior Broker",
+        "sales_representative": "Broker",
+        "service_manager": "Processing Manager",
+        "service_agent": "Loan Processor",
+        "marketing_manager": "Marketing Manager",
+        "marketing_user": "Marketing Coordinator",
+        "finance_manager": "Finance Manager",
+        "finance_officer": "Commissions Administrator",
+    },
+}
+
+
+def _name_roles(db: Session, domain: str) -> int:
+    from app.models import Role
+    from app.security.seed_v1 import ROLES
+
+    shipped = {key: name for key, name, _parent in ROLES}
+    wanted = ROLE_NAMES.get(domain, {})
+    taken = {r.name for r in db.scalars(select(Role))}
+    changed = 0
+    for role in db.scalars(select(Role).where(Role.key.in_(list(wanted)))):
+        new = wanted[role.key or ""]
+        if role.name == shipped.get(role.key or "") and new not in taken:
+            taken.discard(role.name)
+            role.name = new
+            taken.add(new)
+            changed += 1
+    return changed
+
+
 # ------------------------------------------------------------------ the profession's enquiry question
 
 _PICK = "picklist"
@@ -124,6 +196,37 @@ ENQUIRY_FIELDS: dict[str, list[dict[str, Any]]] = {
         {"api_name": "loan_amount", "label": "Approximate Loan Amount", "type": "currency"},
     ],
 }
+
+
+# The professional registration each profession records on its people (users.mara_number holds it):
+# (label, pattern, message). Shown on staff records and captured on client agreements.
+REGISTRATION_NUMBERS: dict[str, tuple[str, str, str]] = {
+    "migration": ("MARN", r"^\d{7}$", "A MARN (Migration Agents Registration Number) has 7 digits."),
+    "accounting": ("Tax agent number", r"^\d{8}$", "A registered tax agent number has 8 digits."),
+    "lending": (
+        "Credit representative number",
+        r"^\d{6,7}$",
+        "An ASIC credit representative number has 6 or 7 digits.",
+    ),
+    "legal": (
+        "Practising certificate number",
+        r"^[A-Za-z0-9-]{3,20}$",
+        "Use the number on your practising certificate (letters, digits and dashes).",
+    ),
+}
+
+
+def registration_number_error(domain: str | None, value: str | None) -> str | None:
+    """Why a professional registration number isn't valid for this profession (None when it is)."""
+    import re
+
+    if not value:
+        return None
+    label, pattern, message = REGISTRATION_NUMBERS.get(
+        domain or "", ("Registration number", r"^[A-Za-z0-9-]{3,20}$", "Use letters, digits and dashes.")
+    )
+    _ = label
+    return None if re.fullmatch(pattern, value) else message
 
 
 def _values(options: dict[str, Any]) -> list[dict[str, Any]]:
@@ -224,6 +327,7 @@ def apply_content(db: Session, domain: str) -> int:
         queue.name = REQUEST_QUEUE
         changed += 1
 
+    changed += _name_roles(db, domain)
     db.flush()
     changed += _add_enquiry_fields(db, domain)
     return changed

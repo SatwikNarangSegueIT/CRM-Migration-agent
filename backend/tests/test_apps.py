@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import local_today
 from app.engine.installer import stable_id as record_id
-from app.models import EmailDelivery, Notification, Record
+from app.models import EmailDelivery, Notification, Record, User
 from tests.conftest import Outbox, login, make_user
 from tests.test_records_engine import as_user, create
 
@@ -562,10 +562,14 @@ def test_migration_agency_pack(
     installed = {p["key"]: p for p in c.post(f"{API}/setup/packs/migration_agency/install").json()}[
         "migration_agency"
     ]
-    assert installed["installed_version"] == "1.0.0" and installed["is_enabled"] is True
+    from app.packs.migration_agency import definition as migration_definition
+
+    assert installed["installed_version"] == migration_definition.VERSION and installed["is_enabled"] is True
     assert "migration_practice" in {a["key"] for a in c.get(f"{API}/meta/apps").json()}
 
-    agent_user = make_user(db, profile="ma_registered_agent", email="rma@practice.example")
+    agent_user = make_user(
+        db, profile="ma_registered_agent", email="rma@practice.example", mara_number="1234567"
+    )
     officer_user = make_user(db, profile="ma_case_officer", email="officer@practice.example")
     agent, officer = TestClient(client.app), TestClient(client.app)
     login(agent, agent_user.email)
@@ -748,7 +752,9 @@ def test_migration_agency_safeguards(admin_client: TestClient, client: TestClien
 
     assert seed_visa_types(db) >= 10 and seed_visa_types(db) == 0  # starter types, once
     db.commit()
-    agent_user = make_user(db, profile="ma_registered_agent", email="rma2@practice.example")
+    agent_user = make_user(
+        db, profile="ma_registered_agent", email="rma2@practice.example", mara_number="1234567"
+    )
     agent = TestClient(client.app)
     login(agent, agent_user.email)
     student = next(
@@ -841,7 +847,9 @@ def test_my_matters_locked_records_and_closing_on_decision(
 ) -> None:
     c = admin_client
     c.post(f"{API}/setup/packs/migration_agency/install")
-    agent_user = make_user(db, profile="ma_registered_agent", email="rma3@practice.example")
+    agent_user = make_user(
+        db, profile="ma_registered_agent", email="rma3@practice.example", mara_number="1234567"
+    )
     agent = TestClient(client.app)
     login(agent, agent_user.email)
     person = create(c, "contact", {"first_name": "Lena", "last_name": "Park"})
@@ -887,3 +895,169 @@ def test_my_matters_locked_records_and_closing_on_decision(
     )
     assert decided.status_code == 200, decided.text
     assert decided.json()["fields"]["status"] == "Closed" and decided.json()["fields"]["stage"] == "Decision"
+
+
+def test_migration_code_of_conduct_and_deadlines(
+    admin_client: TestClient, client: TestClient, db: Session, outbox: Outbox
+) -> None:
+    """MARN on agreements, client e-mails, s 56 and lodge-by deadlines, employer nominations, calendar."""
+    c = admin_client
+    c.post(f"{API}/setup/packs/migration_agency/install")
+    from app.packs.migration_agency import daily_job, seed_visa_types
+
+    seed_visa_types(db)
+    db.commit()
+    nomarn = make_user(db, profile="ma_registered_agent", email="nomarn@practice.example")
+    rma_user = make_user(
+        db, profile="ma_registered_agent", email="rma4@practice.example", mara_number="7654321"
+    )
+    rma = TestClient(client.app)
+    login(rma, rma_user.email)
+    types = {v["fields"]["subclass"]: v for v in c.get(f"{API}/objects/visa_type/records").json()["items"]}
+    person = create(c, "contact", {"first_name": "Ana", "last_name": "Lopez", "email": "ana@client.example"})
+    matter = create(
+        c,
+        "matter",
+        {"client": person["id"], "visa_type": types["189"]["id"], "responsible_rma": str(nomarn.id)},
+    )
+    url = f"{API}/objects/matter/records/{matter['id']}"
+    ag = create(
+        c,
+        "service_agreement",
+        {
+            "matter": matter["id"],
+            "scope": "189 application",
+            "professional_fee": 3000,
+            "consumer_guide_provided": True,
+        },
+    )
+    r = c.post(f"{API}/objects/service_agreement/records/{ag['id']}/actions/send", json={})
+    assert r.status_code == 422 and "MARN" in r.text  # the agreement names the agent and their MARN
+    c.patch(
+        url,
+        json={
+            "version": get(c, "matter", matter["id"])["version"],
+            "fields": {"responsible_rma": str(rma_user.id)},
+        },
+    )
+    # No portal access yet: nothing e-mailed, the sender is told to invite the client.
+    action(c, "service_agreement", ag["id"], "send")
+    sent = get(c, "service_agreement", ag["id"])
+    assert sent["fields"]["agent_marn"] == "7654321" and sent["fields"]["agent"] == str(rma_user.id)
+    assert not [m for m in outbox.messages if m[0] == "ana@client.example"]
+    assert db.scalar(select(Notification.id).where(Notification.title.like("The client can't see%")))
+    # With portal access the client is e-mailed a link to what is waiting.
+    c.post(f"{API}/portal-users/invite/{person['id']}")
+    ag2 = create(
+        c,
+        "service_agreement",
+        {
+            "matter": matter["id"],
+            "scope": "Variation",
+            "professional_fee": 500,
+            "consumer_guide_provided": True,
+        },
+    )
+    action(c, "service_agreement", ag2["id"], "send")
+    mail = [
+        m for m in outbox.messages if m[0] == "ana@client.example" and "sign your service agreement" in m[1]
+    ]
+    assert mail and f"/portal/o/service_agreement/{ag2['id']}" in mail[-1][2]
+    # Document reminder lists what is still to come.
+    out = action(rma, "matter", matter["id"], "send_document_reminder")
+    assert out["emailed"] and out["documents"] >= 3
+    assert "Documents we still need" in [x for x in outbox.messages if x[0] == "ana@client.example"][-1][1]
+
+    # Lodge-by: an expired invitation can't be lodged on.
+    passed = (local_today() - timedelta(days=1)).isoformat()
+    from app.engine.records import RecordService
+
+    rec = db.get(Record, uuid.UUID(matter["id"]))
+    assert rec is not None
+    RecordService.as_system(db).update(
+        "matter",
+        rec.id,
+        {"stage": "Ready to Lodge", "lodge_by": passed, "agreement_override": True},
+        record=rec,
+    )
+    db.commit()
+    r = rma.post(f"{url}/actions/lodge", json={"immi_trn": "EGO9"})
+    assert r.status_code == 422 and "lodge-by" in r.text
+    c.patch(
+        url,
+        json={
+            "version": get(c, "matter", matter["id"])["version"],
+            "fields": {"lodge_by": (local_today() + timedelta(days=20)).isoformat()},
+        },
+    )
+    action(rma, "matter", matter["id"], "lodge", {"immi_trn": "EGO9"})
+    # A further information request needs its due date; it reminds the agent and shows on the calendar.
+    r = rma.patch(
+        url,
+        json={
+            "version": get(c, "matter", matter["id"])["version"],
+            "fields": {"stage": "Further Information"},
+        },
+    )
+    assert r.status_code == 422 and "information" in r.text.lower()
+    due = (local_today() + timedelta(days=2)).isoformat()
+    rma.patch(
+        url,
+        json={
+            "version": get(c, "matter", matter["id"])["version"],
+            "fields": {"stage": "Further Information", "information_due": due},
+        },
+    )
+    db.expire_all()
+    assert daily_job(db) >= 1
+    assert db.scalar(
+        select(Notification.id).where(Notification.title.like("Further information due in 2 days%"))
+    )
+    start = datetime.now(UTC) - timedelta(days=1)
+    cal = rma.get(
+        f"{API}/calendar",
+        params={"start": start.isoformat(), "end": (start + timedelta(days=10)).isoformat()},
+    ).json()
+    assert any(k["label"] == "Information due" and k["id"] == matter["id"] for k in cal["dates"])
+
+    # Employer sponsored visas need the sponsor and the nomination TRN before lodging.
+    sponsored = create(
+        c,
+        "matter",
+        {"client": person["id"], "visa_type": types["482"]["id"], "responsible_rma": str(rma_user.id)},
+    )
+    srec = db.get(Record, uuid.UUID(sponsored["id"]))
+    assert srec is not None
+    RecordService.as_system(db).update(
+        "matter", srec.id, {"stage": "Ready to Lodge", "agreement_override": True}, record=srec
+    )
+    db.commit()
+    r = rma.post(f"{API}/objects/matter/records/{sponsored['id']}/actions/lodge", json={"immi_trn": "EGO10"})
+    assert r.status_code == 422 and "sponsor" in r.text.lower()
+
+
+def test_actions_are_refused_when_not_available(admin_client: TestClient, db: Session) -> None:
+    """An action is refused by the server, not just hidden, when the record isn't in a state for it."""
+    c = admin_client
+    c.post(f"{API}/setup/packs/migration_agency/install")
+    admin = db.scalar(select(User).where(User.email == "admin@example.com"))
+    assert admin is not None
+    admin.mara_number = "1234567"
+    db.commit()
+    person = create(c, "contact", {"first_name": "Sig", "last_name": "Ned"})
+    matter = create(c, "matter", {"client": person["id"]})
+    ag = create(
+        c,
+        "service_agreement",
+        {"matter": matter["id"], "scope": "x", "professional_fee": 100, "consumer_guide_provided": True},
+    )
+    action(c, "service_agreement", ag["id"], "send")
+    from app.engine.records import RecordService
+
+    rec = db.get(Record, uuid.UUID(ag["id"]))
+    assert rec is not None
+    RecordService.as_system(db).update("service_agreement", rec.id, {"status": "Signed"}, record=rec)
+    db.commit()
+    r = c.post(f"{API}/objects/service_agreement/records/{ag['id']}/actions/send", json={})
+    assert r.status_code == 422 and "isn't available" in r.text
+    assert get(c, "service_agreement", ag["id"])["fields"]["status"] == "Signed"

@@ -115,8 +115,19 @@ def _self_change_error(field: str, message: str) -> AppError:
     return AppError(message, code="forbidden_self_change", status_code=422, fields={field: message})
 
 
+def _check_registration(db: Session, value: str | None) -> None:
+    from app.domain_content import registration_number_error
+    from app.services.settings import get_setting
+
+    domain = (get_setting(db, "workspace") or {}).get("domain")
+    message = registration_number_error(domain, value)
+    if message:
+        raise AppError(message, status_code=422, fields={"mara_number": message})
+
+
 def create_user(db: Session, actor: AuthContext, data: UserCreate, meta: RequestMeta) -> tuple[User, str]:
     profile = _staff_profile(db, data.profile_id)
+    _check_registration(db, data.mara_number)
     role = _role(db, data.role_id) if data.role_id is not None else None
     email = str(data.email).strip().lower()
     if db.scalar(select(User.id).where(User.email == email)) is not None:
@@ -198,6 +209,8 @@ def update_user(
 
     if "name" in fields and data.name is not None:
         user.name = data.name
+    if "mara_number" in fields:
+        _check_registration(db, data.mara_number)
     for optional in ("title", "phone", "mara_number"):
         if optional in fields:
             setattr(user, optional, getattr(data, optional))

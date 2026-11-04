@@ -66,6 +66,11 @@ const CONFIRM_TEXT: Record<string, string> = {
   "engagement.create_invoice": "A draft invoice is created for the agreed fee (or the unbilled time).",
   "engagement_letter.send": "The letter is marked as sent; the client can sign it in the portal.",
   "account.generate_bas_deadlines": "Creates this financial year's activity statement deadlines.",
+  "matter.send_document_reminder":
+    "E-mails the client the documents still outstanding, with a link to upload them in the portal.",
+  "engagement.send_document_reminder":
+    "E-mails the client the documents still outstanding, with a link to upload them in the portal.",
+  "legal_matter.bill_fixed_fee": "A draft invoice is created for the agreed fixed fee.",
   "loan_application.record_assessment":
     "Records the preliminary assessment and locks the Best Interests Duty record.",
 };

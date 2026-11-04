@@ -27,6 +27,8 @@ from app.models import PackInstallation, ProfileSystemPermission
 from app.services import audit
 from app.services.audit import AuditAction, RequestMeta
 
+KeyDate = tuple[str, str, str, tuple[str, ...], list[dict[str, Any]]]
+
 
 @dataclass(frozen=True)
 class Pack:
@@ -39,6 +41,9 @@ class Pack:
     custom_permissions: dict[str, str] = field(default_factory=dict)  # name -> label
     daily_job: Callable[[Session], int] | None = None
     region: str = ""
+    # Dates shown on the calendar: (object, date field, label, user fields that make it "mine",
+    # extra filter conditions), e.g. court dates, limitation dates, lodgement deadlines, settlements.
+    key_dates: tuple[KeyDate, ...] = ()
 
 
 _PACKS: dict[str, Pack] = {}

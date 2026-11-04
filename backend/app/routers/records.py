@@ -360,6 +360,7 @@ def run_action(
     record = svc.get(api_name, record_id, lock=True)
     if action.requires_edit and not svc.can_edit(record):
         raise PermissionDeniedError("You don't have permission to edit this record.")
+    hooks.check_available(action, record)
     if action.guard is not None:
         message = action.guard(svc, record)
         if message:

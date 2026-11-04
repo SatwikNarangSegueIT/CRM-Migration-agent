@@ -7,12 +7,16 @@ Failures are raised as ``MailDeliveryError`` with a message an administrator can
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import smtplib
 import ssl
 import threading
 from email.message import EmailMessage
 from email.utils import formataddr
+
+from sqlalchemy import event
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.services.mail_settings import MailConfig, mail_config
@@ -222,3 +226,27 @@ def queue_email(to: str, subject: str, body: str, *, wait: bool = False) -> None
 
 def app_link(path: str) -> str:
     return get_settings().public_app_url.rstrip("/") + path
+
+
+# ------------------------------------------------------------------ e-mail after commit
+
+_AFTER_COMMIT = "mail_after_commit"
+
+
+def queue_after_commit(db: Session, to: str, subject: str, body: str) -> None:
+    """Send once the surrounding transaction commits; nothing is sent if it rolls back (a refused
+    action must not tell a client that something is waiting for them)."""
+    db.info.setdefault(_AFTER_COMMIT, []).append((to, subject, body))
+
+
+@event.listens_for(Session, "after_commit")
+def _send_after_commit(session: Session) -> None:
+    for to, subject, body in session.info.pop(_AFTER_COMMIT, None) or []:
+        # The change is saved; a mail outage is logged by the sender, not raised here.
+        with contextlib.suppress(Exception):
+            queue_email(to, subject, body)
+
+
+@event.listens_for(Session, "after_rollback")
+def _drop_after_rollback(session: Session) -> None:
+    session.info.pop(_AFTER_COMMIT, None)

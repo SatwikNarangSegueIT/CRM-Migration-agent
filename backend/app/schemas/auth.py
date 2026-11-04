@@ -118,3 +118,5 @@ class MeResponse(BaseModel):
     is_system_admin: bool
     # Can change platform-wide settings (e-mail delivery) in Setup.
     is_platform_operator: bool = False
+    # The workspace's profession ("legal", "migration", "accounting", "lending"), or None for a general CRM.
+    workspace_domain: str | None = None

@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.domain_content import apply_content
 from app.engine.meta import bump_revision, invalidate_cache
 from app.models import App, FieldDefinition, ListView, ObjectDefinition, Report
+from app.pack_upgrade import mark_forms_current, upgrade_pack
 from app.services import audit
 from app.services.audit import AuditAction
 
@@ -298,7 +299,7 @@ def apply_related_lists(db: Session) -> int:
 # ------------------------------------------------------------------ forms
 
 # Bump when apply_forms changes: existing workspaces are brought up to date at start-up.
-FORMS_VERSION = 7
+FORMS_VERSION = 8
 
 # Sales-oriented fields that a profession workspace doesn't use. They're taken off the page layouts (so off
 # the forms and record pages), not deleted: an administrator can put them back in Object Manager.
@@ -332,7 +333,19 @@ PACK_SECTIONS: dict[tuple[str, str], str] = {
 HIDE_ON_CREATE: dict[str, set[str]] = {
     "legal_matter": {"stage", "status"},
     "conflict_check": {"result"},
-    "matter": {"stage", "status", "immi_trn", "decision_date", "outcome", "grant_number", "visa_expiry"},
+    "matter": {
+        "stage",
+        "status",
+        "immi_trn",
+        "decision_date",
+        "outcome",
+        "grant_number",
+        "visa_expiry",
+        "information_due",
+        "bridging_visa",
+        "nomination_approved_date",
+    },
+    "trust_reconciliation": {"status"},
     "engagement": {"stage", "ato_reference"},
     "lodgement_deadline": {"status", "lodged_on"},
     "loan_application": {
@@ -390,7 +403,7 @@ SECTION_RENAMES = {
 NAME_LABELS = {"checklist_item": "Document", "document_request": "Document", "party": "Party Name"}
 
 # Records the system names (see the hooks): their name is taken off the layout, so forms don't ask for it.
-AUTO_NAMED = ("court_date",)
+AUTO_NAMED = ("court_date", "trust_reconciliation")
 
 
 def apply_forms(db: Session, domain: str) -> int:
@@ -823,7 +836,9 @@ def upgrade_domain_workspace(db: Session, *, force: bool = False) -> int:
     domain = workspace.get("domain")
     if not domain or (not force and int(workspace.get("forms_version") or 0) >= FORMS_VERSION):
         return 0
-    changed = (
+    spec = DOMAINS.get(str(domain))
+    changed = upgrade_pack(db, spec.pack_key if spec else None)
+    changed += (
         apply_related_lists(db)
         + repair_double_renames(db)
         + apply_forms(db, str(domain))
@@ -854,6 +869,7 @@ def apply_domain(db: Session, domain: str, actor_id: uuid.UUID | None) -> None:
         return
     packs.install(db, spec.pack_key, actor_id)
     db.flush()
+    mark_forms_current(db, spec.pack_key)
     apply_navigation(db, spec.app_key)
     apply_terminology(db, spec.terminology)
     db.flush()

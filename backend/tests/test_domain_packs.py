@@ -189,17 +189,31 @@ def portal_for(
     return portal
 
 
+def practice_tan(db: Session, number: str = "25678009") -> None:
+    """The practice's tax agent number (engagement letters show it)."""
+    from app.services.settings import get_setting, set_setting
+
+    set_setting(
+        db,
+        "accounting_practice",
+        {**(get_setting(db, "accounting_practice") or {}), "tax_agent_number": number},
+    )
+    db.commit()
+
+
 def test_accounting_practice_pack(
     admin_client: TestClient, client: TestClient, db: Session, outbox: Outbox
 ) -> None:
     c = admin_client
     install(c, "accounting_practice")
+    practice_tan(db)
     entity = create(
         c,
         "account",
-        {"entity_type": "Company", "bas_frequency": "Quarterly", "gst_registered": True},
+        {"entity_type": "Company", "bas_frequency": "Quarterly", "gst_registered": True,
+         "identity_verified": True, "agent_nominated": True},
         name="Wattle Pty Ltd",
-    )
+    )  # fmt: skip
     eng = create(c, "engagement", {"client": entity["id"], "type": "Company Tax Return", "fee": 2200})
     eng = get(c, "engagement", eng["id"])
     assert eng["name"].startswith("JOB-") and eng["fields"]["financial_year"]
@@ -315,9 +329,16 @@ def test_loan_broker_pack(admin_client: TestClient, client: TestClient, db: Sess
             "purpose": "Purchase - Owner Occupied",
             "loan_amount": 600000,
             "security_value": 800000,
+            "interest_rate": 6.0,
+            "term_years": 30,
         },
     )
     assert loan["name"].startswith("LA-") and float(loan["fields"]["lvr"]) == 75
+    # Assessed at the product rate plus the 3% buffer.
+    assert (
+        float(loan["fields"]["assessment_rate"]) == 9
+        and 4800 < float(loan["fields"]["estimated_repayment"]) < 4900
+    )
 
     # NCCP: credit guide and consent before credit assistance; assessment + BID before lodging.
     patch(c, "loan_application", loan["id"], {"stage": "Preliminary Assessment"}, expect=422)
@@ -333,12 +354,16 @@ def test_loan_broker_pack(admin_client: TestClient, client: TestClient, db: Sess
                                  "monthly_commitments": 500, "total_assets": 250000, "total_liabilities": 20000})  # fmt: skip
     assert float(ff["fields"]["net_position"]) == 230000 and float(ff["fields"]["monthly_surplus"]) == 10500
     patch(c, "fact_find", ff["id"], {"status": "Complete"})
+    action(
+        c, "loan_application", loan["id"], "record_assessment", expect=422
+    )  # income and expenses unverified
+    patch(c, "fact_find", ff["id"], {"expenses_verified": True})
     patch(
         c,
         "loan_application",
         loan["id"],
         {"customer_objectives": "Buy a home, offset account", "products_considered": "Harbour Bank, Two Bank",
-         "recommendation_reason": "Lowest cost with offset", "lender": lender["id"]},
+         "recommendation_reason": "Lowest cost with offset", "lender": lender["id"], "credit_proposal_date": today},
     )  # fmt: skip
     patch(c, "loan_application", loan["id"], {"stage": "Lodged"}, expect=422)
     assessed = action(c, "loan_application", loan["id"], "record_assessment")
@@ -439,6 +464,7 @@ def test_accounting_safeguards(admin_client: TestClient, client: TestClient, db:
 
     c = admin_client
     install(c, "accounting_practice")
+    practice_tan(db)
     assert is_valid_tfn("123 456 782") and not is_valid_tfn("123456789")
     assert dict(bas_periods("Monthly", 2026))["Dec 2026"].isoformat() == "2027-02-21"
     bad = c.post(
@@ -516,13 +542,15 @@ def test_loan_broker_safeguards(admin_client: TestClient, client: TestClient, db
         "loan_application",
         {"primary_borrower": person["id"], "purpose": "Refinance", "loan_amount": 500000, "lender": lender["id"],
          "credit_guide_date": today, "privacy_consent_date": today, "customer_objectives": "Lower rate",
-         "products_considered": "Harbour, Two", "recommendation_reason": "Cheapest"},
+         "products_considered": "Harbour, Two", "recommendation_reason": "Cheapest", "interest_rate": 6.0,
+         "term_years": 30, "credit_proposal_date": today},
     )  # fmt: skip
     ff = create(
         broker,
         "fact_find",
-        {"loan_application": loan["id"], "gross_annual_income": 1, "monthly_living_expenses": 1},
-    )
+        {"loan_application": loan["id"], "gross_annual_income": 150000, "monthly_living_expenses": 3000,
+         "expenses_verified": True},
+    )  # fmt: skip
     patch(broker, "fact_find", ff["id"], {"status": "Complete"})
     action(broker, "loan_application", loan["id"], "record_assessment")
     # Switching lender after the assessment means assessing again before lodging.
@@ -539,3 +567,306 @@ def test_loan_broker_safeguards(admin_client: TestClient, client: TestClient, db
     # The broker reads the commission on their loan.
     mine = broker.post(f"{API}/objects/commission/records/query", json={}).json()["items"]
     assert [m["fields"]["type"] for m in mine] == ["Upfront"]
+
+
+def test_legal_uniform_law_rules(admin_client: TestClient, client: TestClient, db: Session) -> None:
+    """Costs disclosure tiers and changes, VOI, limitation dates, closing, fixed fees and trust cash."""
+    c = admin_client
+    install(c, "legal_practice")
+    person = create(c, "contact", {"first_name": "Vera", "last_name": "Voi"})
+
+    # Conveyancing: the client's identity is verified (VOI) before engaging.
+    conv = create(
+        c,
+        "legal_matter",
+        {"title": "Sale of 1 Elm St", "client": person["id"], "practice_area": "Property & Conveyancing",
+         "estimated_costs": 1800, "billing_method": "Fixed Fee", "fixed_fee": 1650},
+    )  # fmt: skip
+    r = c.patch(
+        f"{API}/objects/legal_matter/records/{conv['id']}",
+        json={
+            "version": get(c, "legal_matter", conv["id"])["version"],
+            "fields": {"costs_disclosure_provided": True, "stage": "Engaged"},
+        },
+    )
+    assert r.status_code == 422 and "VOI" in r.text
+    patch(c, "contact", person["id"], {"id_verified": True})
+    # $1,800 may use the uniform standard disclosure form.
+    m = patch(
+        c, "legal_matter", conv["id"],
+        {"costs_disclosure_provided": True, "disclosure_method": "Uniform Standard Disclosure Form", "stage": "Engaged"},
+    )  # fmt: skip
+    assert m["fields"]["stage"] == "Engaged"
+    # ...but not once the estimate passes $3,000, and the rise needs updated disclosure.
+    patch(c, "legal_matter", conv["id"], {"estimated_costs": 4000}, expect=422)
+    m = patch(
+        c,
+        "legal_matter",
+        conv["id"],
+        {"estimated_costs": 4000, "disclosure_method": "Full Written Disclosure"},
+    )
+    assert m["fields"]["disclosure_update_due"] is True
+    action(c, "legal_matter", conv["id"], "bill_fixed_fee", expect=422)  # disclose the change first
+    m = patch(
+        c,
+        "legal_matter",
+        conv["id"],
+        {"costs_disclosure_date": (local_today() + timedelta(days=1)).isoformat()},
+    )
+    assert m["fields"]["disclosure_update_due"] is False
+    billed = action(c, "legal_matter", conv["id"], "bill_fixed_fee")
+    invoice = get(c, "invoice", billed["invoice_id"])
+    assert float(invoice["fields"]["subtotal"]) == 1650
+    action(c, "legal_matter", conv["id"], "bill_fixed_fee", expect=422)  # once
+    action(c, "invoice", invoice["id"], "issue")
+    assert float(get(c, "legal_matter", conv["id"])["fields"]["billed_to_date"]) == 1650
+
+    # Commercial clients don't need disclosure (s 170); claims need a limitation date before engaging.
+    acme = create(c, "contact", {"last_name": "Acme Legal Dept"})
+    claim = create(
+        c, "legal_matter",
+        {"title": "Acme v Supplier", "client": acme["id"], "practice_area": "Litigation", "client_type": "Commercial or Government"},
+    )  # fmt: skip
+    r = c.patch(
+        f"{API}/objects/legal_matter/records/{claim['id']}",
+        json={"version": get(c, "legal_matter", claim["id"])["version"], "fields": {"stage": "Engaged"}},
+    )
+    assert r.status_code == 422 and "limitation date" in r.text
+    m = patch(c, "legal_matter", claim["id"], {"limitation_date": "2029-06-30", "stage": "Engaged"})
+    assert m["fields"]["stage"] == "Engaged" and not m["fields"]["costs_disclosure_provided"]
+
+    # Billing past the disclosed estimate is refused until the estimate is updated and disclosed.
+    hourly = create(c, "legal_matter", {"title": "Advice", "client": person["id"], "estimated_costs": 1000})
+    patch(c, "legal_matter", hourly["id"], {"costs_disclosure_provided": True, "stage": "Engaged"})
+    create(
+        c, "legal_time_entry", {"legal_matter": hourly["id"], "units": 40, "rate": 400, "narrative": "Advice"}
+    )
+    r = c.post(f"{API}/objects/legal_matter/records/{hourly['id']}/actions/bill_time", json={})
+    assert r.status_code == 422 and "estimate" in r.text
+    # Closing needs the WIP billed or written off.
+    r = c.patch(
+        f"{API}/objects/legal_matter/records/{hourly['id']}",
+        json={"version": get(c, "legal_matter", hourly["id"])["version"], "fields": {"stage": "Closed"}},
+    )
+    assert r.status_code == 422 and "unbilled" in r.text
+
+    # Trust: never paid out in cash; a $10,000 cash receipt creates an AUSTRAC task.
+    t = {"legal_matter": hourly["id"], "payer_payee": "Vera Voi", "description": "Funds"}
+    receipt = create(c, "trust_transaction", {**t, "type": "Receipt", "amount": 12000, "method": "Cash"})
+    tasks = c.post(f"{API}/objects/task/records/query", json={}).json()["items"]
+    assert any("AUSTRAC" in x["name"] for x in tasks)
+    assert get(c, "trust_transaction", receipt["id"])["access"]["edit"] is True  # reference still to record
+    patch(c, "trust_transaction", receipt["id"], {"austrac_reference": "SCTR-1234"})
+    patch(c, "trust_transaction", receipt["id"], {"amount": 1}, expect=422)  # still append-only
+    assert get(c, "trust_transaction", receipt["id"])["access"]["edit"] is False
+    r = c.post(
+        f"{API}/objects/trust_transaction/records",
+        json={"fields": {**t, "type": "Payment", "amount": 100, "method": "Cash"}},
+    )
+    assert r.status_code == 422 and "cash" in r.text.lower()
+
+
+def test_monthly_trust_reconciliation(admin_client: TestClient, client: TestClient, db: Session) -> None:
+    from app.packs.legal_practice import reconciliation_reminders
+    from tests.conftest import login, make_user
+
+    c = admin_client
+    install(c, "legal_practice")
+    person = create(c, "contact", {"first_name": "Rex", "last_name": "Recon"})
+    matter = create(c, "legal_matter", {"title": "Estate", "client": person["id"]})
+    t = {"legal_matter": matter["id"], "payer_payee": "Rex Recon", "description": "Funds", "method": "EFT"}
+    create(c, "trust_transaction", {**t, "type": "Receipt", "amount": 5000, "transaction_date": "2026-09-14"})
+    create(c, "trust_transaction", {**t, "type": "Payment", "amount": 1200, "transaction_date": "2026-09-20"})
+    create(c, "trust_transaction", {**t, "type": "Receipt", "amount": 300, "transaction_date": "2026-10-02"})
+    bad = c.post(
+        f"{API}/objects/trust_reconciliation/records",
+        json={"fields": {"period_end": "2026-09-15", "bank_balance": 3800}},
+    )
+    assert bad.status_code == 422 and "last day of the month" in bad.text
+    # The trust accountant prepares it; the principal signs it off.
+    accountant_user = make_user(db, profile="lp_accounts", email="trustacct@firm.example")
+    accountant = TestClient(client.app)
+    login(accountant, accountant_user.email)
+    rec = create(accountant, "trust_reconciliation", {"period_end": "2026-09-30", "bank_balance": 4000})
+    assert rec["name"] == "Trust reconciliation September 2026"
+    assert float(rec["fields"]["ledger_total"]) == 3800 and float(rec["fields"]["difference"]) == 200
+    patch(
+        accountant, "trust_reconciliation", rec["id"], {"status": "Reconciled"}, expect=422
+    )  # doesn't balance
+    patch(
+        accountant,
+        "trust_reconciliation",
+        rec["id"],
+        {"adjustments": -200, "notes": "Cheque 1042 unpresented"},
+    )
+    r = accountant.patch(
+        f"{API}/objects/trust_reconciliation/records/{rec['id']}",
+        json={
+            "version": get(c, "trust_reconciliation", rec["id"])["version"],
+            "fields": {"status": "Reconciled"},
+        },
+    )
+    assert r.status_code == 422 and "principal" in r.text  # a principal signs off
+    done = patch(c, "trust_reconciliation", rec["id"], {"status": "Reconciled"})
+    assert done["fields"]["reconciled_by"] and done["access"]["edit"] is False
+    patch(c, "trust_reconciliation", rec["id"], {"notes": "x"}, expect=422)
+    dup = c.post(
+        f"{API}/objects/trust_reconciliation/records",
+        json={"fields": {"period_end": "2026-09-30", "bank_balance": 3800}},
+    )
+    assert dup.status_code == 422
+    # October isn't reconciled: from 10 November principals and trust accountants are reminded (once).
+    from datetime import date as _date
+
+    assert reconciliation_reminders(db, _date(2026, 11, 12)) >= 1
+    assert reconciliation_reminders(db, _date(2026, 11, 13)) == 0
+    db.commit()
+
+
+def test_accounting_tax_agent_obligations(
+    admin_client: TestClient, client: TestClient, db: Session, outbox: Outbox
+) -> None:
+    """FBT year, BAS concession dates, proof of identity and agent linking, auditor independence, TAN."""
+    from datetime import date as _date
+
+    from app.packs.accounting_practice import bas_periods, default_due_date, fbt_year
+    from app.services.settings import get_setting, set_setting
+    from tests.conftest import login, make_user
+
+    assert fbt_year(_date(2026, 5, 1)) == "2025-26" and fbt_year(_date(2026, 3, 1)) == "2024-25"
+    c = admin_client
+    install(c, "accounting_practice")
+    assert default_due_date(db, "FBT Return", "2025-26") == "2026-05-21"  # FBT year ends 31 March
+    assert default_due_date(db, "Individual Tax Return", "2025-26") == "2026-10-31"
+    assert default_due_date(db, "Company Tax Return", "2025-26") == "2027-02-28"
+    q = dict(bas_periods("Quarterly", 2026, tax_agent=True))
+    assert q["Q1 Jul-Sep"].isoformat() == "2026-11-25" and q["Q3 Jan-Mar"].isoformat() == "2027-05-26"
+
+    # Letters name the practitioner and their registration; without a number they aren't sent.
+    preparer_user = make_user(
+        db, profile="ap_accountant", email="prep@ledger.example", mara_number="25678009"
+    )
+    preparer = TestClient(client.app)
+    login(preparer, preparer_user.email)
+    trust = create(preparer, "account", {"entity_type": "Trust"}, name="Banksia Family Trust")
+    eng = create(preparer, "engagement", {"client": trust["id"], "type": "Trust Tax Return", "fee": 1800})
+    letter = create(preparer, "engagement_letter", {"engagement": eng["id"], "scope": "Trust return."})
+    action(preparer, "engagement_letter", letter["id"], "send")
+    sent = get(preparer, "engagement_letter", letter["id"])
+    assert sent["fields"]["tax_agent_number"] == "25678009" and sent["fields"]["practitioner"] == str(
+        preparer_user.id
+    )
+    # Lodging needs proof of identity and, for a business client, client-to-agent linking.
+    import uuid
+
+    from app.engine.records import RecordService
+    from app.models import Record
+
+    rec = db.get(Record, uuid.UUID(eng["id"]))
+    assert rec is not None
+    RecordService.as_system(db).update(
+        "engagement", rec.id, {"stage": "Ready to Lodge", "letter_signed": True}, record=rec
+    )
+    db.commit()
+    url = f"{API}/objects/engagement/records/{eng['id']}"
+    r = preparer.patch(
+        url, json={"version": get(c, "engagement", eng["id"])["version"], "fields": {"stage": "Lodged"}}
+    )
+    assert r.status_code == 422 and "identity" in r.text.lower()
+    patch(c, "account", trust["id"], {"identity_verified": True})
+    r = preparer.patch(
+        url, json={"version": get(c, "engagement", eng["id"])["version"], "fields": {"stage": "Lodged"}}
+    )
+    assert r.status_code == 422 and "client-to-agent" in r.text
+    patch(c, "account", trust["id"], {"agent_nominated": True})
+    lodged = patch(
+        preparer,
+        "engagement",
+        eng["id"],
+        {"stage": "Lodged", "noa_amount": -1250.5, "noa_date": "2026-12-01"},
+    )
+    assert lodged["fields"]["stage"] == "Lodged" and float(lodged["fields"]["noa_amount"]) == -1250.5
+
+    # SMSF audit independence: not the person who prepared the fund's return that year.
+    fund = create(c, "account", {"entity_type": "SMSF", "identity_verified": True}, name="Wattle Super Fund")
+    create(c, "engagement", {"client": fund["id"], "type": "SMSF Annual Return", "financial_year": "2025-26",
+                             "responsible_accountant": str(preparer_user.id)})  # fmt: skip
+    r = c.post(
+        f"{API}/objects/engagement/records",
+        json={"fields": {"client": fund["id"], "type": "SMSF Audit", "financial_year": "2025-26",
+                         "responsible_accountant": str(preparer_user.id)}},
+    )  # fmt: skip
+    assert r.status_code == 422 and "independent" in r.text
+    auditor = make_user(db, profile="ap_accountant", email="aud@ledger.example")
+    create(c, "engagement", {"client": fund["id"], "type": "SMSF Audit", "financial_year": "2025-26",
+                             "responsible_accountant": str(auditor.id)})  # fmt: skip
+
+    # The practice setting switches BAS deadlines to the tax agent concession dates.
+    set_setting(
+        db,
+        "accounting_practice",
+        {**(get_setting(db, "accounting_practice") or {}), "bas_due_dates": "tax_agent"},
+    )
+    db.commit()
+    shop = create(
+        c, "account", {"entity_type": "Company", "bas_frequency": "Quarterly"}, name="Corner Shop Pty Ltd"
+    )
+    action(c, "account", shop["id"], "generate_bas_deadlines")
+    dues = {
+        d["fields"]["period"]: d["fields"]["due_date"]
+        for d in related(c, "lodgement_deadline", "client", shop["id"])
+    }
+    assert all(v[5:] in ("11-25", "02-28", "05-26", "08-25") for v in dues.values())
+
+
+def test_loan_broker_nccp_disclosures_serviceability_and_clawback(
+    admin_client: TestClient, db: Session
+) -> None:
+    from decimal import Decimal
+
+    from app.packs.loan_broker import monthly_repayment
+
+    # $500,000 over 30 years at 9%: about $4,023 a month.
+    assert monthly_repayment(Decimal(500000), Decimal(9), Decimal(30)) == Decimal("4023.11")
+    c = admin_client
+    install(c, "loan_broker")
+    lender = create(
+        c,
+        "lender",
+        {"upfront_rate": 0.6, "clawback_months": 24, "clawback_half_after": 12},
+        name="Harbour Bank",
+    )
+    person = create(c, "contact", {"first_name": "Lin", "last_name": "Tan"})
+    today = local_today().isoformat()
+    loan = create(
+        c,
+        "loan_application",
+        {"primary_borrower": person["id"], "purpose": "Purchase - Investment", "loan_amount": 900000, "security_value": 1000000,
+         "interest_rate": 6.5, "term_years": 30, "broker_fee": 990, "credit_guide_date": today, "privacy_consent_date": today,
+         "customer_objectives": "Investment", "products_considered": "Harbour", "recommendation_reason": "Best fit",
+         "lender": lender["id"]},
+    )  # fmt: skip
+    assert loan["fields"]["lmi_likely"] is True  # 90% LVR
+    # A fee charged to the client needs a credit quote before credit assistance.
+    patch(c, "loan_application", loan["id"], {"stage": "Preliminary Assessment"}, expect=422)
+    patch(c, "loan_application", loan["id"], {"credit_quote_date": today})
+    # Repayments at 9.5% (~$7,568) exceed a $6,000 surplus: the loan looks unsuitable.
+    ff = create(c, "fact_find", {"loan_application": loan["id"], "gross_annual_income": 96000, "monthly_living_expenses": 2000,
+                                 "expenses_verified": True})  # fmt: skip
+    patch(c, "fact_find", ff["id"], {"status": "Complete"})
+    r = c.post(f"{API}/objects/loan_application/records/{loan['id']}/actions/record_assessment", json={})
+    assert r.status_code == 422 and "unsuitable" in r.text
+    patch(c, "fact_find", ff["id"], {"gross_annual_income": 220000})
+    action(c, "loan_application", loan["id"], "record_assessment")
+    # The credit proposal disclosure comes before applying to the lender.
+    patch(c, "loan_application", loan["id"], {"stage": "Lodged"}, expect=422)
+    patch(c, "loan_application", loan["id"], {"credit_proposal_date": today, "stage": "Lodged"})
+    settled = patch(c, "loan_application", loan["id"], {"stage": "Settled", "settlement_date": "2026-01-15"})
+    assert float(settled["fields"]["expected_upfront"]) == 5400
+    # Refinanced away 14 months later: half the upfront commission is expected back.
+    out = action(c, "loan_application", loan["id"], "record_discharge", {"discharged_date": "2027-03-20"})
+    assert float(out["amount"]) == 2700
+    claw = get(c, "commission", out["clawback"])
+    assert claw["fields"]["type"] == "Clawback" and float(claw["fields"]["signed_amount"]) == -2700
+    assert get(c, "loan_application", loan["id"])["fields"]["discharged_date"] == "2027-03-20"
+    action(c, "loan_application", loan["id"], "record_discharge", expect=422)  # recorded once

@@ -344,7 +344,7 @@ export function AppShell() {
         Skip to content
       </a>
 
-      <aside className="sticky top-0 hidden h-screen w-[76px] flex-none overflow-y-auto bg-slate-900 md:block">
+      <aside className="sticky top-0 hidden h-screen w-[76px] flex-none overflow-y-auto bg-slate-900 md:block print:hidden">
         <Link
           to="/"
           aria-label="Home"
@@ -388,7 +388,7 @@ export function AppShell() {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
+        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white print:hidden">
           <div className="flex h-14 items-center gap-3 px-3 sm:px-4">
             <button
               type="button"

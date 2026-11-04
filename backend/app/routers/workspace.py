@@ -252,6 +252,56 @@ def calendar(
             sort=[{"field": "due_date", "direction": "asc"}],
         )
         out["tasks"] = svc.serialize_many("task", res.records)
+    out["dates"] = _key_dates(svc, start, end, mine)
+    return out
+
+
+def _key_dates(svc: Records, start: datetime, end: datetime, mine: bool) -> list[dict[str, Any]]:
+    """The profession's dates in the range: court dates, limitation dates, lodgement deadlines, visa
+    expiries, settlements... "Only mine" means records the person owns or is named on."""
+    from app import packs
+
+    out: list[dict[str, Any]] = []
+    for pack in packs.available():
+        if pack.key not in svc.enabled_packs:
+            continue
+        for obj, field_name, label, who, extra in pack.key_dates:
+            meta = svc.registry.objects.get(obj)
+            if meta is None or field_name not in meta.fields or not svc.policy.object(obj).read:
+                continue
+            is_date = meta.fields[field_name].type == "date"
+            lo = start.date().isoformat() if is_date else start.isoformat()
+            hi = end.date().isoformat() if is_date else end.isoformat()
+            conditions: list[dict[str, Any]] = [
+                {"field": field_name, "op": "gte", "value": lo},
+                {"field": field_name, "op": "lt", "value": hi},
+                *extra,
+            ]
+            if mine:
+                people = [{"field": f, "op": "equals", "value": "$me"} for f in who if f in meta.fields]
+                conditions.append(
+                    {
+                        "logic": "or",
+                        "conditions": [{"field": "owner_id", "op": "equals", "value": "$me"}, *people],
+                    }
+                )
+            res = svc.query(
+                obj,
+                filters={"logic": "and", "conditions": conditions},
+                limit=200,
+                sort=[{"field": field_name, "direction": "asc"}],
+            )
+            for r in res.records:
+                out.append(
+                    {
+                        "id": str(r.id),
+                        "object": obj,
+                        "label": label,
+                        "name": r.name,
+                        "date": r.data.get(field_name),
+                        "all_day": is_date,
+                    }
+                )
     return out
 
 

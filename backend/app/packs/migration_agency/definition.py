@@ -25,7 +25,7 @@ from app.security.seed_v1 import _flags
 from app.security.seed_v1 import stable_id as security_id
 
 KEY: Final = "migration_agency"
-VERSION: Final = "1.0.0"
+VERSION: Final = "1.1.0"
 LODGE: Final = "lodge_applications"
 OVERRIDE: Final = "override_agreement_gate"
 
@@ -72,8 +72,17 @@ MATTER: Final[dict[str, Any]] = {
         F("location", "Applicant Location", "picklist", values=["Onshore", "Offshore"]),
         F("responsible_rma", "Responsible RMA", "user", track_history=True, indexed=True),
         F("case_officer", "Case Officer", "user", track_history=True),
+        F("nomination_trn", "Nomination TRN", "text", max_length=40, searchable=True,
+          help_text="Employer sponsored visas: the sponsor's nomination, lodged before or with the visa."),
+        F("nomination_status", "Nomination Status", "picklist", values=[P("Not Lodged", "#94a3b8"), P("Lodged", "#0ea5e9"), P("Approved", "#16a34a"), P("Refused", "#dc2626")]),
+        F("nomination_approved_date", "Nomination Approved", "date"),
         F("immi_trn", "ImmiAccount TRN", "text", max_length=40, searchable=True),
+        F("lodge_by", "Lodge By", "date", indexed=True, track_history=True,
+          help_text="Invitation or nomination deadline, e.g. a SkillSelect invitation is valid for 60 days."),
         F("lodgement_date", "Lodgement Date", "date", is_readonly=True),
+        F("bridging_visa", "Bridging Visa", "picklist", values=["None", "Bridging A (BVA)", "Bridging B (BVB)", "Bridging C (BVC)", "Bridging E (BVE)"]),
+        F("information_due", "Information Due", "date", indexed=True, track_history=True,
+          help_text="When the Department's request for more information (s 56) must be answered."),
         F("decision_date", "Decision Date", "date"),
         F("outcome", "Outcome", "picklist", values=[P("Granted", "#16a34a"), P("Refused", "#dc2626"), P("Withdrawn", "#64748b"), P("Invalid", "#f59e0b")], track_history=True),
         F("grant_number", "Grant Number", "text", max_length=40),
@@ -85,9 +94,11 @@ MATTER: Final[dict[str, Any]] = {
         F("description", "Notes", "long_text"),
     ],
     "page_layout": [
-        section("Matter", ["name", "client", "sponsor", "visa_type", "stage", "status", "priority", "location", "owner_id"]),
+        section("Matter", ["name", "client", "sponsor", "nomination_trn", "nomination_status", "nomination_approved_date", "visa_type", "stage",
+                           "status", "priority", "location", "owner_id"]),
         section("Team", ["responsible_rma", "case_officer"]),
-        section("Lodgement & Decision", ["immi_trn", "lodgement_date", "decision_date", "outcome", "grant_number", "visa_expiry", "processing_days"]),
+        section("Lodgement & Decision", ["immi_trn", "lodge_by", "lodgement_date", "bridging_visa", "information_due", "decision_date", "outcome",
+                                         "grant_number", "visa_expiry", "processing_days"]),
         section("Fees", ["professional_fee", "government_fee", "agreement_override"]),
         section("Notes", ["description"], 1),
         SYSTEM_SECTION,
@@ -123,7 +134,7 @@ CHECKLIST_ITEM: Final[dict[str, Any]] = {
     "sharing": "controlled_by_parent", "show_in_portal": True,
     "fields": [
         F("matter", "Matter", "master_detail", target="matter", required=True),
-        F("status", "Status", "picklist", values=[P("Requested", "#94a3b8"), P("Received", "#60a5fa"), P("Approved", "#16a34a"), P("Not Required", "#64748b")], default="Requested", track_history=True),
+        F("status", "Status", "picklist", values=[P("Requested", "#94a3b8"), P("Uploaded", "#a78bfa"), P("Received", "#60a5fa"), P("Approved", "#16a34a"), P("Not Required", "#64748b")], default="Requested", track_history=True),
         F("due_date", "Due Date", "date"),
         F("notes", "Notes", "textarea"),
         F("is_public", "Visible to Client", "checkbox", default_value=True),
@@ -146,12 +157,14 @@ SERVICE_AGREEMENT: Final[dict[str, Any]] = {
         F("estimated_disbursements", "Estimated Disbursements", "currency", min=0),
         F("consumer_guide_provided", "Consumer Guide Provided", "checkbox", default_value=False, track_history=True),
         F("status", "Status", "picklist", is_path=True, is_readonly=True, values=[P("Draft", "#94a3b8"), P("Sent", "#60a5fa"), P("Signed", "#16a34a", closed=True), P("Cancelled", "#64748b", closed=True)], default="Draft"),
+        F("agent", "Registered Migration Agent", "user", is_readonly=True),
+        F("agent_marn", "Agent MARN", "text", max_length=10, is_readonly=True),
         F("sent_at", "Sent", "datetime", is_readonly=True),
         F("signed_name", "Signed By", "text", max_length=120, is_readonly=True),
         F("signed_at", "Signed", "datetime", is_readonly=True),
         F("signed_ip", "Signed From IP", "text", max_length=45, is_readonly=True),
     ],
-    "page_layout": [section("Agreement", ["name", "matter", "status", "consumer_guide_provided"]),
+    "page_layout": [section("Agreement", ["name", "matter", "status", "consumer_guide_provided", "agent", "agent_marn"]),
                     section("Fees", ["professional_fee", "government_fee", "estimated_disbursements"]),
                     section("Scope", ["scope"], 1),
                     section("Signature", ["sent_at", "signed_name", "signed_at", "signed_ip"]), SYSTEM_SECTION],
@@ -208,7 +221,7 @@ APP: Final[dict[str, Any]] = {
     "tabs": [{"kind": "home"}, {"kind": "object", "object": "lead"}, {"kind": "object", "object": "contact"},
              {"kind": "object", "object": "account"}, {"kind": "object", "object": "matter"}, {"kind": "object", "object": "visa_type"},
              {"kind": "object", "object": "invoice"}, {"kind": "object", "object": "client_account_transaction"},
-             {"kind": "calendar"}, {"kind": "reports"}],
+             {"kind": "calendar"}, {"kind": "reports"}, {"kind": "dashboards"}],
 }  # fmt: skip
 
 LIST_VIEWS: Final[list[dict[str, Any]]] = [
@@ -219,10 +232,30 @@ LIST_VIEWS: Final[list[dict[str, Any]]] = [
     {"key": "matter_expiring", "object": "matter", "name": "Visas Expiring (90 days)", "columns": ["name", "client", "visa_type", "visa_expiry", "responsible_rma"],
      "filters": {"logic": "and", "conditions": [{"field": "visa_expiry", "op": "equals", "value": "NEXT_N_DAYS:90"}]},
      "sort": [{"field": "visa_expiry", "direction": "asc"}]},
+    {"key": "matter_information_due", "object": "matter", "name": "Further Information Due", "columns": ["name", "client", "visa_type", "information_due", "responsible_rma"],
+     "filters": {"logic": "and", "conditions": [{"field": "stage", "op": "equals", "value": "Further Information"}]},
+     "sort": [{"field": "information_due", "direction": "asc"}]},
+    {"key": "matter_lodge_by", "object": "matter", "name": "Lodgement Deadlines", "columns": ["name", "client", "visa_type", "lodge_by", "stage", "responsible_rma"],
+     "filters": {"logic": "and", "conditions": [{"field": "lodge_by", "op": "is_not_null"}, {"field": "stage", "op": "not_in", "value": ["Lodged", "Further Information", "Decision"]}]},
+     "sort": [{"field": "lodge_by", "direction": "asc"}]},
     {"key": "visa_type_all", "object": "visa_type", "name": "All Visa Types", "columns": VISA_TYPE["list_columns"], "sort": [{"field": "subclass", "direction": "asc"}]},
     {"key": "client_account_transaction_all", "object": "client_account_transaction", "name": "All Transactions",
      "columns": TRANSACTION["list_columns"], "sort": [{"field": "created_at", "direction": "desc"}]},
 ]  # fmt: skip
+
+# Added on upgrade to workspaces that already have the pack (see app.pack_upgrade).
+NEW_ON_FORMS: Final = [
+    ("matter", "nomination_trn", "sponsor"),
+    ("matter", "nomination_status", "nomination_trn"),
+    ("matter", "nomination_approved_date", "nomination_status"),
+    ("matter", "lodge_by", "immi_trn"),
+    ("matter", "bridging_visa", "lodgement_date"),
+    ("matter", "information_due", "bridging_visa"),
+    ("service_agreement", "agent", "consumer_guide_provided"),
+    ("service_agreement", "agent_marn", "agent"),
+]
+NEW_PICKLIST_VALUES: Final = [("checklist_item", "status", "Uploaded", "Requested", "#a78bfa")]
+NEW_APP_TABS: Final = [("migration_practice", {"kind": "dashboards"}, None)]
 
 PACK_OBJECTS: Final = [
     "visa_type",
@@ -264,6 +297,33 @@ PROFILES: Final = [
     ("ma_auditor", "Practice Auditor", "Reads all data including the client account; changes nothing.", "read_only",
      dict.fromkeys(PACK_OBJECTS, "R VA"), (), ()),
 ]  # fmt: skip
+
+SETTINGS_DEFAULTS: Final[dict[str, Any]] = {
+    "retention_years": 7,
+    "expiry_reminder_days": [90, 30],
+    "consumer_guide_required": True,
+    "information_reminder_days": [7, 2, 0],
+    "lodge_by_reminder_days": [14, 7, 2],
+}
+SETTINGS_FIELDS: Final[list[dict[str, Any]]] = [
+    {
+        "key": "consumer_guide_required",
+        "label": "Consumer Guide before sending agreements",
+        "kind": "checkbox",
+        "hint": "Code of Conduct: give the client the Consumer Guide before the service agreement.",
+    },
+    {
+        "key": "expiry_reminder_days",
+        "label": "Visa, passport and sponsorship expiry reminders (days before)",
+        "kind": "days",
+    },
+    {
+        "key": "information_reminder_days",
+        "label": "Further information (s 56) reminders (days before)",
+        "kind": "days",
+    },
+    {"key": "lodge_by_reminder_days", "label": "Lodge-by deadline reminders (days before)", "kind": "days"},
+]
 
 REPORT_FOLDER: Final = "migration_reports"
 REPORTS: Final[list[tuple[str, str, str, dict[str, Any]]]] = [
@@ -399,11 +459,7 @@ def install(conn: Connection) -> None:
         "Matters, outcomes, workload and expiries.",
         pack_key=KEY,
     )
-    set_setting(
-        conn,
-        "migration_agency",
-        {"retention_years": 7, "expiry_reminder_days": [90, 30], "consumer_guide_required": True},
-    )
+    set_setting(conn, "migration_agency", dict(SETTINGS_DEFAULTS))
     _ = stable_id
 
 

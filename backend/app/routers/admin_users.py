@@ -6,6 +6,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, status
+from sqlalchemy.orm import Session
 
 from app.auth.deps import AuthContext, DbSession, require
 from app.core.config import get_settings
@@ -16,18 +17,20 @@ from app.security.catalog import SystemPermission
 from app.services import users as users_service
 from app.services.audit import RequestMeta
 from app.services.email import app_link, queue_email
+from app.services.settings import get_setting
 from app.tenancy import qualify_token
 
 router = APIRouter(prefix="/admin/users", tags=["admin: users"])
 Admin = Annotated[AuthContext, Depends(require(SystemPermission.MANAGE_USERS))]
 
 
-def _send_invitation(user: User, token: str, inviter: str) -> None:
+def _send_invitation(db: Session, user: User, token: str, inviter: str) -> None:
     hours = get_settings().invitation_hours
+    firm = str((get_setting(db, "branding") or {}).get("name") or "Meridian CRM")
     queue_email(
         user.email,
-        "You're invited to Meridian CRM",
-        f"Hello {user.name},\n\n{inviter} has created a Meridian CRM account for you.\n"
+        f"You're invited to {firm}",
+        f"Hello {user.name},\n\n{inviter} has created your account in {firm}'s workspace.\n"
         f"Set your password with this link (valid for {hours} hours, single use):\n\n"
         f"{app_link('/accept-invitation#token=' + token)}\n",
     )
@@ -57,7 +60,7 @@ def list_users(
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(body: UserCreate, request: Request, db: DbSession, auth: Admin) -> UserOut:
     user, token = users_service.create_user(db, auth, body, RequestMeta.from_request(request))
-    _send_invitation(user, qualify_token(db, token), auth.user.name)
+    _send_invitation(db, user, qualify_token(db, token), auth.user.name)
     return UserOut.model_validate(user)
 
 
@@ -77,7 +80,7 @@ def update_user(
 @router.post("/{user_id}/resend-invitation", response_model=Message)
 def resend_invitation(user_id: uuid.UUID, request: Request, db: DbSession, auth: Admin) -> Message:
     user, token = users_service.resend_invitation(db, auth, user_id, RequestMeta.from_request(request))
-    _send_invitation(user, qualify_token(db, token), auth.user.name)
+    _send_invitation(db, user, qualify_token(db, token), auth.user.name)
     return Message(message=f"Invitation sent to {user.email}.")
 
 

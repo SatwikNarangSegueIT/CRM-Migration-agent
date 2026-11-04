@@ -10,7 +10,8 @@ close with money in trust; limitation-date and court-date reminders.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from calendar import monthrange
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -38,6 +39,11 @@ TENTHS = Decimal("0.1")
 
 def _settings(db: Session) -> dict[str, Any]:
     return get_setting(db, K) or {}
+
+
+def _cfg(db: Session, key: str) -> Any:
+    """A practice setting, with the shipped default for settings saved before it existed."""
+    return _settings(db).get(key, d.SETTINGS_DEFAULTS[key])
 
 
 def _has(svc: RecordService, perm: str) -> bool:
@@ -69,11 +75,68 @@ def matter_defaults(change: Change) -> None:
 
 
 def _needs_disclosure(db: Session, data: dict[str, Any]) -> bool:
-    if data.get("billing_method") == "Pro Bono":
+    """Uniform Law s 174: unless pro bono, for a commercial or government client (s 170) or costs are not
+    likely to exceed $750."""
+    if data.get("billing_method") == "Pro Bono" or data.get("client_type") == "Commercial or Government":
         return False
-    threshold = Decimal(str(_settings(db).get("disclosure_threshold", d.DISCLOSURE_THRESHOLD)))
+    threshold = Decimal(str(_cfg(db, "disclosure_threshold")))
     estimate = to_decimal(data.get("estimated_costs"))
     return estimate is None or estimate > threshold
+
+
+def _significant(db: Session, before: Decimal, after: Decimal) -> bool:
+    pct = Decimal(str(_cfg(db, "significant_change_percent")))
+    return after > before and (before <= 0 or (after - before) * 100 >= before * pct)
+
+
+def _disclosure_rules(change: Change) -> None:
+    """How the disclosure was given, and changes that need updated disclosure (s 174(1)(b), s 174(5))."""
+    svc, data, old = change.svc, change.data, change.old
+    if (
+        data.get("costs_disclosure_provided")
+        and not data.get("disclosure_method")
+        and _needs_disclosure(svc.db, data)
+    ):
+        data["disclosure_method"] = d.FULL_DISCLOSURE
+    estimate = to_decimal(data.get("estimated_costs"))
+    limit = Decimal(str(_cfg(svc.db, "standard_disclosure_limit")))
+    if (
+        data.get("disclosure_method") == d.STANDARD_FORM
+        and estimate is not None
+        and estimate > limit
+        and (change.is_changed("disclosure_method") or change.is_changed("estimated_costs"))
+    ):
+        raise rule(
+            f"The uniform standard disclosure form is only for costs up to ${limit:,.0f}; give full written "
+            "disclosure (Uniform Law s 174).",
+            "disclosure_method",
+        )
+    if change.is_changed("costs_disclosure_date") and data.get("costs_disclosure_date"):
+        data["disclosure_update_due"] = False  # updated disclosure given
+    previous = to_decimal(old.get("estimated_costs"))
+    if (
+        change.record is not None
+        and change.is_changed("estimated_costs")
+        and old.get("costs_disclosure_provided")
+        and previous is not None
+        and estimate is not None
+        and _significant(svc.db, previous, estimate)
+        and not change.is_changed("costs_disclosure_date")
+    ):
+        data["disclosure_update_due"] = True
+        uid = data.get("responsible_solicitor") or (
+            str(change.record.owner_id) if change.record.owner_id else None
+        )
+        if uid:
+            notify(
+                svc.db,
+                uuid.UUID(str(uid)),
+                f"Updated costs disclosure due: {change.record.name}",
+                f"The estimate went from ${previous:,.2f} to ${estimate:,.2f}. Tell the client in writing "
+                "(Uniform Law s 174(1)(b)), then update the disclosure date.",
+                f"/o/legal_matter/{change.record.id}",
+                change.record.id,
+            )
 
 
 @on("legal_matter", Event.BEFORE_UPDATE, pack_key=K)
@@ -83,6 +146,8 @@ def matter_rules(change: Change) -> None:
     assert record is not None
     if data.get("costs_disclosure_provided") and not data.get("costs_disclosure_date"):
         data["costs_disclosure_date"] = local_today().isoformat()
+    if not svc.system:
+        _disclosure_rules(change)
     closing = (change.is_changed("stage") and data.get("stage") == "Closed") or (
         change.is_changed("status") and data.get("status") == "Closed"
     )
@@ -98,6 +163,9 @@ def matter_rules(change: Change) -> None:
                     "starts, or record an estimate of $750 or less.",
                     "costs_disclosure_provided",
                 )
+            _engagement_checks(svc, data)
+    if closing and not svc.system and to_decimal(data.get("unbilled_amount")):
+        raise rule("Bill or write off the unbilled time before closing the matter.", "stage")
     if closing:
         balance = ledger_balance(svc.db, "trust_transaction", "legal_matter", record.id)
         if balance != 0:
@@ -105,6 +173,31 @@ def matter_rules(change: Change) -> None:
         data["stage"], data["status"] = "Closed", "Closed"
         data.setdefault("closed_date", None)
         data["closed_date"] = data["closed_date"] or local_today().isoformat()
+
+
+def _engagement_checks(svc: RecordService, data: dict[str, Any]) -> None:
+    """Before engaging: verify the client's identity where the practice requires it (conveyancing: ARNECC
+    verification of identity), and record the limitation date on claims (unless proceedings are filed)."""
+    area = data.get("practice_area")
+    if area and area in (_cfg(svc.db, "voi_practice_areas") or []):
+        client = _matter(svc, data.get("client"))
+        if client is not None and not client.data.get("id_verified"):
+            raise rule(
+                f"Verify {client.name}'s identity (VOI) before acting on a {area} matter: tick Identity "
+                "Verified on the client.",
+                "client",
+            )
+    if (
+        area
+        and area in (_cfg(svc.db, "limitation_practice_areas") or [])
+        and not data.get("limitation_date")
+        and not str(data.get("court_file_number") or "").strip()
+    ):
+        raise rule(
+            f"Record the limitation date before engaging on a {area} matter (or the court file number once "
+            "proceedings are filed).",
+            "limitation_date",
+        )
 
 
 @on("legal_matter", Event.AFTER_CREATE, pack_key=K)
@@ -416,12 +509,45 @@ def _billing_account(svc: RecordService, matter: Record) -> Record:
     return acct
 
 
+def _invoiced_total(svc: RecordService, matter: Record, *, issued_only: bool) -> Decimal:
+    skip = ("Void", "Draft") if issued_only else ("Void",)
+    return sum(
+        (
+            to_decimal(i.data.get("subtotal")) or Decimal(0)
+            for i in live(svc.db, "invoice", legal_matter=str(matter.id))
+            if i.data.get("status") not in skip
+        ),
+        Decimal(0),
+    )
+
+
+def _check_billing_against_disclosure(svc: RecordService, matter: Record, amount: Decimal) -> None:
+    """Billing must not run past what the client was told (Uniform Law s 174(1)(b))."""
+    if matter.data.get("disclosure_update_due"):
+        raise rule(
+            "Give the client updated costs disclosure first (Uniform Law s 174(1)(b)), then record the new "
+            "disclosure date on the matter."
+        )
+    estimate = to_decimal(matter.data.get("estimated_costs"))
+    if estimate is None or not _needs_disclosure(svc.db, matter.data):
+        return
+    total = _invoiced_total(svc, matter, issued_only=False) + amount
+    if _significant(svc.db, estimate, total):
+        raise rule(
+            f"This bill takes the matter to ${total:,.2f}, past the ${estimate:,.2f} estimate disclosed to "
+            "the client. Disclose the revised estimate (Uniform Law s 174(1)(b)) and update it on the "
+            "matter first."
+        )
+
+
 @action(
     "legal_matter",
     "bill_time",
     "Invoice Unbilled Time",
     pack_key=K,
-    visible=lambda r: bool(to_decimal(r.data.get("unbilled_amount"))),
+    visible=lambda r: (
+        bool(to_decimal(r.data.get("unbilled_amount"))) and r.data.get("billing_method") != "Fixed Fee"
+    ),
 )
 def bill_time(svc: RecordService, matter: Record, payload: dict[str, Any]) -> dict[str, Any]:
     entries = [
@@ -431,7 +557,12 @@ def bill_time(svc: RecordService, matter: Record, payload: dict[str, Any]) -> di
     ]
     if not entries:
         raise rule("There is no unbilled billable time on this matter.")
+    if matter.data.get("billing_method") == "Fixed Fee":
+        raise rule("This is a fixed-fee matter: use Invoice Fixed Fee (the time is absorbed).")
     entries.sort(key=lambda e: (e.data.get("entry_date") or "", e.name))
+    _check_billing_against_disclosure(
+        svc, matter, sum((to_decimal(e.data.get("amount")) or Decimal(0) for e in entries), Decimal(0))
+    )
     account = _billing_account(svc, matter)
     invoice = svc.create(
         "invoice",
@@ -459,6 +590,64 @@ def bill_time(svc: RecordService, matter: Record, payload: dict[str, Any]) -> di
     return {"invoice_id": str(invoice.id), "entries": len(entries)}
 
 
+@action(
+    "legal_matter",
+    "bill_fixed_fee",
+    "Invoice Fixed Fee",
+    pack_key=K,
+    visible=lambda r: (
+        r.data.get("billing_method") == "Fixed Fee" and bool(to_decimal(r.data.get("fixed_fee")))
+    ),
+)
+def bill_fixed_fee(svc: RecordService, matter: Record, payload: dict[str, Any]) -> dict[str, Any]:
+    """One line for the agreed fixed fee; time recorded on the matter is absorbed (marked billed)."""
+    fee = to_decimal(matter.data.get("fixed_fee"))
+    if matter.data.get("billing_method") != "Fixed Fee" or not fee:
+        raise rule("Enter the agreed fixed fee on a fixed-fee matter first.", "fixed_fee")
+    if _invoiced_total(svc, matter, issued_only=False) >= money(fee):
+        raise rule("The fixed fee has already been invoiced on this matter.")
+    _check_billing_against_disclosure(svc, matter, money(fee))
+    account = _billing_account(svc, matter)
+    invoice = svc.create(
+        "invoice",
+        {
+            "account": str(account.id),
+            "contact": matter.data.get("client"),
+            "legal_matter": str(matter.id),
+            "notes": f"Agreed fixed fee: {matter.data.get('title') or matter.name}",
+        },
+    )
+    sys = svc.elevated()
+    sys.create(
+        "invoice_line",
+        {
+            "invoice": str(invoice.id),
+            "description": f"Professional fees (agreed fixed fee): {matter.data.get('title') or matter.name}"[
+                :255
+            ],
+            "quantity": 1,
+            "unit_price": decimal_to_json(money(fee)),
+            "sort_order": 1,
+        },
+    )
+    entries = live(svc.db, "legal_time_entry", legal_matter=str(matter.id), status="Unbilled")
+    for e in entries:
+        sys.update("legal_time_entry", e.id, {"status": "Billed", "invoice": str(invoice.id)}, record=e)
+    _refresh_wip(svc, matter.id)
+    return {"invoice_id": str(invoice.id), "entries": len(entries)}
+
+
+@on("invoice", Event.AFTER_CREATE, Event.AFTER_UPDATE, pack_key=K)
+def matter_billed_to_date(change: Change) -> None:
+    """The matter's billed-to-date (issued, not void, ex GST) follows its invoices."""
+    matter = _matter(change.svc, change.data.get("legal_matter") or change.old.get("legal_matter"))
+    if matter is None:
+        return
+    value = decimal_to_json(money(_invoiced_total(change.svc, matter, issued_only=True)))
+    if matter.data.get("billed_to_date") != value:
+        _set(change.svc, matter, {"billed_to_date": value})
+
+
 # ------------------------------------------------------------------ trust ledger
 
 
@@ -483,6 +672,12 @@ def trust_rules(change: Change) -> None:
     if amount <= 0:
         raise rule("Enter a positive amount.", "amount")
     kind = data.get("type")
+    if kind in ("Payment", "Transfer to Office") and data.get("method") in ("Cash", "Card"):
+        raise rule(
+            "Trust money is paid out only by EFT, BPAY or cheque, never in cash (Legal Profession Uniform "
+            "General Rules).",
+            "method",
+        )
     if kind == "Transfer to Office":
         invoice = _matter(svc, data.get("invoice"))
         if (
@@ -509,6 +704,7 @@ def trust_posted(change: Change) -> None:
     matter = _matter(change.svc, change.data.get("legal_matter"))
     if matter is not None:
         _set(change.svc, matter, {"trust_balance": change.data.get("balance_after")})
+        _significant_cash(change, matter)
     if change.data.get("type") != "Transfer to Office":
         return
     invoice = _matter(change.svc, change.data.get("invoice"))
@@ -527,10 +723,37 @@ def trust_posted(change: Change) -> None:
     refresh_invoice_payments(change.svc, invoice)
 
 
+def _significant_cash(change: Change, matter: Record) -> None:
+    """A cash receipt of $10,000 or more is reported to AUSTRAC within 15 business days (Financial
+    Transaction Reports Act 1988, s 15A): a task for the person who receipted it."""
+    data, record = change.data, change.record
+    threshold = Decimal(str(_cfg(change.svc.db, "significant_cash_threshold")))
+    amount = to_decimal(data.get("amount")) or Decimal(0)
+    if record is None or data.get("type") != "Receipt" or data.get("method") != "Cash" or amount < threshold:
+        return
+    change.svc.elevated().create(
+        "task",
+        {
+            "name": f"Report significant cash transaction {record.name} to AUSTRAC"[:255],
+            "related_to": str(matter.id),
+            "priority": "High",
+            "due_date": (local_today() + timedelta(days=21)).isoformat(),
+            "description": f"Cash receipt of ${amount:,.2f} from {data.get('payer_payee') or 'the payer'} on "
+            f"{data.get('transaction_date') or local_today().isoformat()}. Lodge the significant cash "
+            "transaction report with AUSTRAC within 15 business days and record the reference on the trust "
+            "receipt.",
+        },
+        owner_id=change.svc.user_id,
+    )
+
+
 @on("trust_transaction", Event.BEFORE_UPDATE, Event.BEFORE_DELETE, pack_key=K)
 def trust_is_append_only(change: Change) -> None:
-    if not change.svc.system:
-        raise rule("Trust records can't be changed or deleted; record a correcting transaction.")
+    if change.svc.system:
+        return
+    if change.record is not None and change.changed and change.changed <= {"austrac_reference"}:
+        return  # the AUSTRAC report reference is recorded after the receipt
+    raise rule("Trust records can't be changed or deleted; record a correcting transaction.")
 
 
 def trust_statement(svc: RecordService, matter_id: uuid.UUID) -> dict[str, Any]:
@@ -567,6 +790,122 @@ def trust_statement(svc: RecordService, matter_id: uuid.UUID) -> dict[str, Any]:
         "transactions": rows,
         "balance": decimal_to_json(trust_balance(svc.db, matter_id)),
     }
+
+
+# ------------------------------------------------------------------ monthly trust reconciliation
+
+
+def _month_end(value: Any) -> date:
+    try:
+        day = date.fromisoformat(str(value)[:10])
+    except ValueError as exc:
+        raise rule("Choose the last day of the month being reconciled.", "period_end") from exc
+    if day.day != monthrange(day.year, day.month)[1]:
+        raise rule("Choose the last day of the month being reconciled.", "period_end")
+    return day
+
+
+def ledger_total_at(db: Session, period_end: date) -> Decimal:
+    """The sum of every matter's trust ledger up to and including the month end."""
+    total = Decimal(0)
+    for t in live(db, "trust_transaction"):
+        if str(t.data.get("transaction_date") or "9999") <= period_end.isoformat():
+            total += to_decimal(t.data.get("signed_amount")) or Decimal(0)
+    return money(total)
+
+
+@on("trust_reconciliation", Event.BEFORE_CREATE, Event.BEFORE_UPDATE, pack_key=K)
+def reconciliation_rules(change: Change) -> None:
+    """Uniform General Rules: reconcile the trust account monthly, within 15 working days after month end.
+    The bank balance plus uncleared items must equal the total of the matter ledgers; a principal signs it
+    off, after which it can't be changed."""
+    svc, data, old = change.svc, change.data, change.old
+    if svc.system:
+        return
+    if not _has(svc, d.MANAGE_TRUST):
+        raise rule("Reconciling the trust account needs the Manage Trust Account permission.")
+    if old.get("status") == "Reconciled":
+        raise rule(
+            "A signed-off reconciliation can't be changed; record a correcting entry and reconcile again."
+        )
+    period_end = _month_end(data.get("period_end"))
+    clash = svc.db.scalar(
+        select(Record.id)
+        .where(
+            Record.object_api_name == "trust_reconciliation",
+            Record.is_deleted == false(),
+            Record.data["period_end"].astext == period_end.isoformat(),
+            Record.id != (change.record.id if change.record else uuid.uuid4()),
+        )
+        .limit(1)
+    )
+    if clash:
+        raise rule(f"{period_end:%B %Y} has already been reconciled or started.", "period_end")
+    change.system["name"] = f"Trust reconciliation {period_end:%B %Y}"
+    ledger = ledger_total_at(svc.db, period_end)
+    bank = money(to_decimal(data.get("bank_balance")) or 0)
+    adjustments = money(to_decimal(data.get("adjustments")) or 0)
+    data["ledger_total"] = decimal_to_json(ledger)
+    data["difference"] = decimal_to_json(money(bank + adjustments - ledger))
+    if change.record is None:
+        data["prepared_by"] = str(svc.user_id) if svc.user_id else None
+        data["status"] = "Draft"
+    elif change.is_changed("status") and data.get("status") == "Reconciled":
+        difference = money(bank + adjustments - ledger)
+        if difference != 0:
+            raise rule(
+                f"The trust account doesn't reconcile (difference ${difference:,.2f}). Find and correct it, "
+                "and explain any uncleared items, before signing off.",
+                "status",
+            )
+        if not _has(svc, d.CLEAR_CONFLICTS):
+            raise rule("A principal signs off the trust reconciliation.", "status")
+        data["reconciled_by"] = str(svc.user_id)
+        data["reconciled_at"] = format_datetime(datetime.now(UTC))
+
+
+def reconciliation_reminders(db: Session, today: date | None = None) -> int:
+    """From the 10th of each month, remind principals and trust accountants until last month is reconciled."""
+    from app.models import Notification, Profile, User
+
+    today = today or local_today()
+    if today.day < 10:
+        return 0
+    if not live(db, "trust_transaction"):
+        return 0
+    first = today.replace(day=1)
+    last_month_end = first - timedelta(days=1)
+    if any(
+        r.data.get("status") == "Reconciled"
+        for r in live(db, "trust_reconciliation", period_end=last_month_end.isoformat())
+    ):
+        return 0
+    title = f"Trust reconciliation due: {last_month_end:%B %Y}"
+    people = db.scalars(
+        select(User)
+        .join(Profile, Profile.id == User.profile_id)
+        .where(Profile.key.in_(("lp_principal", "lp_accounts")), User.is_active)
+    ).all()
+    count = 0
+    for person in people:
+        exists = db.scalar(
+            select(Notification.id)
+            .where(Notification.user_id == person.id, Notification.title == title)
+            .limit(1)
+        )
+        if exists:
+            continue
+        notify(
+            db,
+            person.id,
+            title,
+            "Reconcile the trust account within 15 working days after month end (Uniform General Rules).",
+            "/o/trust_reconciliation",
+            None,
+        )
+        count += 1
+    db.flush()
+    return count
 
 
 # ------------------------------------------------------------------ court dates and reminders
@@ -610,11 +949,25 @@ def daily_reminders(db: Session, today: date | None = None) -> int:
     limitation = [("legal_matter", "limitation_date", "Limitation date", first_of("responsible_solicitor"))]
     court = [("court_date", "date_time", "Court date", first_of("appearing"))]
     count = date_reminders(db, limitation, s.get("limitation_reminder_days", [90, 30, 7]), today)
+    count += reconciliation_reminders(db, today)
     return count + date_reminders(db, court, s.get("court_reminder_days", [7, 1]), today)
 
 
 locked_when("legal_time_entry", lambda r: r.data.get("status") in ("Billed", "Written Off"))
-locked_when("trust_transaction", lambda r: True)
+locked_when("trust_reconciliation", lambda r: r.data.get("status") == "Reconciled")
+# Trust records are append-only; a large cash receipt stays open until its AUSTRAC reference is recorded.
+locked_when(
+    "trust_transaction",
+    lambda r: (
+        not (
+            r.data.get("type") == "Receipt"
+            and r.data.get("method") == "Cash"
+            and not r.data.get("austrac_reference")
+            and (to_decimal(r.data.get("amount")) or Decimal(0))
+            >= Decimal(d.SETTINGS_DEFAULTS["significant_cash_threshold"])
+        )
+    ),
+)
 
 PACK = register(
     Pack(
@@ -632,5 +985,15 @@ PACK = register(
             d.MANAGE_TRUST: "Manage Trust Account",
         },
         daily_job=daily_reminders,
+        key_dates=(
+            ("court_date", "date_time", "Court", ("appearing",), []),
+            (
+                "legal_matter",
+                "limitation_date",
+                "Limitation date",
+                ("responsible_solicitor", "supervising_principal"),
+                [{"field": "status", "op": "not_equals", "value": "Closed"}],
+            ),
+        ),
     )
 )

@@ -85,6 +85,12 @@ const SECTIONS: { title: string; items: Item[] }[] = [
     title: "Settings",
     items: [
       {
+        to: "/setup/practice",
+        label: "Practice Settings",
+        description: "Rates, compliance thresholds, due dates and reminders.",
+        perms: ["view_setup", "customize_application"],
+      },
+      {
         to: "/setup/settings/company",
         label: "Company & Branding",
         description: "Firm name, ABN, address, logo and colour.",

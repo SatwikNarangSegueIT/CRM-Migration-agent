@@ -221,6 +221,109 @@ def test_profession_workspaces_use_profession_wording(admin_client: TestClient, 
     assert not {"Win Rate", "Total Open Pipeline", "SLA Compliance", "Aged Receivables"} & reports
     dashboards = {d["name"] for d in c.get(f"{API}/dashboards").json()}
     assert not {"Sales Dashboard", "Service Dashboard", "Billing Dashboard"} & dashboards
+    roles = {r["name"] for r in c.get(f"{API}/setup/roles").json()}
+    assert {"Principal Broker", "Broker", "Loan Processor", "Commissions Administrator"} <= roles
+    assert not {"Sales Director", "Sales Representative", "CEO"} & roles
     assert apply_content(db, "lending") == 0  # idempotent
     # A client's trust account is not an organisation.
     assert swap_words("Client Account Balances", [("Account", "Organisation")]) == "Client Account Balances"
+
+
+def test_upgrade_brings_new_pack_fields_to_existing_workspaces(db: Session) -> None:
+    """A workspace set up on an older pack version gets this version's fields on its forms, once."""
+    from app.models import PackInstallation, Profile, ProfileObjectPermission
+    from app.services.settings import set_setting
+
+    apply_domain(db, "legal", None)
+    db.flush()
+    # Simulate the older version: no client_type field, not on the form, nothing recorded as placed.
+    matter = _obj(db, "legal_matter")
+    db.delete(_field(db, "legal_matter", "client_type"))
+    matter.page_layout = [
+        {**sec, "fields": [f for f in sec["fields"] if f != "client_type"]} for sec in matter.page_layout
+    ]
+    set_setting(db, "pack_form_additions", [])
+    row = db.scalar(select(PackInstallation).where(PackInstallation.pack_key == "legal_practice"))
+    assert row is not None
+    row.version = "1.0.0"
+    # An administrator narrowed a grant: the upgrade must not reset it.
+    solicitor = db.scalar(select(Profile).where(Profile.key == "lp_solicitor"))
+    assert solicitor is not None
+    perm = db.get(ProfileObjectPermission, (solicitor.id, "party"))
+    assert perm is not None
+    perm.can_delete = False
+    db.flush()
+    workspace = dict(get_setting(db, "workspace"))
+    set_setting(db, "workspace", {**workspace, "forms_version": 0})
+    db.flush()
+
+    assert upgrade_domain_workspace(db) > 0
+    db.flush()
+    assert _field(db, "legal_matter", "client_type") is not None
+    assert "client_type" in _section(db, "legal_matter", "Costs")
+    assert row.version == "1.1.0"
+    assert db.get(ProfileObjectPermission, (solicitor.id, "party")).can_delete is False  # type: ignore[union-attr]
+    # Taken off the form by an administrator: a later upgrade leaves it off.
+    matter = _obj(db, "legal_matter")
+    matter.page_layout = [
+        {**sec, "fields": [f for f in sec["fields"] if f != "client_type"]} for sec in matter.page_layout
+    ]
+    db.flush()
+    upgrade_domain_workspace(db, force=True)
+    assert "client_type" not in _layout(db, "legal_matter")
+    db.rollback()
+
+
+def test_practice_settings_api(admin_client: TestClient) -> None:
+    c = admin_client
+    for key in ("legal_practice", "accounting_practice"):
+        assert c.post(f"{API}/setup/packs/{key}/install").status_code in (200, 201)
+    groups = {g["pack_key"]: g for g in c.get(f"{API}/setup/practice-settings").json()}
+    legal = groups["legal_practice"]
+    assert (
+        legal["values"]["default_hourly_rate"] == 380 and legal["values"]["significant_change_percent"] == 10
+    )
+    r = c.put(
+        f"{API}/setup/practice-settings/legal_practice",
+        json={
+            "values": {
+                "default_hourly_rate": 420,
+                "court_reminder_days": "14, 7, 1",
+                "voi_practice_areas": ["Wills & Estates"],
+            }
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["values"]["court_reminder_days"] == [14, 7, 1]
+    bad = c.put(
+        f"{API}/setup/practice-settings/legal_practice", json={"values": {"voi_practice_areas": ["Tax"]}}
+    )
+    assert bad.status_code == 422
+    acc = c.put(
+        f"{API}/setup/practice-settings/accounting_practice",
+        json={
+            "values": {
+                "return_due.FBT Return": "25-06",
+                "tax_agent_number": "25678009",
+                "bas_due_dates": "tax_agent",
+            }
+        },
+    )
+    assert acc.status_code == 200, acc.text
+    values = acc.json()["values"]
+    assert (
+        values["return_due.FBT Return"] == "25-06" and values["return_due.Individual Tax Return"] == "31-10"
+    )
+    assert (
+        c.put(
+            f"{API}/setup/practice-settings/accounting_practice",
+            json={"values": {"return_due.FBT Return": "31-02"}},
+        ).status_code
+        == 422
+    )
+    assert (
+        c.put(
+            f"{API}/setup/practice-settings/accounting_practice", json={"values": {"tax_agent_number": "123"}}
+        ).status_code
+        == 422
+    )

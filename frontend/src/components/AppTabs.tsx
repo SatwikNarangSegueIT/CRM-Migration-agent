@@ -77,13 +77,18 @@ export function AppTabs({
   );
   return (
     <div ref={wrap} className="relative min-w-0 flex-1">
-      {/* Off-screen copy used only to measure each tab's width. */}
-      <div ref={measure} aria-hidden="true" className="pointer-events-none invisible absolute flex gap-1">
-        {app.tabs.map((t) => (
-          <span key={tabHref(app, t)} className={tabClass(false)}>
-            {t.label}
-          </span>
-        ))}
+      {/* Hidden copy used only to measure each tab's width; clipped so it never widens the page. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none invisible absolute inset-x-0 top-0 h-0 overflow-hidden"
+      >
+        <div ref={measure} className="flex w-max gap-1">
+          {app.tabs.map((t) => (
+            <span key={tabHref(app, t)} className={tabClass(false)}>
+              {t.label}
+            </span>
+          ))}
+        </div>
       </div>
       <nav aria-label={`${app.label} tabs`} className="flex gap-1">
         {visible.map((t) => link(t))}

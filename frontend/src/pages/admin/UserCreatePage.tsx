@@ -4,7 +4,9 @@ import { useNavigate } from "react-router-dom";
 import { errorMessage, fieldError } from "../../api/client";
 import { usersApi } from "../../api/users";
 import { Alert, Button, Card, PageHeader, SelectField, TextField, useToast } from "../../components/ui";
+import { useAuth } from "../../auth/context";
 import { nullIfBlank } from "../../lib/format";
+import { registrationField } from "../../lib/registration";
 import { useHierarchyRoles, useStaffProfiles } from "./useStaffRoles";
 
 export function UserCreatePage() {
@@ -13,6 +15,8 @@ export function UserCreatePage() {
   const queryClient = useQueryClient();
   const profiles = useStaffProfiles();
   const roles = useHierarchyRoles();
+  const { me } = useAuth();
+  const registration = registrationField(me?.workspace_domain);
   const [form, setForm] = useState({
     email: "",
     name: "",
@@ -128,15 +132,19 @@ export function UserCreatePage() {
             onChange={(e) => set("phone")(e.target.value)}
             error={fieldError(create.error, "phone")}
           />
-          <TextField
-            label="MARA number"
-            hint="7 digits; registered migration agents only."
-            inputMode="numeric"
-            maxLength={7}
-            value={form.mara}
-            onChange={(e) => set("mara")(e.target.value.replace(/\D/g, ""))}
-            error={fieldError(create.error, "mara_number")}
-          />
+          {registration && (
+            <TextField
+              label={registration.label}
+              hint={registration.hint}
+              inputMode={registration.digitsOnly ? "numeric" : "text"}
+              maxLength={registration.maxLength}
+              value={form.mara}
+              onChange={(e) =>
+                set("mara")(registration.digitsOnly ? e.target.value.replace(/\D/g, "") : e.target.value)
+              }
+              error={fieldError(create.error, "mara_number")}
+            />
+          )}
           <div className="flex gap-2 sm:col-span-2">
             <Button
               type="submit"

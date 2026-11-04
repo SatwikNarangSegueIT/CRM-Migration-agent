@@ -26,6 +26,7 @@ from app.engine.records import RecordService
 from app.engine.types import decimal_to_json, format_datetime, money, to_decimal
 from app.models import Notification, Record, RecordShare
 from app.packs import Pack, permission_key, register
+from app.packs.common import date_reminders, live, tell_client
 from app.packs.migration_agency import definition as d
 from app.services import audit
 from app.services.audit import AuditAction
@@ -87,6 +88,13 @@ def matter_rules(change: Change) -> None:
             raise rule(
                 "Moving a matter to Lodged or beyond needs the Lodge Applications permission.", "stage"
             )
+        if new_stage in d.LODGE_STAGES and old_stage not in d.LODGE_STAGES and not svc.system:
+            _lodgement_checks(svc, data)
+        if new_stage == "Further Information" and not data.get("information_due") and not svc.system:
+            raise rule(
+                "Enter the date the Department's request for more information must be answered by.",
+                "information_due",
+            )
         if new_stage == "Lodged" and not data.get("lodgement_date"):
             data["lodgement_date"] = local_today().isoformat()
     if (change.is_changed("outcome") or change.is_changed("decision_date")) and not _can_lodge(svc):
@@ -112,6 +120,27 @@ def matter_rules(change: Change) -> None:
         data["processing_days"] = max(days, 0)
     if change.is_changed("visa_type") and data.get("visa_type"):
         _generate_checklist(svc, record, only_if_empty=True)
+
+
+def _lodgement_checks(svc: RecordService, data: dict[str, Any]) -> None:
+    """Before lodging: the invitation/nomination deadline hasn't passed, and an employer sponsored visa has
+    its sponsor and nomination."""
+    lodge_by = data.get("lodge_by")
+    if lodge_by and local_today().isoformat() > str(lodge_by):
+        raise rule(
+            f"The lodge-by date ({lodge_by}) has passed: the invitation or nomination has expired, so the "
+            "application can't be lodged on it.",
+            "lodge_by",
+        )
+    vt = svc.db.get(Record, ref(data.get("visa_type"))) if data.get("visa_type") else None
+    if vt is not None and vt.data.get("category") == "Employer Sponsored":
+        if not data.get("sponsor"):
+            raise rule("Choose the sponsoring employer before lodging an employer sponsored visa.", "sponsor")
+        if not str(data.get("nomination_trn") or "").strip():
+            raise rule(
+                "Enter the nomination TRN: an employer sponsored visa is linked to the sponsor's nomination.",
+                "nomination_trn",
+            )
 
 
 @on("matter", Event.AFTER_CREATE, pack_key=K)
@@ -272,6 +301,81 @@ def regenerate_checklist(svc: RecordService, matter: Record, payload: dict[str, 
     return {"created": _generate_checklist(svc, matter, only_if_empty=False)}
 
 
+def _outstanding_documents(svc: RecordService, matter: Record) -> list[Record]:
+    items = [
+        i
+        for i in live(svc.db, "checklist_item", matter=str(matter.id))
+        if i.data.get("is_public") and i.data.get("status") in (None, "Requested")
+    ]
+    return sorted(items, key=lambda i: (to_decimal(i.data.get("sort_order")) or 0, i.name))
+
+
+@action(
+    "matter",
+    "send_document_reminder",
+    "Send Document Reminder",
+    pack_key=K,
+    visible=lambda r: r.data.get("stage") in ("Service Agreement", "Document Collection", "Preparation"),
+)
+def send_document_reminder(svc: RecordService, matter: Record, payload: dict[str, Any]) -> dict[str, Any]:
+    """E-mail the client the documents still to come, with a link to upload them in the portal."""
+    items = _outstanding_documents(svc, matter)
+    if not items:
+        raise rule("Every requested document has been provided.")
+    lines = "\n".join(
+        f"- {i.name}" + (f" (by {i.data['due_date']})" if i.data.get("due_date") else "") for i in items
+    )
+    sent = tell_client(
+        svc,
+        contact_ids=[matter.data.get("client")],
+        subject=f"Documents we still need for {matter.name}",
+        message=f"To keep your application moving we still need:\n\n{lines}\n\nUpload each one on its "
+        'checklist item in your client portal, then press "I\'ve Uploaded This".',
+        portal_path=f"/o/matter/{matter.id}",
+        record=matter,
+    )
+    audit.record(
+        svc.db,
+        action=AuditAction.UPDATE,
+        entity_type="record:matter",
+        entity_id=matter.id,
+        summary=f"Document reminder for {len(items)} item(s) "
+        + ("e-mailed to the client" if sent else "not sent: no portal access"),
+        actor_id=svc.user_id,
+        meta=svc.request_meta,
+    )
+    return {"documents": len(items), "emailed": sent}
+
+
+@action(
+    "checklist_item",
+    "mark_uploaded",
+    "I've Uploaded This",
+    pack_key=K,
+    requires_edit=False,
+    portal=True,
+    visible=lambda r: r.data.get("status") in (None, "Requested"),
+)
+def checklist_uploaded(svc: RecordService, item: Record, payload: dict[str, Any]) -> dict[str, Any]:
+    """The client says the document is on the item; the case officer checks it and marks it received."""
+    svc.elevated().update("checklist_item", item.id, {"status": "Uploaded"}, record=item)
+    matter = svc.db.get(Record, ref(item.data.get("matter")))
+    if matter is not None:
+        for field in ("case_officer", "responsible_rma"):
+            uid = matter.data.get(field)
+            if uid:
+                notify(
+                    svc.db,
+                    uuid.UUID(str(uid)),
+                    f"Document uploaded: {item.name}",
+                    matter.name,
+                    f"/o/matter/{matter.id}",
+                    matter.id,
+                )
+                break
+    return svc.serialize(item)
+
+
 # ------------------------------------------------------------------ applicants
 
 
@@ -304,6 +408,23 @@ def agreement_locked(change: Change) -> None:
         raise rule("Signed or cancelled agreements can't be changed.")
 
 
+def _agreement_agent(svc: RecordService, matter: Record | None) -> Any:
+    """The registered migration agent the agreement is with: the matter's responsible RMA, else the sender.
+    The Code of Conduct requires the agent's name and MARN on the agreement."""
+    from app.models import User
+
+    uid = (matter.data.get("responsible_rma") if matter is not None else None) or svc.user_id
+    agent = svc.db.get(User, uuid.UUID(str(uid))) if uid else None
+    if agent is None:
+        raise rule("Choose the responsible RMA on the matter before sending the agreement.")
+    if not agent.mara_number:
+        raise rule(
+            f"Add {agent.name}'s MARN in Setup → Users before sending the agreement (the Code of Conduct "
+            "requires the agent's name and MARN on it)."
+        )
+    return agent
+
+
 @action(
     "service_agreement",
     "send",
@@ -318,15 +439,34 @@ def send_agreement(svc: RecordService, agreement: Record, payload: dict[str, Any
             "Confirm the Consumer Guide has been provided (Code of Conduct).",
             fields={"consumer_guide_provided": "Required"},
         )
+    matter = svc.db.get(Record, ref(agreement.data.get("matter")))
+    agent = _agreement_agent(svc, matter)
     svc.elevated().update(
         "service_agreement",
         agreement.id,
-        {"status": "Sent", "sent_at": format_datetime(datetime.now(UTC))},
+        {
+            "status": "Sent",
+            "sent_at": format_datetime(datetime.now(UTC)),
+            "agent": str(agent.id),
+            "agent_marn": agent.mara_number,
+        },
         record=agreement,
     )
-    matter = svc.db.get(Record, ref(agreement.data.get("matter")))
     if matter is not None and matter.data.get("stage") == "Consultation":
         svc.elevated().update("matter", matter.id, {"stage": "Service Agreement"}, record=matter)
+    if matter is not None:
+        tell_client(
+            svc,
+            contact_ids=[matter.data.get("client")],
+            subject=f"Please sign your service agreement {agreement.name}",
+            message=(
+                f"Your migration agent has sent you a service agreement for matter {matter.name}. "
+                "It sets out the services, our fees and the government charges. Please read it and the "
+                "Consumer Guide, then sign it in your client portal by typing your full name."
+            ),
+            portal_path=f"/o/service_agreement/{agreement.id}",
+            record=agreement,
+        )
     return svc.serialize(agreement)
 
 
@@ -571,6 +711,31 @@ def expiry_reminders(db: Session, today: date | None = None) -> int:
 locked_when("service_agreement", lambda r: r.data.get("status") in ("Signed", "Cancelled"))
 locked_when("client_account_transaction", lambda r: True)
 
+
+def _while(stages: tuple[str, ...], present: bool) -> Callable[[Record], str | None]:
+    """Recipient (case officer, else the responsible RMA, else the owner) while the matter is - or is not
+    yet - in these stages."""
+
+    def pick(r: Record) -> str | None:
+        if (r.data.get("stage") in stages) != present or r.data.get("status") in ("Closed", "Withdrawn"):
+            return None
+        uid = r.data.get("case_officer") or r.data.get("responsible_rma")
+        return str(uid) if uid else (str(r.owner_id) if r.owner_id else None)
+
+    return pick
+
+
+def daily_job(db: Session, today: date | None = None) -> int:
+    """Expiry reminders, plus the Department's further-information deadline and invitation/nomination
+    lodge-by deadlines."""
+    s = get_setting(db, K) or {}
+    count = expiry_reminders(db, today)
+    info = [("matter", "information_due", "Further information due", _while(("Further Information",), True))]
+    lodge = [("matter", "lodge_by", "Lodge-by deadline", _while(tuple(d.LODGE_STAGES), False))]
+    count += date_reminders(db, info, s.get("information_reminder_days", [7, 2, 0]), today)
+    return count + date_reminders(db, lodge, s.get("lodge_by_reminder_days", [14, 7, 2]), today)
+
+
 PACK = register(
     Pack(
         key=K,
@@ -583,6 +748,23 @@ PACK = register(
         bundle=d.bundle,
         install=d.install,
         custom_permissions={d.LODGE: "Lodge Applications", d.OVERRIDE: "Override Agreement Gate"},
-        daily_job=expiry_reminders,
+        daily_job=daily_job,
+        key_dates=(
+            (
+                "matter",
+                "information_due",
+                "Information due",
+                ("responsible_rma", "case_officer"),
+                [{"field": "stage", "op": "equals", "value": "Further Information"}],
+            ),
+            (
+                "matter",
+                "lodge_by",
+                "Lodge by",
+                ("responsible_rma", "case_officer"),
+                [{"field": "stage", "op": "not_in", "value": ["Lodged", "Further Information", "Decision"]}],
+            ),
+            ("matter", "visa_expiry", "Visa expires", ("responsible_rma", "case_officer"), []),
+        ),
     )
 )

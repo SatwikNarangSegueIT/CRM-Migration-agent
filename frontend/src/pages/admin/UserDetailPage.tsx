@@ -16,6 +16,7 @@ import {
   useToast,
 } from "../../components/ui";
 import { formatDateTime, nullIfBlank } from "../../lib/format";
+import { registrationField } from "../../lib/registration";
 import { NotFoundPage } from "../NotFoundPage";
 import { UserStatusBadges } from "./UserStatusBadges";
 import { useHierarchyRoles, useStaffProfiles, type Option } from "./useStaffRoles";
@@ -247,6 +248,8 @@ function UserDetailsForm({
   onReload: () => void;
 }) {
   const toast = useToast();
+  const { me } = useAuth();
+  const registration = registrationField(me?.workspace_domain);
   const [form, setForm] = useState<FormState>(() => toForm(u));
   const save = useMutation({
     mutationFn: (body: UserUpdateInput) => usersApi.update(u.id, body),
@@ -351,15 +354,19 @@ function UserDetailsForm({
         onChange={(e) => set("phone")(e.target.value)}
         error={fieldError(save.error, "phone")}
       />
-      <TextField
-        label="MARA number"
-        hint="7 digits; registered migration agents only."
-        inputMode="numeric"
-        maxLength={7}
-        value={form.mara}
-        onChange={(e) => set("mara")(e.target.value.replace(/\D/g, ""))}
-        error={fieldError(save.error, "mara_number")}
-      />
+      {registration && (
+        <TextField
+          label={registration.label}
+          hint={registration.hint}
+          inputMode={registration.digitsOnly ? "numeric" : "text"}
+          maxLength={registration.maxLength}
+          value={form.mara}
+          onChange={(e) =>
+            set("mara")(registration.digitsOnly ? e.target.value.replace(/\D/g, "") : e.target.value)
+          }
+          error={fieldError(save.error, "mara_number")}
+        />
+      )}
       <div className="sm:col-span-2">
         <Button type="submit" loading={save.isPending} disabled={conflict}>
           Save changes

@@ -28,7 +28,7 @@ from app.engine.types import decimal_to_json, format_datetime, money, to_decimal
 from app.models import Record, RecordShare
 from app.packs import Pack, permission_key, register
 from app.packs.accounting_practice import definition as d
-from app.packs.common import date_reminders, first_of, live
+from app.packs.common import date_reminders, first_of, live, tell_client
 from app.services import audit
 from app.services.audit import AuditAction
 from app.services.settings import get_setting
@@ -83,17 +83,30 @@ def financial_year(today: date, *, ended: bool) -> str:
     return f"{start}-{str(start + 1)[-2:]}"
 
 
+def period_end(kind: str, fy: str) -> date:
+    """When the year being reported ends: 30 June, or 31 March for FBT (the FBT year runs April-March)."""
+    year = int(fy[:4]) + 1
+    return date(year, 3, 31) if kind == "FBT Return" else date(year, 6, 30)
+
+
 def default_due_date(db: Session, kind: str, fy: str) -> str | None:
-    due = (_settings(db).get("return_due") or {}).get(kind)
+    """The practice's due date for the return: the first DD-MM after the year ends."""
+    due = {**d.RETURN_DUE, **(_settings(db).get("return_due") or {})}.get(kind)
     if not due or len(fy) < 4 or not fy[:4].isdigit():
         return None
     day, month = (int(p) for p in due.split("-"))
-    year_end = int(fy[:4]) + 1  # FY 2025-26 ends 30 June 2026
-    year = year_end if month >= 7 else year_end + 1
+    end = period_end(kind, fy)
+    year = end.year if (month, day) > (end.month, end.day) else end.year + 1
     try:
         return date(year, month, day).isoformat()
     except ValueError:
         return None
+
+
+def fbt_year(today: date) -> str:
+    """The last completed FBT year (1 April - 31 March), e.g. "2025-26" from April 2026."""
+    start = today.year - 1 if today.month >= 4 else today.year - 2
+    return f"{start}-{str(start + 1)[-2:]}"
 
 
 # ------------------------------------------------------------------ client entities
@@ -152,8 +165,10 @@ def engagement_defaults(change: Change) -> None:
         raise rule("New engagements start at Not Started.", "stage")
     kind = data.get("type") or ""
     if not data.get("financial_year"):
-        data["financial_year"] = financial_year(
-            local_today(), ended=kind.endswith("Return") or "Audit" in kind
+        data["financial_year"] = (
+            fbt_year(local_today())
+            if kind == "FBT Return"
+            else financial_year(local_today(), ended=kind.endswith("Return") or "Audit" in kind)
         )
     if not data.get("due_date"):
         data["due_date"] = default_due_date(svc.db, kind, data["financial_year"])
@@ -190,8 +205,61 @@ def engagement_rules(change: Change) -> None:
     if new_stage in ("Lodged", "Complete") and data.get("type") in d.LODGED_TYPES:
         if old.get("stage") not in ("Lodged",) and not _can_lodge(svc):
             raise rule("Lodging needs the Lodge Returns permission (registered tax agent).", "stage")
+        if old.get("stage") not in ("Lodged",):
+            _client_cleared_to_lodge(svc, data)
         if new_stage == "Lodged" or not data.get("lodged_date"):
             data["lodged_date"] = data.get("lodged_date") or local_today().isoformat()
+
+
+def _client_cleared_to_lodge(svc: RecordService, data: dict[str, Any]) -> None:
+    """Before lodging for a client: their identity has been verified (TPB proof-of-identity guidance) and a
+    business client has nominated the practice in ATO Online services (client-to-agent linking)."""
+    client = _get(svc, data.get("client"))
+    if client is None:
+        return
+    if not client.data.get("identity_verified"):
+        raise rule(
+            f"Verify {client.name}'s identity before lodging (tick Identity Verified on the client).",
+            "client",
+        )
+    entity = client.data.get("entity_type")
+    if entity and entity not in d.INDIVIDUAL_ENTITIES and not client.data.get("agent_nominated"):
+        raise rule(
+            f"{client.name} hasn't nominated the practice as its tax agent in ATO Online services "
+            "(client-to-agent linking). Ask them to, then tick Agent Nominated on the client.",
+            "client",
+        )
+
+
+@on("engagement", Event.BEFORE_CREATE, Event.BEFORE_UPDATE, pack_key=K)
+def audit_independence(change: Change) -> None:
+    """An SMSF auditor must be independent of the fund: not the person who prepared its accounts or return
+    for the year (APES 110; the auditor independence requirements)."""
+    data = change.data
+    if data.get("type") != "SMSF Audit" or change.svc.system:
+        return
+    if not (
+        change.record is None or change.is_changed("responsible_accountant") or change.is_changed("reviewer")
+    ):
+        return
+    auditors = {str(u) for u in (data.get("responsible_accountant"), data.get("reviewer")) if u}
+    if not auditors:
+        return
+    for other in live(change.svc.db, "engagement", client=str(data.get("client") or "")):
+        if change.record is not None and other.id == change.record.id:
+            continue
+        if other.data.get("type") in ("SMSF Annual Return", "Bookkeeping") and other.data.get(
+            "financial_year"
+        ) == data.get("financial_year"):
+            preparers = {
+                str(u) for u in (other.data.get("responsible_accountant"), other.data.get("reviewer")) if u
+            }
+            if auditors & preparers:
+                raise rule(
+                    "The SMSF auditor must be independent of the fund: choose someone who didn't prepare its "
+                    f"accounts or return for {data.get('financial_year')} ({other.name}).",
+                    "responsible_accountant",
+                )
 
 
 @on("engagement", Event.AFTER_CREATE, pack_key=K)
@@ -367,6 +435,26 @@ def letter_locked(change: Change) -> None:
         raise rule("Signed or cancelled engagement letters can't be changed.")
 
 
+def _letter_practitioner(svc: RecordService, eng: Record | None) -> tuple[Any, str]:
+    """Who the client is engaging and their registration: TPB-registered tax practitioners tell clients
+    their registration (the responsible accountant's number, else the practice's)."""
+    from app.models import User
+
+    uid = (eng.data.get("responsible_accountant") if eng is not None else None) or svc.user_id
+    person = svc.db.get(User, uuid.UUID(str(uid))) if uid else None
+    number = (person.mara_number if person is not None else None) or str(
+        _settings(svc.db).get("tax_agent_number") or ""
+    ).strip()
+    if person is None:
+        raise rule("Choose the responsible accountant on the engagement before sending the letter.")
+    if not number:
+        raise rule(
+            "Add the tax agent number (Setup → Practice settings, or the accountant's own in Setup → Users) "
+            "before sending: the letter tells the client who is registered to act for them."
+        )
+    return person, number
+
+
 @action(
     "engagement_letter",
     "send",
@@ -375,7 +463,32 @@ def letter_locked(change: Change) -> None:
     visible=lambda r: r.data.get("status") == "Draft",
 )
 def send_letter(svc: RecordService, letter: Record, payload: dict[str, Any]) -> dict[str, Any]:
-    _set(svc, letter, {"status": "Sent", "sent_at": format_datetime(datetime.now(UTC))})
+    eng = _get(svc, letter.data.get("engagement"))
+    person, number = _letter_practitioner(svc, eng)
+    _set(
+        svc,
+        letter,
+        {
+            "status": "Sent",
+            "sent_at": format_datetime(datetime.now(UTC)),
+            "practitioner": str(person.id),
+            "tax_agent_number": number,
+        },
+    )
+    if eng is not None:
+        tell_client(
+            svc,
+            contact_ids=[eng.data.get("contact")],
+            account_id=eng.data.get("client"),
+            subject=f"Please sign your engagement letter {letter.name}",
+            message=(
+                f"We have sent you the engagement letter for {eng.data.get('type') or 'your engagement'} "
+                f"{eng.data.get('financial_year') or ''}. It sets out the scope of our work, your "
+                "responsibilities and our fees (APES 305). Please read it and sign it in your client portal."
+            ).replace("  ", " "),
+            portal_path=f"/o/engagement_letter/{letter.id}",
+            record=letter,
+        )
     audit.record(
         svc.db,
         action=AuditAction.UPDATE,
@@ -529,6 +642,52 @@ def _start_if_information_in(svc: RecordService, eng: Record) -> None:
         _set(svc, eng, {"stage": "In Progress"})
 
 
+@action(
+    "engagement",
+    "send_document_reminder",
+    "Send Document Reminder",
+    pack_key=K,
+    visible=lambda r: r.data.get("stage") in ("Not Started", "Awaiting Information", "In Progress"),
+)
+def send_document_reminder(svc: RecordService, eng: Record, payload: dict[str, Any]) -> dict[str, Any]:
+    """E-mail the client the documents still to come for this engagement."""
+    items = sorted(
+        (
+            r
+            for r in live(svc.db, "document_request", engagement=str(eng.id))
+            if r.data.get("is_public") and r.data.get("status") in (None, "Requested")
+        ),
+        key=lambda r: (to_decimal(r.data.get("sort_order")) or 0, r.name),
+    )
+    if not items:
+        raise rule("Every requested document has been provided.")
+    lines = "\n".join(
+        f"- {r.name}" + (f" (by {r.data['due_date']})" if r.data.get("due_date") else "") for r in items
+    )
+    label = f"{eng.data.get('type') or 'engagement'} {eng.data.get('financial_year') or ''}".strip()
+    sent = tell_client(
+        svc,
+        contact_ids=[eng.data.get("contact")],
+        account_id=eng.data.get("client"),
+        subject=f"Documents we still need for your {label}",
+        message=f"To finish your {label} we still need:\n\n{lines}\n\nUpload each one on its request in "
+        'your client portal, then press "I\'ve Uploaded This".',
+        portal_path=f"/o/engagement/{eng.id}",
+        record=eng,
+    )
+    audit.record(
+        svc.db,
+        action=AuditAction.UPDATE,
+        entity_type="record:engagement",
+        entity_id=eng.id,
+        summary=f"Document reminder for {len(items)} item(s) "
+        + ("e-mailed to the client" if sent else "not sent: no portal access"),
+        actor_id=svc.user_id,
+        meta=svc.request_meta,
+    )
+    return {"documents": len(items), "emailed": sent}
+
+
 @on("document_request", Event.AFTER_UPDATE, pack_key=K)
 def requests_complete(change: Change) -> None:
     if not change.is_changed("status") or change.data.get("status") not in ("Accepted", "Not Applicable"):
@@ -602,8 +761,18 @@ def deadline_rules(change: Change) -> None:
         data["status"] = "Overdue" if data["due_date"] < local_today().isoformat() else "Upcoming"
 
 
-def bas_periods(frequency: str, fy_start: int) -> list[tuple[str, date]]:
-    """Activity statement periods for the financial year starting 1 July fy_start and their due dates."""
+def bas_periods(frequency: str, fy_start: int, *, tax_agent: bool = False) -> list[tuple[str, date]]:
+    """Activity statement periods for the financial year starting 1 July fy_start and their due dates.
+
+    tax_agent: the lodgment program concession for quarterly BAS lodged electronically through a tax or
+    BAS agent (Q1 25 November, Q2 28 February, Q3 26 May, Q4 25 August)."""
+    if frequency == "Quarterly" and tax_agent:
+        return [
+            ("Q1 Jul-Sep", date(fy_start, 11, 25)),
+            ("Q2 Oct-Dec", date(fy_start + 1, 2, 28)),
+            ("Q3 Jan-Mar", date(fy_start + 1, 5, 26)),
+            ("Q4 Apr-Jun", date(fy_start + 1, 8, 25)),
+        ]
     if frequency == "Quarterly":
         return [
             ("Q1 Jul-Sep", date(fy_start, 10, 28)),
@@ -640,7 +809,8 @@ def generate_bas_deadlines(svc: RecordService, account: Record, payload: dict[st
         for r in live(svc.db, "lodgement_deadline", client=str(account.id), lodgement_type="BAS")
     }
     created = 0
-    for period, due in bas_periods(str(account.data.get("bas_frequency")), fy_start):
+    agent = _settings(svc.db).get("bas_due_dates") == "tax_agent"
+    for period, due in bas_periods(str(account.data.get("bas_frequency")), fy_start, tax_agent=agent):
         if period in existing or due < today:
             continue
         svc.create(
@@ -686,5 +856,14 @@ PACK = register(
         install=d.install,
         custom_permissions={d.LODGE: "Lodge Returns (registered tax agent)"},
         daily_job=daily_job,
+        key_dates=(
+            (
+                "lodgement_deadline",
+                "due_date",
+                "Lodgement due",
+                ("responsible",),
+                [{"field": "status", "op": "not_equals", "value": "Lodged"}],
+            ),
+        ),
     )
 )

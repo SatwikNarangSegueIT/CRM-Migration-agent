@@ -140,24 +140,40 @@ export function CalendarPage() {
     queryKey: ["calendar", start.toISOString(), days, mine],
     queryFn: ({ signal }) => workspaceApi.calendar(start.toISOString(), end.toISOString(), mine, signal),
   });
-  const byDay = new Map<string, { record: RecordData; kind: "event" | "task"; time: string }[]>();
+  type Item = { id: string; to: string; name: string; kind: "event" | "task" | "date"; time: string };
+  const byDay = new Map<string, Item[]>();
+  const add = (k: string, item: Item) => byDay.set(k, [...(byDay.get(k) ?? []), item]);
+  const clock = (d: Date) =>
+    d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: TIME_ZONE });
   for (const e of data.data?.events ?? []) {
     const s = new Date(String(e.fields.start_at));
-    const k = dayKey(s);
-    byDay.set(k, [
-      ...(byDay.get(k) ?? []),
-      {
-        record: e,
-        kind: "event",
-        time: e.fields.all_day
-          ? "All day"
-          : s.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: TIME_ZONE }),
-      },
-    ]);
+    add(dayKey(s), {
+      id: e.id,
+      to: recordPath("event", e.id),
+      name: e.name,
+      kind: "event",
+      time: e.fields.all_day ? "All day" : clock(s),
+    });
   }
   for (const t of data.data?.tasks ?? []) {
-    const k = String(t.fields.due_date);
-    byDay.set(k, [...(byDay.get(k) ?? []), { record: t, kind: "task", time: "Task" }]);
+    add(String(t.fields.due_date), {
+      id: t.id,
+      to: recordPath("task", t.id),
+      name: t.name,
+      kind: "task",
+      time: "Task",
+    });
+  }
+  // The profession's own dates: court dates, limitation dates, lodgement deadlines, settlements.
+  for (const k of data.data?.dates ?? []) {
+    const when = k.all_day ? null : new Date(k.date);
+    add(when ? dayKey(when) : k.date.slice(0, 10), {
+      id: `${k.object}-${k.id}-${k.label}`,
+      to: recordPath(k.object, k.id),
+      name: k.name,
+      kind: "date",
+      time: when ? `${k.label} ${clock(when)}` : k.label,
+    });
   }
   function shift(n: number) {
     const d = new Date(anchor);
@@ -265,19 +281,19 @@ export function CalendarPage() {
                 )}
               </div>
               <ul className="mt-1 space-y-0.5">
-                {items.map(({ record, kind, time }) => (
-                  <li key={record.id}>
+                {items.map(({ id, to, name, kind, time }) => (
+                  <li key={id}>
                     <Link
-                      to={recordPath(kind, record.id)}
+                      to={to}
                       className={cx(
                         "block truncate rounded px-1 py-0.5 text-xs",
-                        kind === "event"
-                          ? "bg-cyan-50 text-cyan-900 hover:bg-cyan-100"
-                          : "bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
+                        kind === "event" && "bg-cyan-50 text-cyan-900 hover:bg-cyan-100",
+                        kind === "task" && "bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
+                        kind === "date" && "bg-amber-50 text-amber-900 hover:bg-amber-100",
                       )}
-                      title={`${time} ${record.name}`}
+                      title={`${time} ${name}`}
                     >
-                      <span className="font-medium">{time}</span> {record.name}
+                      <span className="font-medium">{time}</span> {name}
                     </Link>
                   </li>
                 ))}

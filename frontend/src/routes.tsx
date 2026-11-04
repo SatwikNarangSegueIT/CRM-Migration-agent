@@ -56,6 +56,7 @@ const SignupPage = lazyPage(() => import("./pages/auth/SignupPage"), "SignupPage
 const VerifySignupPage = lazyPage(() => import("./pages/auth/VerifySignupPage"), "VerifySignupPage");
 const UnsubscribePage = lazyPage(() => import("./pages/public/UnsubscribePage"), "UnsubscribePage");
 const CalendarPage = lazyPage(() => import("./pages/WorkspacePages"), "CalendarPage");
+const StatementPage = lazyPage(() => import("./pages/StatementPage"), "StatementPage");
 const RecycleBinPage = lazyPage(() => import("./pages/WorkspacePages"), "RecycleBinPage");
 const SearchPage = lazyPage(() => import("./pages/WorkspacePages"), "SearchPage");
 const DashboardPage = lazyPage(() => import("./pages/analytics/DashboardsPages"), "DashboardPage");
@@ -77,6 +78,10 @@ const ProfileDetailPage = lazyPage(() => import("./pages/setup/SecurityPages"), 
 const ProfilesPage = lazyPage(() => import("./pages/setup/SecurityPages"), "ProfilesPage");
 const RolesPage = lazyPage(() => import("./pages/setup/SecurityPages"), "RolesPage");
 const SettingsPage = lazyPage(() => import("./pages/setup/SettingsPages"), "SettingsPage");
+const PracticeSettingsPage = lazyPage(
+  () => import("./pages/setup/PracticeSettingsPage"),
+  "PracticeSettingsPage",
+);
 const GroupsQueuesPage = lazyPage(() => import("./pages/setup/SharingPages"), "GroupsQueuesPage");
 const SharingPage = lazyPage(() => import("./pages/setup/SharingPages"), "SharingPage");
 
@@ -150,6 +155,7 @@ export const routes: RouteObject[] = [
       { path: "o/:object/:id", element: <RecordPage /> },
       { path: "search", element: <SearchPage /> },
       { path: "calendar", element: <CalendarPage /> },
+      { path: "statements/:kind/:id", element: <StatementPage /> },
       { path: "recycle-bin", element: <RecycleBinPage /> },
       {
         path: "import",
@@ -222,6 +228,14 @@ export const routes: RouteObject[] = [
             element: (
               <RequirePermission permission={["view_setup", "manage_industry_packs"]}>
                 <PacksPage />
+              </RequirePermission>
+            ),
+          },
+          {
+            path: "setup/practice",
+            element: (
+              <RequirePermission permission={["view_setup", "customize_application"]}>
+                <PracticeSettingsPage />
               </RequirePermission>
             ),
           },

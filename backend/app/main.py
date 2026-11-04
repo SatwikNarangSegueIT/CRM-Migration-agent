@@ -26,6 +26,7 @@ from app.routers import (
     onboarding,
     org_settings,
     portal,
+    practice_settings,
     privacy,
     public,
     records,
@@ -111,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(reports.router)
     api.include_router(data.router)
     api.include_router(org_settings.router)
+    api.include_router(practice_settings.router)
     api.include_router(portal.router)
     api.include_router(portal.staff_router)
     api.include_router(public.router)

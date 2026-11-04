@@ -61,7 +61,8 @@ class Action:
     requires_edit: bool = True
     # Optional extra check, e.g. a pack's custom permission. Returns an error message or None.
     guard: Callable[[RecordService, Record], str | None] | None = None
-    # Shown on the record page when this returns True (UI hint only; the handler re-checks).
+    # Offered (and allowed) only while this returns True for the record: the server refuses it otherwise,
+    # so a signed agreement can't be "sent" again or billed time written off through the API.
     visible: Callable[[Record], bool] | None = None
     pack_key: str | None = None
     # Customer-portal users may run it on records they can see (e.g. signing an agreement).
@@ -113,6 +114,16 @@ def action(
         return fn
 
     return decorator
+
+
+def check_available(action: Action, record: Record) -> None:
+    """Refuse an action that isn't available for the record in its current state."""
+    from app.core.errors import AppError
+
+    if action.visible is not None and not action.visible(record):
+        raise AppError(
+            f"{action.label} isn't available for this record now.", status_code=422, code="business_rule"
+        )
 
 
 _locks: dict[str, Callable[[Record], bool]] = {}

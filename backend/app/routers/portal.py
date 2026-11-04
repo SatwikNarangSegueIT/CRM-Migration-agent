@@ -32,6 +32,14 @@ from app.tenancy import qualify_token
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 staff_router = APIRouter(prefix="/portal-users", tags=["portal users"])
+
+# What a client follows in each profession's portal (the invitation e-mail says so).
+PORTAL_WORK = {
+    "legal": "your matters and court dates",
+    "migration": "your visa matters and document checklist",
+    "accounting": "your engagements and document requests",
+    "lending": "your loan applications",
+}
 PortalAdmin = Annotated[AuthContext, Depends(require(SystemPermission.MANAGE_PORTAL_USERS))]
 
 
@@ -211,6 +219,7 @@ def run_action(
     if action is None or not action.portal or (action.pack_key and action.pack_key not in svc.enabled_packs):
         raise NotFoundError("Action not found.")
     record = svc.get(api_name, record_id, lock=True)
+    hooks.check_available(action, record)
     if action.guard is not None:
         message = action.guard(svc, record)
         if message:
@@ -360,11 +369,15 @@ def invite(contact_id: uuid.UUID, request: Request, svc: Records, auth: PortalAd
     )
     svc.db.commit()
     brand = (get_setting(svc.db, "branding") or {}).get("name", "our customer portal")
+    domain = (get_setting(svc.db, "workspace") or {}).get("domain")
+    work = PORTAL_WORK.get(str(domain), "your cases")
+    portal = "client portal" if domain in PORTAL_WORK else "customer portal"
     queue_email(
         user.email,
         f"Your {brand} portal access",
-        f"Hello {user.name},\n\n{auth.user.name} has invited you to the {brand} customer portal, "
-        "where you can see your cases and invoices.\nSet your password with this link (single use):\n\n"
+        f"Hello {user.name},\n\n{auth.user.name} has invited you to the {brand} {portal}, where you can "
+        f"follow {work}, read and sign documents, upload what we ask for and see your invoices.\n"
+        "Set your password with this link (single use):\n\n"
         f"{app_link('/accept-invitation#token=' + qualify_token(svc.db, token))}\n",
     )
     return _portal_user_out(user)

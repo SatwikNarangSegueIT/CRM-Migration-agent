@@ -98,6 +98,13 @@ def _clean_state() -> None:
         db.execute(text("DELETE FROM platform.settings"))
         db.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
         apply_seeds(db.connection())
+        # A firm that issues tax invoices has an ABN (tests that need it missing clear it).
+        db.execute(
+            text(
+                "UPDATE org_settings SET value = jsonb_set(value, '{abn}', '\"51 824 753 556\"') "
+                "WHERE key = 'company'"
+            )
+        )
         db.commit()
     invalidate_cache()
     invalidate_catalogue()
@@ -138,6 +145,8 @@ def outbox(monkeypatch: pytest.MonkeyPatch) -> Outbox:
     monkeypatch.setattr("app.routers.admin_users.queue_email", box.send)
     monkeypatch.setattr("app.routers.portal.queue_email", box.send)
     monkeypatch.setattr("app.routers.signup.queue_email", box.send)
+    # E-mails sent once a change is saved (a service agreement sent to the client, a reminder).
+    monkeypatch.setattr("app.services.email.queue_email", box.send)
     return box
 
 
@@ -157,6 +166,7 @@ def make_user(
     password: str | None = PASSWORD,
     mfa_secret: str | None = None,
     is_active: bool = True,
+    mara_number: str | None = None,
 ) -> User:
     from app.auth.security import encrypt_field
 
@@ -169,6 +179,7 @@ def make_user(
         is_active=is_active,
         mfa_enabled=mfa_secret is not None,
         mfa_secret_encrypted=encrypt_field(mfa_secret) if mfa_secret else None,
+        mara_number=mara_number,
     )
     db.add(user)
     db.commit()

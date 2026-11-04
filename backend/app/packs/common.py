@@ -160,3 +160,66 @@ def date_reminders(
 
 def json_ready(data: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in data.items() if v is not None}
+
+
+# ------------------------------------------------------------------ telling the client
+
+
+def portal_users_for(db: Session, contact_ids: Iterable[Any], account_id: Any = None) -> list[Any]:
+    """Active portal users for these client contacts (or, failing that, anyone at the client entity)."""
+    from app.models import User
+
+    ids = [uuid.UUID(str(c)) for c in contact_ids if c]
+    users = list(db.scalars(select(User).where(User.contact_id.in_(ids), User.is_active))) if ids else []
+    if not users and account_id:
+        people = select(Record.id).where(
+            Record.object_api_name == "contact",
+            Record.is_deleted == false(),
+            Record.data["account"].astext == str(account_id),
+        )
+        users = list(db.scalars(select(User).where(User.contact_id.in_(people), User.is_active)))
+    return [u for u in users if u.profile.is_portal]
+
+
+def firm_name(db: Session) -> str:
+    from app.services.settings import get_setting
+
+    return str((get_setting(db, "branding") or {}).get("name") or "Your adviser")
+
+
+def tell_client(
+    svc: Any,
+    *,
+    contact_ids: Iterable[Any],
+    account_id: Any = None,
+    subject: str,
+    message: str,
+    portal_path: str,
+    record: Record,
+) -> bool:
+    """E-mail the client's portal users that something is waiting for them (sent after the change is
+    saved). When nobody at the client can sign in yet, the person who acted is told to invite them.
+    Returns whether an e-mail was queued."""
+    from app.services.email import app_link, queue_after_commit
+
+    db = svc.db
+    users = portal_users_for(db, contact_ids, account_id)
+    firm = firm_name(db)
+    for user in users:
+        first = (user.name or "").split(" ")[0] or "there"
+        body = (
+            f"Hello {first},\n\n{message}\n\nOpen it in your client portal:\n{app_link('/portal' + portal_path)}\n\n"
+            f"{firm}\n"
+        )
+        queue_after_commit(db, user.email, subject, body)
+    if not users and svc.user_id:
+        notify(
+            db,
+            svc.user_id,
+            f"The client can't see {record.name} yet",
+            "Nobody at the client can sign in to the portal. Invite them from their client record "
+            "(Invite to portal) so they can open it.",
+            f"/o/{record.object_api_name}/{record.id}",
+            record.id,
+        )
+    return bool(users)

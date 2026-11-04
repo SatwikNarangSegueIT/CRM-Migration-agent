@@ -70,7 +70,8 @@ function MoreMenu({ children }: { children: (close: () => void) => React.ReactNo
 
 function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData }) {
   const api = meta.api_name;
-  const { can } = useAuth();
+  const auth = useAuth();
+  const { can } = auth;
   const toast = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -230,6 +231,28 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
                     >
                       Sharing
                     </MenuItem>
+                    {api === "legal_matter" && auth.object("trust_transaction").read && (
+                      <MenuItem
+                        onClick={() => {
+                          close();
+                          navigate(`/statements/trust/${record.id}`);
+                        }}
+                      >
+                        Trust Statement
+                      </MenuItem>
+                    )}
+                    {api === "contact" &&
+                      auth.me?.workspace_domain === "migration" &&
+                      auth.object("client_account_transaction").read && (
+                        <MenuItem
+                          onClick={() => {
+                            close();
+                            navigate(`/statements/client-account/${record.id}`);
+                          }}
+                        >
+                          Client Account Statement
+                        </MenuItem>
+                      )}
                     {api === "contact" && can("manage_portal_users") && (
                       <MenuItem
                         onClick={() => {
@@ -237,7 +260,7 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
                           invite.mutate();
                         }}
                       >
-                        Invite to Customer Portal
+                        {auth.me?.workspace_domain ? "Invite to Client Portal" : "Invite to Customer Portal"}
                       </MenuItem>
                     )}
                     {(api === "contact" || api === "lead") && can("manage_users") && (

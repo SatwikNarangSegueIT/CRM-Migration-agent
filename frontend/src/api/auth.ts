@@ -31,6 +31,8 @@ export type MeResponse = {
   is_system_admin: boolean;
   /** Can change platform-wide settings (e-mail delivery). */
   is_platform_operator?: boolean;
+  /** The workspace's profession: "legal", "migration", "accounting" or "lending" (null: general CRM). */
+  workspace_domain?: string | null;
 };
 
 export type MfaSetup = { secret: string; otpauth_uri: string; qr_svg_data_uri: string };

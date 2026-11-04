@@ -58,7 +58,36 @@ def _index(stage: Any) -> int:
 
 def _lvr(data: dict[str, Any]) -> None:
     loan, security = to_decimal(data.get("loan_amount")), to_decimal(data.get("security_value"))
-    data["lvr"] = decimal_to_json(money(loan / security * 100)) if loan is not None and security else None
+    lvr = money(loan / security * 100) if loan is not None and security else None
+    data["lvr"] = decimal_to_json(lvr) if lvr is not None else None
+    # Lenders generally require lenders mortgage insurance above 80% LVR.
+    data["lmi_likely"] = bool(lvr is not None and lvr > 80)
+
+
+def monthly_repayment(amount: Decimal, annual_rate: Decimal, years: Decimal) -> Decimal:
+    """Principal and interest repayment per month (standard amortisation)."""
+    n = int(years * 12)
+    if n <= 0:
+        return Decimal(0)
+    r = annual_rate / Decimal(1200)
+    if r == 0:
+        return money(amount / n)
+    return money(amount * r / (1 - (1 + r) ** -n))
+
+
+def _serviceability(db: Session, data: dict[str, Any]) -> None:
+    """The assessment rate (product rate + buffer, with a floor) and the repayment at that rate."""
+    s = _settings(db)
+    rate = to_decimal(data.get("interest_rate"))
+    amount, years = to_decimal(data.get("loan_amount")), to_decimal(data.get("term_years"))
+    if rate is None or amount is None or not years:
+        data["assessment_rate"], data["estimated_repayment"] = None, None
+        return
+    buffer = Decimal(str(s.get("serviceability_buffer", d.SETTINGS_DEFAULTS["serviceability_buffer"])))
+    floor = Decimal(str(s.get("minimum_assessment_rate", d.SETTINGS_DEFAULTS["minimum_assessment_rate"])))
+    assessed = max(rate + buffer, floor)
+    data["assessment_rate"] = decimal_to_json(money(assessed))
+    data["estimated_repayment"] = decimal_to_json(monthly_repayment(amount, assessed, years))
 
 
 # ------------------------------------------------------------------ loan applications
@@ -73,12 +102,14 @@ def loan_defaults(change: Change) -> None:
         data["broker"] = str(svc.user_id)
     data["bid_completed"] = False
     _lvr(data)
+    _serviceability(svc.db, data)
 
 
 @on("loan_application", Event.BEFORE_UPDATE, pack_key=K)
 def loan_rules(change: Change) -> None:
     svc, data, old = change.svc, change.data, change.old
     _lvr(data)
+    _serviceability(svc.db, data)
     if any(change.is_changed(f) for f in BID_FIELDS) and old.get("bid_completed") and not svc.system:
         raise rule("The Best Interests Duty record is locked once the assessment is recorded.")
     if (
@@ -128,11 +159,22 @@ def loan_rules(change: Change) -> None:
             )
         if not data.get("privacy_consent_date"):
             raise rule("Record the client's privacy and credit-check consent.", "privacy_consent_date")
+        if (to_decimal(data.get("broker_fee")) or 0) > 0 and not data.get("credit_quote_date"):
+            raise rule(
+                "A fee is charged to the client: give them a credit quote first (NCCP s 114).",
+                "credit_quote_date",
+            )
     if new_i >= _index("Lodged") and old_i < _index("Lodged"):
         if not data.get("bid_completed"):
             raise rule("Record the preliminary assessment and Best Interests Duty before lodging.", "stage")
         if not data.get("lender"):
             raise rule("Choose the lender.", "lender")
+        if not data.get("credit_proposal_date"):
+            raise rule(
+                "Give the client the credit proposal disclosure (fees, charges and commissions) before "
+                "applying to the lender (NCCP s 121).",
+                "credit_proposal_date",
+            )
         if not _has(svc, d.SUBMIT):
             raise rule("Lodging with a lender needs the Submit to Lender permission.", "stage")
         data["lodged_date"] = data.get("lodged_date") or local_today().isoformat()
@@ -225,13 +267,35 @@ def record_assessment(svc: RecordService, loan: Record, payload: dict[str, Any])
         )
     if not data.get("credit_guide_date") or not data.get("privacy_consent_date"):
         raise rule("Record the credit guide and privacy consent first.", "credit_guide_date")
-    fact_finds = [
-        f
-        for f in live(svc.db, "fact_find", loan_application=str(loan.id))
-        if f.data.get("status") == "Complete"
-    ]
+    fact_finds = sorted(
+        (
+            f
+            for f in live(svc.db, "fact_find", loan_application=str(loan.id))
+            if f.data.get("status") == "Complete"
+        ),
+        key=lambda f: f.updated_at,
+    )
     if not fact_finds:
         raise rule("Complete a fact find (income, expenses, assets and liabilities) first.")
+    latest = fact_finds[-1]
+    if not latest.data.get("expenses_verified"):
+        raise rule(
+            "Verify the client's income and expenses (payslips, bank statements) on the fact find before "
+            "the assessment (NCCP reasonable inquiries and verification).",
+        )
+    if data.get("interest_rate") is None or not data.get("term_years"):
+        raise rule(
+            "Enter the product's interest rate and the loan term to assess the repayments.", "interest_rate"
+        )
+    repayment = to_decimal(data.get("estimated_repayment")) or Decimal(0)
+    surplus = to_decimal(latest.data.get("monthly_surplus")) or Decimal(0)
+    if repayment > surplus:
+        raise rule(
+            f"The loan looks unsuitable: repayments of ${repayment:,.2f} a month at the "
+            f"{data.get('assessment_rate')}% assessment rate exceed the client's monthly surplus of "
+            f"${surplus:,.2f} (NCCP: they could only repay with substantial hardship). If the loan replaces "
+            "a debt in their commitments, remove that repayment from the fact find."
+        )
     values: dict[str, Any] = {"bid_completed": True, "preliminary_assessment_date": local_today().isoformat()}
     if _index(data.get("stage")) < _index("Preliminary Assessment"):
         values["stage"] = "Preliminary Assessment"
@@ -246,6 +310,62 @@ def record_assessment(svc: RecordService, loan: Record, payload: dict[str, Any])
         meta=svc.request_meta,
     )
     return svc.serialize(loan)
+
+
+@action(
+    "loan_application",
+    "record_discharge",
+    "Record Discharge",
+    pack_key=K,
+    visible=lambda r: r.data.get("stage") == "Settled" and not r.data.get("discharged_date"),
+)
+def record_discharge(svc: RecordService, loan: Record, payload: dict[str, Any]) -> dict[str, Any]:
+    """The loan was repaid or refinanced away. Within the lender's clawback period an expected clawback of
+    the upfront commission is recorded (half after the lender's halving point, if it has one)."""
+    if loan.data.get("stage") != "Settled":
+        raise rule("Only settled loans can be discharged.")
+    if loan.data.get("discharged_date"):
+        raise rule(f"The discharge was recorded on {loan.data['discharged_date']}.")
+    when = str(payload.get("discharged_date") or local_today().isoformat())[:10]
+    try:
+        discharged = date.fromisoformat(when)
+    except ValueError as exc:
+        raise BusinessRuleError("Enter the discharge date.", fields={"discharged_date": "Invalid"}) from exc
+    _set(svc, loan, {"discharged_date": discharged.isoformat()})
+    lender = _get(svc, loan.data.get("lender"))
+    settled = loan.data.get("settlement_date")
+    if lender is None or not settled:
+        return {"clawback": None}
+    months = (discharged.year - date.fromisoformat(settled).year) * 12 + (
+        discharged.month - date.fromisoformat(settled).month
+    )
+    window = int(to_decimal(lender.data.get("clawback_months")) or 0)
+    if months >= window:
+        return {"clawback": None}
+    upfront = sum(
+        (
+            to_decimal(c.data.get("amount")) or Decimal(0)
+            for c in live(svc.db, "commission", loan_application=str(loan.id))
+            if c.data.get("type") == "Upfront"
+        ),
+        Decimal(0),
+    )
+    if upfront <= 0:
+        return {"clawback": None}
+    half = to_decimal(lender.data.get("clawback_half_after"))
+    share = Decimal("0.5") if half is not None and months >= int(half) else Decimal(1)
+    clawback = svc.elevated().create(
+        "commission",
+        {
+            "loan_application": str(loan.id),
+            "type": "Clawback",
+            "amount": decimal_to_json(money(upfront * share)),
+            "status": "Expected",
+            "period": discharged.isoformat(),
+            "reference": f"Discharged {discharged.isoformat()}, {months} months after settlement",
+        },
+    )
+    return {"clawback": str(clawback.id), "amount": decimal_to_json(money(upfront * share))}
 
 
 # ------------------------------------------------------------------ fact finds
@@ -354,5 +474,16 @@ PACK = register(
         install=d.install,
         custom_permissions={d.SUBMIT: "Submit to Lender", d.COMMISSIONS: "Manage Commissions"},
         daily_job=daily_reminders,
+        key_dates=(
+            ("loan_application", "settlement_date", "Settlement", ("broker", "processor"), []),
+            (
+                "loan_application",
+                "approval_expiry",
+                "Approval expires",
+                ("broker", "processor"),
+                [{"field": "stage", "op": "not_in", "value": ["Settled", "Declined"]}],
+            ),
+            ("loan_application", "fixed_rate_expiry", "Fixed rate expires", ("broker",), []),
+        ),
     )
 )

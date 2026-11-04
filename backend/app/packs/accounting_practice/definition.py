@@ -25,7 +25,7 @@ from app.packs.common import ProfileSpec, install_profiles
 from app.security.seed_v1 import stable_id as security_id
 
 KEY: Final = "accounting_practice"
-VERSION: Final = "1.0.0"
+VERSION: Final = "1.1.0"
 APP_KEY: Final = "accounting_practice"
 LODGE: Final = "lodge_returns"
 
@@ -68,6 +68,8 @@ ENGAGEMENT: Final[dict[str, Any]] = {
         F("due_date", "Lodgement Due", "date", indexed=True, track_history=True),
         F("lodged_date", "Lodged", "date", is_readonly=True),
         F("ato_reference", "ATO Lodgement Reference", "text", max_length=40, searchable=True),
+        F("noa_date", "Notice of Assessment", "date", help_text="When the ATO's notice of assessment was received."),
+        F("noa_amount", "Refund / (Payable)", "currency", help_text="Refund as a positive amount, tax payable as negative."),
         F("fee_type", "Fee Type", "picklist", values=["Fixed Fee", "Time-based"], default="Fixed Fee"),
         F("fee", "Agreed Fee", "currency", min=0),
         F("letter_signed", "Engagement Letter Signed", "checkbox", default_value=False, is_readonly=True, track_history=True),
@@ -79,7 +81,7 @@ ENGAGEMENT: Final[dict[str, Any]] = {
     "page_layout": [
         section("Engagement", ["name", "client", "contact", "type", "financial_year", "period", "stage", "owner_id"]),
         section("Team", ["responsible_accountant", "reviewer"]),
-        section("Lodgement", ["due_date", "lodged_date", "ato_reference"]),
+        section("Lodgement", ["due_date", "lodged_date", "ato_reference", "noa_date", "noa_amount"]),
         section("Fees", ["fee_type", "fee", "letter_signed", "time_cost", "unbilled_amount", "recoverability"]),
         section("Scope", ["description"], 1),
         SYSTEM_SECTION,
@@ -106,12 +108,14 @@ LETTER: Final[dict[str, Any]] = {
         F("fee_estimate", "Fee / Basis of Fees", "currency", min=0),
         F("valid_until", "Covers Engagements Until", "date"),
         F("status", "Status", "picklist", is_path=True, is_readonly=True, values=[P("Draft", "#94a3b8"), P("Sent", "#60a5fa"), P("Signed", "#16a34a", closed=True), P("Cancelled", "#64748b", closed=True)], default="Draft"),
+        F("practitioner", "Tax Practitioner", "user", is_readonly=True),
+        F("tax_agent_number", "Tax Agent Number", "text", max_length=12, is_readonly=True),
         F("sent_at", "Sent", "datetime", is_readonly=True),
         F("signed_name", "Signed By", "text", max_length=120, is_readonly=True),
         F("signed_at", "Signed", "datetime", is_readonly=True),
         F("signed_ip", "Signed From IP", "text", max_length=45, is_readonly=True),
     ],
-    "page_layout": [section("Letter", ["name", "engagement", "status", "fee_estimate", "valid_until"]),
+    "page_layout": [section("Letter", ["name", "engagement", "status", "fee_estimate", "valid_until", "practitioner", "tax_agent_number"]),
                     section("Terms", ["scope", "client_responsibilities"], 1),
                     section("Signature", ["sent_at", "signed_name", "signed_at", "signed_ip"]), SYSTEM_SECTION],
     "list_columns": ["name", "engagement", "status", "fee_estimate", "signed_at"],
@@ -199,6 +203,29 @@ STANDARD_FIELDS: Final[list[dict[str, Any]]] = [
     },
     {**F("client_manager", "Client Manager", "user", indexed=True), "object": "account"},
     {
+        **F(
+            "identity_verified",
+            "Identity Verified",
+            "checkbox",
+            default_value=False,
+            track_history=True,
+            help_text="Proof of identity sighted for the client and its contact (TPB and ATO requirements).",
+        ),
+        "object": "account",
+    },
+    {**F("identity_verified_date", "Identity Verified On", "date"), "object": "account"},
+    {
+        **F(
+            "agent_nominated",
+            "Agent Nominated (Client-to-Agent Linking)",
+            "checkbox",
+            default_value=False,
+            track_history=True,
+            help_text="Business clients nominate the practice in ATO Online services for business.",
+        ),
+        "object": "account",
+    },
+    {
         **F("engagement", "Engagement", "lookup", target="engagement", delete_rule="clear"),
         "object": "invoice",
     },
@@ -261,6 +288,45 @@ PROFILES: Final[list[ProfileSpec]] = [
       "engagement_time_entry": "R VA", "account": "RCE VA", "contact": "RCE VA"}, ("manage_portal_users",), ()),
 ]  # fmt: skip
 
+# Added on upgrade to workspaces that already have the pack (see app.pack_upgrade).
+NEW_ON_FORMS: Final = [
+    ("engagement", "noa_date", "ato_reference"),
+    ("engagement", "noa_amount", "noa_date"),
+    ("engagement_letter", "practitioner", "valid_until"),
+    ("engagement_letter", "tax_agent_number", "practitioner"),
+    ("account", "identity_verified", "client_manager"),
+    ("account", "identity_verified_date", "identity_verified"),
+    ("account", "agent_nominated", "identity_verified_date"),
+]
+INDIVIDUAL_ENTITIES: Final = {"Individual", "Sole Trader"}
+
+RETURN_DUE: Final[dict[str, str]] = {
+    "Individual Tax Return": "31-10", "Company Tax Return": "28-02", "Trust Tax Return": "31-03",
+    "Partnership Tax Return": "31-03", "SMSF Annual Return": "28-02", "FBT Return": "21-05",
+}  # fmt: skip
+SETTINGS_DEFAULTS: Final[dict[str, Any]] = {
+    "default_charge_out_rate": 220,
+    "deadline_reminder_days": [14, 3, 0],
+    "letter_required": True,
+    "tax_agent_number": "",
+    "bas_due_dates": "standard",
+    # Default due dates (DD-MM after the period ends); confirm against the tax agent lodgment program.
+    "return_due": dict(RETURN_DUE),
+}
+SETTINGS_FIELDS: Final[list[dict[str, Any]]] = [
+    {"key": "tax_agent_number", "label": "Practice tax agent number", "kind": "text",
+     "hint": "The practice's TPB registration, shown on engagement letters when the practitioner has no number of their own."},
+    {"key": "default_charge_out_rate", "label": "Default charge-out rate", "kind": "currency"},
+    {"key": "letter_required", "label": "Engagement letter before work starts (APES 305)", "kind": "checkbox"},
+    {"key": "bas_due_dates", "label": "BAS due dates", "kind": "select",
+     "options": [{"value": "standard", "label": "Standard ATO dates"},
+                 {"value": "tax_agent", "label": "Tax agent lodgment program (quarterly concession)"}],
+     "hint": "The concession gives quarterly BAS lodged electronically through an agent more time (e.g. Q1 on 25 November)."},
+    {"key": "deadline_reminder_days", "label": "Lodgement deadline reminders (days before)", "kind": "days"},
+    *[{"key": f"return_due.{kind}", "label": f"{kind} due (DD-MM)", "kind": "text",
+       "hint": "After the year ends (30 June; 31 March for FBT)."} for kind in RETURN_DUE],
+]  # fmt: skip
+
 REPORT_FOLDER: Final = "accounting_reports"
 _UNBILLED = {
     "logic": "and",
@@ -320,15 +386,4 @@ def install(conn: Connection) -> None:
         "Engagements, deadlines, workload and WIP.",
         pack_key=KEY,
     )
-    set_setting(
-        conn,
-        KEY,
-        {
-            "default_charge_out_rate": 220,
-            "deadline_reminder_days": [14, 3, 0],
-            "letter_required": True,
-            # Default due dates (DD-MM after the financial year ends); confirm against the lodgment program.
-            "return_due": {"Individual Tax Return": "31-10", "Company Tax Return": "28-02", "Trust Tax Return": "31-03",
-                           "Partnership Tax Return": "31-03", "SMSF Annual Return": "28-02", "FBT Return": "21-05"},
-        },
-    )  # fmt: skip
+    set_setting(conn, KEY, {**SETTINGS_DEFAULTS, "return_due": dict(RETURN_DUE)})

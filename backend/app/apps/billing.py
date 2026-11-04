@@ -438,6 +438,11 @@ def issue_invoice(svc: RecordService, invoice: Record, payload: dict[str, Any]) 
     if not _children(svc, "invoice_line", "invoice", invoice.id):
         raise rule("Add at least one line before issuing.")
     billing = get_setting(svc.db, "billing")
+    company = get_setting(svc.db, "company") or {}
+    if billing.get("gst_registered", True) and not str(company.get("abn") or "").strip():
+        # A tax invoice must show the supplier's ABN (GST law); without it the client can't claim the GST
+        # credit and may have to withhold tax from the payment.
+        raise rule("Add the practice's ABN in Setup → Company before issuing tax invoices.")
     prefix = str(billing.get("invoice_prefix") or "INV-")
     digits = int(billing.get("invoice_number_digits") or 6)
     number = format_number(svc.db, "invoice_number", prefix + "{" + "0" * digits + "}")
