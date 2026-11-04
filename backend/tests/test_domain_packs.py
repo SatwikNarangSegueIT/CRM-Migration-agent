@@ -370,7 +370,7 @@ def test_signup_shapes_the_workspace(
     assert describe.status_code == 200
 
 
-def test_domain_related_lists_follow_the_visible_apps(db: Session) -> None:  # noqa: F811
+def test_domain_related_lists_follow_the_visible_apps(db: Session) -> None:
     from sqlalchemy import select as _select
 
     from app.domains import apply_domain

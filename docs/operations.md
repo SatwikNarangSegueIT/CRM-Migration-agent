@@ -31,6 +31,32 @@ psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -1 -f deploy/neon_upgrade_v4.sql
 
 `python -m app.cli migrate` from the deployed API does the same thing.
 
+## Upgrading to v5 (sign-up fixes, domain layouts)
+
+Run [`deploy/neon_upgrade_v5.sql`](../deploy/neon_upgrade_v5.sql) once, in the Neon SQL Editor or with
+`psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -1 -f deploy/neon_upgrade_v5.sql`. It is safe to run again.
+It brings the `public` schema to `c3f1d2e8a901` if it is behind, repairs "Contact Person People" labels and
+gives every profession workspace related lists that match its apps (Matters on a client instead of
+Opportunities and Cases); related lists an administrator already changed are left alone. The same is done by
+`python -m app.cli refresh-domain-layouts`.
+
+## Sign-up checklist
+
+Sign-up creates a schema per firm, so it needs more than the rest of the app:
+
+- **`DATABASE_URL_DIRECT`** set to the *direct* Neon endpoint (no `-pooler` in the host). New workspaces are
+  migrated through it. (Since v5 migrations also work through the pooler, but the direct endpoint is faster
+  and avoids PgBouncer limits on DDL.)
+- **E-mail that actually leaves**: `EMAIL_BACKEND=smtp` with SMTP settings. If no Celery worker is deployed,
+  set **`EMAIL_DELIVERY=inline`** so the API sends the confirmation link itself; otherwise links queue in
+  Redis and never arrive. Without Redis at all the API falls back to sending directly.
+- **`PUBLIC_APP_URL`** is the address people open (links in e-mails use it).
+- The **warm pool** (`SIGNUP_WARM_POOL_SIZE`, default 2) keeps pre-built workspaces ready so confirming the
+  e-mail takes about a second. The API refills it at start-up and after each sign-up; without it the first
+  confirmation builds a schema on the spot (seconds locally, longer over a slow link).
+- `PASSWORD_BREACH_CHECK=true` (default) rejects passwords found in known breaches via Have I Been Pwned
+  (only 5 characters of the SHA-1 hash leave the server; fails open if the service can't be reached).
+
 ## Deploying
 
 The `Deploy` workflow builds both images, then for **staging** and (after approval) **production**:
@@ -107,6 +133,13 @@ Check the worker logs for `Task ... succeeded`; a job that has not run in 2 × i
   failed logins spike (`LOGIN_FAILED` audit entries), Neon compute at max.
 
 ## Performance
+
+- Host the API in the **same region as Neon** (AWS ap-southeast-2, Sydney). Each API request makes a few
+  SQL round trips; at 150 ms per trip from another continent a page feels slow whatever the code does.
+- On Neon, turn off **scale to zero** for production (or raise the suspend timeout): waking a suspended
+  compute adds 0.5-2 s to the first request. The API also opens its first connections at start-up.
+- `WEB_CONCURRENCY` sets uvicorn workers (about 2 per CPU). Responses are gzip-compressed by the API and
+  nginx; static assets are cached for a year (file names are content-hashed).
 
 Target (plan v3 §14): list view p95 < 400 ms with 1 M records per object at 50 concurrent users.
 Procedure: [`loadtest/list_views.js`](../loadtest/list_views.js) (k6) against a disposable branch filled with
