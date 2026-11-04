@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import smtplib
 import ssl
+import threading
 from email.message import EmailMessage
 
 from app.core.config import get_settings
@@ -81,11 +82,32 @@ def deliver_message(
         smtp.send_message(message)
 
 
+def _deliver_in_background(to: str, subject: str, body: str) -> None:
+    def run() -> None:
+        try:
+            deliver_email(to, subject, body)
+        except Exception:
+            logger.exception("E-mail delivery failed", extra={"to": to, "subject": subject})
+
+    threading.Thread(target=run, name="email-fallback", daemon=True).start()
+
+
 def queue_email(to: str, subject: str, body: str) -> None:
-    """Hand the e-mail to the worker. Call only after the database transaction has committed."""
+    """Hand the e-mail to the worker. Call only after the database transaction has committed.
+
+    When the queue is unreachable (no Redis, worker not deployed) the e-mail is sent from the API process
+    instead, so sign-up links, password resets and invitations still arrive.
+    """
+    if get_settings().email_delivery == "inline":
+        _deliver_in_background(to, subject, body)
+        return
     from app.worker.tasks import send_email_task  # local import: avoids a worker <-> service cycle
 
-    send_email_task.delay(to, subject, body)
+    try:
+        send_email_task.delay(to, subject, body)
+    except Exception:
+        logger.warning("Task queue unavailable; sending e-mail directly", extra={"to": to})
+        _deliver_in_background(to, subject, body)
 
 
 def app_link(path: str) -> str:

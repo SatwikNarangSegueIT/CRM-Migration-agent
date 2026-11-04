@@ -153,21 +153,54 @@ def warm_schemas(url: str | None = None) -> list[str]:
         engine.dispose()
 
 
+_WARM_POOL_LOCK = 72_410_001  # pg advisory lock id: one builder at a time across API and worker processes
+
+
 def fill_warm_pool(size: int, url: str | None = None) -> int:
-    """Keep ``size`` pre-built schemas ready so sign-up is instant. Returns how many were built."""
+    """Keep ``size`` pre-built schemas ready so sign-up is instant. Returns how many were built.
+
+    Only one process builds at a time (advisory lock); others return 0 immediately.
+    """
     built = 0
-    while len(warm_schemas(url)) < size:
-        schema = build_schema(url)
-        engine = _engine(url)
-        try:
-            with engine.begin() as conn:
-                conn.execute(
-                    text("INSERT INTO platform.warm_schemas (schema_name) VALUES (:s)"), {"s": schema}
-                )
-        finally:
-            engine.dispose()
-        built += 1
+    engine = _engine(url)
+    try:
+        with engine.connect() as lock_conn:
+            got = lock_conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _WARM_POOL_LOCK}).scalar()
+            lock_conn.commit()
+            if not got:
+                return 0
+            try:
+                while len(warm_schemas(url)) < size:
+                    schema = build_schema(url)
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("INSERT INTO platform.warm_schemas (schema_name) VALUES (:s)"), {"s": schema}
+                        )
+                    built += 1
+            finally:
+                lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _WARM_POOL_LOCK})
+                lock_conn.commit()
+    finally:
+        engine.dispose()
     return built
+
+
+def refill_warm_pool_soon() -> None:
+    """Top up the warm pool in a background thread of this process (no worker needed)."""
+    import logging
+    import threading
+
+    size = get_settings().signup_warm_pool_size
+    if size <= 0:
+        return
+
+    def run() -> None:
+        try:
+            fill_warm_pool(size)
+        except Exception:
+            logging.getLogger("app.signup").exception("Could not refill the warm pool")
+
+    threading.Thread(target=run, name="warm-pool", daemon=True).start()
 
 
 def _take_warm_schema(conn: Connection) -> str | None:
@@ -217,7 +250,11 @@ def create_tenant(
             else:
                 warm = True
         if not warm:
-            migrate_tenant(schema, url)
+            try:
+                migrate_tenant(schema, url)
+            except Exception:
+                drop_tenant(schema, url)
+                raise
             with engine.begin() as conn:
                 conn.execute(
                     text("UPDATE platform.tenants SET status = 'active' WHERE id = :id"), {"id": tenant_id}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -85,10 +86,48 @@ def pending_signup(db: Session, token: str) -> SignupRequest:
 
 def verify_and_provision(platform: Session, tenant_db: Session, token: str, meta: RequestMeta) -> Provisioned:
     """Create the workspace and its administrator, then sign the administrator in."""
-    from app.db.migrate import create_tenant
+    from app.db.migrate import create_tenant, drop_tenant, refill_warm_pool_soon
 
     req = pending_signup(platform, token)
-    tenant_id, slug, schema = create_tenant(req.firm_name, req.domain)
+    try:
+        tenant_id, slug, schema = create_tenant(req.firm_name, req.domain)
+    except Exception as exc:
+        logger.exception("Workspace provisioning failed", extra={"domain": req.domain})
+        raise AppError(
+            "We couldn't create your workspace just now. Open the link again in a minute.",
+            status_code=503,
+            code="provisioning_failed",
+        ) from exc
+    refill_warm_pool_soon()
+    try:
+        return _set_up_workspace(platform, tenant_db, req, tenant_id, slug, schema, meta)
+    except Exception as exc:
+        # Leave nothing half-built: the link stays valid, so the person can simply try again.
+        tenant_db.rollback()
+        platform.rollback()
+        try:
+            drop_tenant(schema)
+        except Exception:
+            logger.exception("Could not remove a half-built workspace", extra={"schema": schema})
+        if isinstance(exc, AppError):
+            raise
+        logger.exception("Workspace set-up failed", extra={"domain": req.domain})
+        raise AppError(
+            "We couldn't finish setting up your workspace. Open the link again in a minute.",
+            status_code=503,
+            code="provisioning_failed",
+        ) from exc
+
+
+def _set_up_workspace(
+    platform: Session,
+    tenant_db: Session,
+    req: SignupRequest,
+    tenant_id: uuid.UUID,
+    slug: str,
+    schema: str,
+    meta: RequestMeta,
+) -> Provisioned:
     tenant = by_schema(schema)
     if tenant is None:  # pragma: no cover - create_tenant refreshes the catalogue
         raise AppError("The workspace could not be created. Try again.", status_code=503)

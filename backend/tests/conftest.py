@@ -23,6 +23,7 @@ os.environ.update(
         "REDIS_URL": TEST_REDIS_URL,
         "MFA_REQUIRED_FOR_STAFF": "true",
         "RATE_LIMIT_ENABLED": "false",
+        "SIGNUP_WARM_POOL_SIZE": "0",
         "EMAIL_BACKEND": "console",
         "LOG_JSON": "true",
         "LOG_LEVEL": "WARNING",

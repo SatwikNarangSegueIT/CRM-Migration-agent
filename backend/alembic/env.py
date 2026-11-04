@@ -59,7 +59,6 @@ def run_migrations_online() -> None:
     engine = build_engine(get_settings(), url=_url(), null_pool=True)
     with engine.connect() as connection:
         connection.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
-        connection.exec_driver_sql(f"SET search_path TO {search_path_for(schema)}")
         connection.commit()
         context.configure(
             connection=connection,
@@ -69,6 +68,10 @@ def run_migrations_online() -> None:
             version_table_schema=None if schema == "public" else schema,
         )
         with context.begin_transaction():
+            # SET LOCAL inside the migration transaction: a session-level SET followed by a commit is
+            # lost (or leaks to another client) on PgBouncer transaction pooling, e.g. Neon "-pooler"
+            # URLs, and the tables would then be created in the wrong schema.
+            connection.exec_driver_sql(f"SET LOCAL search_path TO {search_path_for(schema)}")
             context.run_migrations()
     engine.dispose()
 

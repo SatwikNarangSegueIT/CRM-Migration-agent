@@ -113,3 +113,57 @@ def test_first_run_guide(client: TestClient, outbox: Outbox, no_mfa: None) -> No
     assert [s["key"] for s in guide["steps"] if not s["done"]] == ["invite", "import", "company", "email"]
     assert client.post(f"{API}/onboarding/dismiss").status_code == 200
     assert client.get(f"{API}/onboarding").json()["visible"] is False
+
+
+def test_failed_setup_leaves_nothing_behind_and_the_link_still_works(
+    client: TestClient, db: Session, outbox: Outbox, no_mfa: None, monkeypatch: Any
+) -> None:
+    from app.services import signup as svc
+
+    assert _signup(client, email="retry@harbour.example.com").status_code == 202
+    token = _token(outbox, "retry@harbour.example.com")
+    real = svc.apply_domain
+
+    def boom(*_a: Any, **_k: Any) -> None:
+        raise RuntimeError("pack install failed")
+
+    monkeypatch.setattr(svc, "apply_domain", boom)
+    r = client.post(f"{API}/signup/verify", json={"token": token})
+    assert r.status_code == 503 and r.json()["error"]["code"] == "provisioning_failed"
+    db.expire_all()
+    assert db.execute(text("SELECT count(*) FROM platform.tenants")).scalar_one() == 1
+    assert (
+        db.execute(
+            text("SELECT count(*) FROM platform.user_directory WHERE email = 'retry@harbour.example.com'")
+        ).scalar_one()
+        == 0
+    )
+
+    monkeypatch.setattr(svc, "apply_domain", real)
+    r = client.post(f"{API}/signup/verify", json={"token": token})
+    assert r.status_code == 200, r.text
+    assert r.json()["workspace"]["slug"] == "harbour-legal"
+
+
+def test_email_falls_back_to_direct_sending_when_the_queue_is_down(monkeypatch: Any) -> None:
+    from app.services import email
+    from app.worker import tasks
+
+    sent: list[str] = []
+
+    def down(*_a: Any, **_k: Any) -> None:
+        raise ConnectionError("redis unreachable")
+
+    monkeypatch.setattr(tasks.send_email_task, "delay", down)
+    monkeypatch.setattr(email, "deliver_email", lambda to, *_: sent.append(to))
+    monkeypatch.setattr(email.threading, "Thread", _ImmediateThread)
+    email.queue_email("a@example.com", "s", "b")
+    assert sent == ["a@example.com"]
+
+
+class _ImmediateThread:
+    def __init__(self, target: Any, **_k: Any) -> None:
+        self._target = target
+
+    def start(self) -> None:
+        self._target()

@@ -89,6 +89,9 @@ class Settings(BaseSettings):
 
     # ---- E-mail ----
     email_backend: Literal["console", "smtp"] = "console"
+    # "queue": the Celery worker sends e-mail (falls back to direct sending when Redis is unreachable).
+    # "inline": the API sends e-mail itself in a background thread - use when no worker is deployed.
+    email_delivery: Literal["queue", "inline"] = "queue"
     email_from: str = "MigrateCRM <no-reply@localhost>"
     smtp_host: str = "localhost"
     smtp_port: int = 587

@@ -30,6 +30,10 @@ celery_app.conf.update(
     task_soft_time_limit=240,
     result_expires=86_400,
     broker_connection_retry_on_startup=True,
+    # Publishing from a web request must fail fast when Redis is down; callers fall back (app.services.email).
+    broker_connection_timeout=3,
+    broker_transport_options={"socket_connect_timeout": 3, "socket_timeout": 5, "max_retries": 1},
+    task_publish_retry_policy={"max_retries": 1, "interval_start": 0, "interval_step": 0.5},
     beat_schedule={
         "dispatch-due-email-sends": {"task": "marketing.dispatch_due", "schedule": 60.0},
         "activity-reminders": {"task": "activities.reminders", "schedule": 60.0},
