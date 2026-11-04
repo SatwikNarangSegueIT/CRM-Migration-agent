@@ -21,7 +21,7 @@ from app.apps.billing import refresh_invoice_payments
 from app.apps.sales import BusinessRuleError, rule
 from app.apps.service import notify
 from app.core.clock import local_today
-from app.engine.hooks import Change, Event, action, on, ref
+from app.engine.hooks import Change, Event, action, locked_when, on, ref
 from app.engine.records import RecordService
 from app.engine.types import decimal_to_json, format_datetime, money, to_decimal
 from app.models import Notification, Record, RecordShare
@@ -91,10 +91,22 @@ def matter_rules(change: Change) -> None:
             data["lodgement_date"] = local_today().isoformat()
     if (change.is_changed("outcome") or change.is_changed("decision_date")) and not _can_lodge(svc):
         raise rule("Recording a decision needs the Lodge Applications permission.", "outcome")
+    if (
+        change.is_changed("outcome")
+        and data.get("outcome")
+        and old_stage not in d.LODGE_STAGES
+        and new_stage not in d.LODGE_STAGES
+        and not svc.system
+    ):
+        # Otherwise a matter could jump from Consultation to Decision past the agreement and lodgement.
+        raise rule("Record the decision once the application has been lodged.", "outcome")
     if data.get("outcome") and not data.get("decision_date"):
         data["decision_date"] = local_today().isoformat()
     if data.get("outcome") and data.get("stage") != "Decision":
         data["stage"] = "Decision"
+    if change.is_changed("outcome") and data.get("outcome") and data.get("status") == "Active":
+        # A decided matter is finished work: it leaves "active matters" and workload counts.
+        data["status"] = "Withdrawn" if data["outcome"] == "Withdrawn" else "Closed"
     if data.get("lodgement_date") and data.get("decision_date"):
         days = (date.fromisoformat(data["decision_date"]) - date.fromisoformat(data["lodgement_date"])).days
         data["processing_days"] = max(days, 0)
@@ -170,8 +182,20 @@ def _generate_checklist(svc: RecordService, matter: Record, *, only_if_empty: bo
         for ln in str(vt.data.get("checklist_template") or "").splitlines()
         if ln.strip(" -*\t")
     ]
+    # Regenerating adds what the visa type's checklist gained, not a second copy of every item.
+    have = set(
+        svc.db.scalars(
+            select(Record.name).where(
+                Record.object_api_name == "checklist_item",
+                Record.is_deleted == false(),
+                Record.data["matter"].astext == str(matter.id),
+            )
+        )
+    )
+    lines = [ln for ln in dict.fromkeys(lines) if ln[:255] not in have]
+    start = len(have)
     sys = svc.elevated()
-    for i, line in enumerate(lines, start=1):
+    for i, line in enumerate(lines, start=start + 1):
         sys.create(
             "checklist_item",
             {
@@ -208,7 +232,11 @@ def lodge(svc: RecordService, matter: Record, payload: dict[str, Any]) -> dict[s
     "override_agreement_gate",
     "Override Agreement Gate",
     pack_key=K,
-    visible=lambda r: not r.data.get("agreement_override"),
+    # Only while the gate applies: not once overridden or past it (a signed agreement moved it on).
+    visible=lambda r: (
+        not r.data.get("agreement_override")
+        and r.data.get("stage") in (None, "Consultation", "Service Agreement")
+    ),
     guard=lambda svc, r: (
         None
         if svc.policy.has_custom(permission_key(K, d.OVERRIDE))
@@ -233,7 +261,13 @@ def override_gate(svc: RecordService, matter: Record, payload: dict[str, Any]) -
     return svc.serialize(matter)
 
 
-@action("matter", "regenerate_checklist", "Generate Checklist", pack_key=K)
+@action(
+    "matter",
+    "regenerate_checklist",
+    "Generate Checklist",
+    pack_key=K,
+    visible=lambda r: bool(r.data.get("visa_type")) and r.data.get("stage") not in d.LODGE_STAGES,
+)
 def regenerate_checklist(svc: RecordService, matter: Record, payload: dict[str, Any]) -> dict[str, Any]:
     return {"created": _generate_checklist(svc, matter, only_if_empty=False)}
 
@@ -302,7 +336,7 @@ def send_agreement(svc: RecordService, agreement: Record, payload: dict[str, Any
     "Sign Agreement",
     pack_key=K,
     requires_edit=False,
-    portal=True,
+    client_only=True,
     visible=lambda r: r.data.get("status") == "Sent",
 )
 def sign_agreement(svc: RecordService, agreement: Record, payload: dict[str, Any]) -> dict[str, Any]:
@@ -379,6 +413,13 @@ def ledger_rules(change: Change) -> None:
         invoice = svc.db.get(Record, ref(data.get("invoice"))) if data.get("invoice") else None
         if invoice is None or invoice.data.get("status") not in ("Issued", "Partially Paid"):
             raise rule("Transfers to the office account need an issued, unpaid invoice.", "invoice")
+        billed = invoice.data.get("contact")
+        if not billed and invoice.data.get("matter"):
+            inv_matter = svc.db.get(Record, ref(invoice.data["matter"]))
+            billed = inv_matter.data.get("client") if inv_matter is not None else None
+        if billed != str(client_id):
+            # Client money may only pay that client's own invoice (trust accounting).
+            raise rule("The invoice is for a different client.", "invoice")
         if amount > money(to_decimal(invoice.data.get("balance")) or 0):
             raise rule("The transfer is more than the invoice's balance due.", "amount")
     elif data.get("invoice"):
@@ -458,6 +499,19 @@ def statement(svc: RecordService, client_id: uuid.UUID) -> dict[str, Any]:
     }
 
 
+# ------------------------------------------------------------------ starter visa types
+
+
+def seed_visa_types(db: Session, actor_id: uuid.UUID | None = None) -> int:
+    """Common visa subclasses for an agency that has none yet (a new workspace). Returns how many."""
+    if db.scalar(select(Record.id).where(Record.object_api_name == "visa_type").limit(1)) is not None:
+        return 0
+    svc = RecordService.as_system(db, actor_id)
+    for vt in d.STARTER_VISA_TYPES:
+        svc.create("visa_type", {**vt, "is_active": True})
+    return len(d.STARTER_VISA_TYPES)
+
+
 # ------------------------------------------------------------------ expiry reminders
 
 
@@ -513,6 +567,9 @@ def expiry_reminders(db: Session, today: date | None = None) -> int:
                 count += 1
     return count
 
+
+locked_when("service_agreement", lambda r: r.data.get("status") in ("Signed", "Cancelled"))
+locked_when("client_account_transaction", lambda r: True)
 
 PACK = register(
     Pack(

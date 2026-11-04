@@ -66,6 +66,8 @@ class Action:
     pack_key: str | None = None
     # Customer-portal users may run it on records they can see (e.g. signing an agreement).
     portal: bool = False
+    # Only the client may run it (an e-signature): staff never see or run it.
+    client_only: bool = False
 
 
 _hooks: dict[tuple[str, Event], list[tuple[str | None, Hook]]] = {}
@@ -91,16 +93,40 @@ def action(
     visible: Callable[[Record], bool] | None = None,
     pack_key: str | None = None,
     portal: bool = False,
+    client_only: bool = False,
 ) -> Callable[[Callable[[RecordService, Record, dict[str, Any]], dict[str, Any]]], Any]:
     def decorator(
         fn: Callable[[RecordService, Record, dict[str, Any]], dict[str, Any]],
     ) -> Callable[[RecordService, Record, dict[str, Any]], dict[str, Any]]:
         _actions[(object_api_name, name)] = Action(
-            object_api_name, name, label, fn, requires_edit, guard, visible, pack_key, portal
+            object_api_name,
+            name,
+            label,
+            fn,
+            requires_edit,
+            guard,
+            visible,
+            pack_key,
+            portal or client_only,
+            client_only,
         )
         return fn
 
     return decorator
+
+
+_locks: dict[str, Callable[[Record], bool]] = {}
+
+
+def locked_when(object_api_name: str, predicate: Callable[[Record], bool]) -> None:
+    """Records the pack's update rules refuse to change (a signed agreement, an append-only ledger row,
+    billed time) are shown without Edit or Delete. The rules still enforce it; this is the UI hint."""
+    _locks[object_api_name] = predicate
+
+
+def is_locked(record: Record) -> bool:
+    predicate = _locks.get(record.object_api_name)
+    return bool(predicate and predicate(record))
 
 
 def hooks_for(object_api_name: str, event: Event, enabled_packs: frozenset[str]) -> list[Hook]:

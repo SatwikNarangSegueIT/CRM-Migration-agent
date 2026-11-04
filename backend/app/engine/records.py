@@ -555,8 +555,11 @@ class RecordService:
                     "fields": values,
                     "display": display,
                     "access": {
-                        "edit": r.id in editable and not r.is_deleted,
-                        "delete": can_delete_obj and r.id in editable and not r.is_deleted,
+                        "edit": r.id in editable and not r.is_deleted and not hooks.is_locked(r),
+                        "delete": can_delete_obj
+                        and r.id in editable
+                        and not r.is_deleted
+                        and not hooks.is_locked(r),
                     },
                 }
             )
@@ -1216,7 +1219,19 @@ class RecordService:
             stmt = stmt.where(self._readable_clause(meta.api_name))
         uid = self.user_id
         if scope == "mine":
-            stmt = stmt.where(Record.owner_id == uid)
+            # Mine = owned by me, or I'm on its team (a profession record's responsible solicitor, RMA,
+            # case officer, accountant or broker: system-made shares, created_by_id is NULL).
+            assigned = (
+                select(RecordShare.id)
+                .where(
+                    RecordShare.record_id == Record.id,
+                    RecordShare.principal_type == "user",
+                    RecordShare.principal_id == uid,
+                    RecordShare.created_by_id.is_(None),
+                )
+                .exists()
+            )
+            stmt = stmt.where(or_(Record.owner_id == uid, assigned))
         elif scope == "team":
             team: list[Any] = [Record.owner_id == uid]
             if self.policy.role_path:

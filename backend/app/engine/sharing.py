@@ -278,7 +278,17 @@ class SharingContext:
         if meta is None:
             return false()
         if self.policy.is_portal:
-            return self._portal(meta, r, depth=depth)
+            # Reference data (a public-read list with no client fields and no parent, such as visa types)
+            # is readable when the portal profile grants it; everything else only through the client.
+            reference = (
+                not edit
+                and self.owd(obj) in (SharingAccess.READ.value, SharingAccess.READ_WRITE.value)
+                and not meta.portal_fields
+                and meta.master_field is None
+                and "related_to" not in meta.fields
+                and obj not in ("contact", "account")
+            )
+            return None if reference else self._portal(meta, r, depth=depth)
         if access.modify_all or (access.view_all and not edit):
             return None
         owd = self.owd(obj)

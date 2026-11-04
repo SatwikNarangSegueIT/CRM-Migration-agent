@@ -247,11 +247,14 @@ def bundle() -> dict[str, Any]:
 PROFILES: Final = [
     ("ma_practice_manager", "Practice Manager", "Runs the practice: sales manager rights, finance read and every matter.", "sales_manager",
      {"matter": "RCED VA MA", "matter_applicant": "RCED VA MA", "checklist_item": "RCED VA MA", "service_agreement": "RCED VA MA",
-      "visa_type": "RCED VA MA", "client_account_transaction": "R VA", "invoice": "R VA", "payment": "R VA", "product": "R"},
+      "visa_type": "RCED VA MA", "client_account_transaction": "R VA", "invoice": "R VA", "payment": "R VA", "product": "R",
+      "contact": "RCED VA MA", "account": "RCED VA MA"},
      ("manage_portal_users", "transfer_records", "export_data", "import_data", "manage_public_reports"), (LODGE, OVERRIDE)),
     ("ma_registered_agent", "Registered Migration Agent", "Registered migration agent (MARA): all matters, lodgement, agreements.", "sales_representative",
      {"matter": "RCE VA", "matter_applicant": "RCED VA", "checklist_item": "RCED VA", "service_agreement": "RCE VA",
-      "visa_type": "R", "client_account_transaction": "R", "invoice": "RCE"}, ("manage_portal_users",), (LODGE,)),
+      "visa_type": "R", "client_account_transaction": "R VA", "invoice": "RCE", "invoice_line": "RCED",
+      "contact": "RCE VA MA", "account": "RCE VA MA"},
+     ("manage_portal_users",), (LODGE,)),
     ("ma_case_officer", "Case Officer", "Works matters where they are case officer or responsible RMA.", "service_agent",
      {"matter": "RE", "matter_applicant": "RCE", "checklist_item": "RCED", "service_agreement": "R", "visa_type": "R"}, (), ()),
     ("ma_intake", "Intake Consultant", "Handles enquiries: own leads, contacts and lead conversion.", "sales_representative",
@@ -349,8 +352,11 @@ def install(conn: Connection) -> None:
     for obj in PACK_OBJECTS:
         install_object_permission(conn, ro, obj, {"can_read": True, "view_all": True})
     portal = security_id("profile", "customer_portal")
-    for obj in ("matter", "checklist_item", "service_agreement", "matter_applicant"):
+    for obj in ("matter", "checklist_item", "service_agreement", "matter_applicant", "visa_type"):
         install_object_permission(conn, portal, obj, {"can_read": True})
+    # Clients see which visa their matter is for, not the agency's default fees.
+    for field in ("default_professional_fee", "default_government_fee", "checklist_template", "description"):
+        install_field_security(conn, portal, "visa_type", field, "hidden")
     for field in (
         "case_officer",
         "responsible_rma",
@@ -399,3 +405,36 @@ def install(conn: Connection) -> None:
         {"retention_years": 7, "expiry_reminder_days": [90, 30], "consumer_guide_required": True},
     )
     _ = stable_id
+
+
+# Starter visa types for a new agency (common subclasses with a document checklist each). Fees are left
+# blank: government charges change every 1 July and each agency sets its own professional fees.
+_ID = "Passport (all pages)\nBirth certificate\nNational identity document\nPassport photo"
+_CHAR = "Police certificates\nHealth examinations (HAP ID)"
+_ENG = "English test results"
+_SKILL = "Skills assessment\nCV / resume\nEmployment references\nQualifications and transcripts"
+_REL = "Evidence of relationship (joint finances, household, social, commitment)\nStatutory declarations from friends or family\nPartner's identity documents"
+STARTER_VISA_TYPES: Final[list[dict[str, Any]]] = [
+    {"name": "Student (500)", "subclass": "500", "category": "Student",
+     "checklist_template": f"{_ID}\nConfirmation of Enrolment (CoE)\nGenuine student statement\nEvidence of funds\nOverseas Student Health Cover\n{_ENG}"},
+    {"name": "Temporary Graduate (485)", "subclass": "485", "stream": "Post-Higher Education Work", "category": "Skilled",
+     "checklist_template": f"{_ID}\nCompletion letter and transcript\nAustralian Federal Police certificate\nHealth insurance\n{_ENG}"},
+    {"name": "Skills in Demand (482)", "subclass": "482", "stream": "Core Skills", "category": "Employer Sponsored",
+     "checklist_template": f"{_ID}\nEmployment contract\nNomination approval\n{_SKILL}\n{_ENG}\n{_CHAR}"},
+    {"name": "Employer Nomination Scheme (186)", "subclass": "186", "stream": "Temporary Residence Transition", "category": "Employer Sponsored",
+     "checklist_template": f"{_ID}\nEmployment contract\nNomination approval\nPayslips and tax records\n{_ENG}\n{_CHAR}"},
+    {"name": "Skilled Employer Sponsored Regional (494)", "subclass": "494", "stream": "Employer Sponsored", "category": "Employer Sponsored",
+     "checklist_template": f"{_ID}\nEmployment contract\nNomination approval\n{_SKILL}\n{_ENG}\n{_CHAR}"},
+    {"name": "Skilled Independent (189)", "subclass": "189", "stream": "Points-tested", "category": "Skilled",
+     "checklist_template": f"{_ID}\nInvitation (SkillSelect)\n{_SKILL}\n{_ENG}\n{_CHAR}"},
+    {"name": "Skilled Nominated (190)", "subclass": "190", "category": "Skilled",
+     "checklist_template": f"{_ID}\nState or territory nomination\n{_SKILL}\n{_ENG}\n{_CHAR}"},
+    {"name": "Skilled Work Regional (491)", "subclass": "491", "category": "Skilled",
+     "checklist_template": f"{_ID}\nState nomination or family sponsorship\n{_SKILL}\n{_ENG}\n{_CHAR}"},
+    {"name": "Partner - onshore (820/801)", "subclass": "820", "stream": "Onshore", "category": "Family",
+     "checklist_template": f"{_ID}\n{_REL}\nSponsor's citizenship or residence evidence\n{_CHAR}"},
+    {"name": "Partner - offshore (309/100)", "subclass": "309", "stream": "Offshore", "category": "Family",
+     "checklist_template": f"{_ID}\n{_REL}\nSponsor's citizenship or residence evidence\n{_CHAR}"},
+    {"name": "Visitor (600)", "subclass": "600", "stream": "Tourist", "category": "Visitor",
+     "checklist_template": f"{_ID}\nEvidence of funds\nTravel itinerary\nEvidence of ties to home country"},
+]  # fmt: skip

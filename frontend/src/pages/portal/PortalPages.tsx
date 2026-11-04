@@ -342,31 +342,56 @@ export function PortalRecordPage() {
         </section>
       ))}
       {r.related.map((rel) => (
-        <section key={rel.object} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="font-semibold text-slate-900">
-            {rel.label} ({rel.items.length})
-          </h2>
-          {rel.items.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">None</p>
-          ) : (
-            <ul className="mt-2 divide-y divide-slate-100 text-sm">
-              {rel.items.map((it) => (
-                <li key={it.id} className="py-2">
-                  <Link
-                    to={`/portal/o/${rel.object}/${it.id}`}
-                    className="font-medium text-brand-700 hover:underline"
-                  >
-                    {it.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <RelatedSection key={rel.object} rel={rel} />
       ))}
       <Conversation object={object} record={r} />
       {action && <ActionModal object={object} id={id} action={action} onClose={() => setAction(null)} />}
     </div>
+  );
+}
+
+// A related list on a portal record: each item with the list's columns that have a value (the status of
+// each document on a checklist, the total of each invoice).
+function RelatedSection({ rel }: { rel: PortalRecord["related"][number] }) {
+  const meta = useDescribe(rel.object);
+  const cols = rel.columns.filter((c) => c !== "name" && !STAFF_ONLY.has(c));
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <h2 className="font-semibold text-slate-900">
+        {rel.label} ({rel.items.length})
+      </h2>
+      {rel.items.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-500">None</p>
+      ) : (
+        <ul className="mt-2 divide-y divide-slate-100 text-sm">
+          {rel.items.map((it) => (
+            <li key={it.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2">
+              <Link
+                to={`/portal/o/${rel.object}/${it.id}`}
+                className="font-medium text-brand-700 hover:underline"
+              >
+                {it.name}
+              </Link>
+              {meta.data && (
+                <span className="flex flex-wrap gap-x-4 text-slate-600">
+                  {cols
+                    .filter(
+                      (c) => meta.data.fields[c] && filled(it, c) && meta.data.fields[c].type !== "checkbox",
+                    )
+                    .slice(0, 3)
+                    .map((c) => (
+                      <span key={c} className="inline-flex items-center gap-1">
+                        <span className="sr-only">{label(meta.data, c)}:</span>
+                        <Value meta={meta.data} record={it} api={c} />
+                      </span>
+                    ))}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

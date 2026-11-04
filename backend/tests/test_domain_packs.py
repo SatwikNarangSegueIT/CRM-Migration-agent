@@ -171,7 +171,27 @@ def test_legal_practice_pack(admin_client: TestClient, client: TestClient, db: S
 # ------------------------------------------------------------------ accounting
 
 
-def test_accounting_practice_pack(admin_client: TestClient, client: TestClient, db: Session) -> None:
+def portal_for(
+    c: TestClient, app_client: TestClient, outbox: Outbox, contact_id: str, email: str
+) -> TestClient:
+    """Invite a client contact to the portal and sign them in."""
+    from tests.conftest import login
+
+    assert c.post(f"{API}/portal-users/invite/{contact_id}").status_code == 201
+    anon = TestClient(app_client.app)
+    r = anon.post(
+        f"{API}/auth/invitation/accept",
+        json={"token": outbox.token_for(email), "password": "Sunny-Harbour-2026!"},
+    )
+    assert r.status_code == 200, r.text
+    portal = TestClient(app_client.app)
+    assert login(portal, email, "Sunny-Harbour-2026!") == "authenticated"
+    return portal
+
+
+def test_accounting_practice_pack(
+    admin_client: TestClient, client: TestClient, db: Session, outbox: Outbox
+) -> None:
     c = admin_client
     install(c, "accounting_practice")
     entity = create(
@@ -195,10 +215,25 @@ def test_accounting_practice_pack(admin_client: TestClient, client: TestClient, 
     )
     assert float(letter["fields"]["fee_estimate"]) == 2200
     action(c, "engagement_letter", letter["id"], "send")
-    signed = action(
-        c, "engagement_letter", letter["id"], "sign", {"full_name": "Wendy Wattle", "accept": True}
+    sign = {"full_name": "Wendy Wattle", "accept": True}
+    # The signature is the client's own: staff can't sign for them, and don't see the action.
+    r = c.post(f"{API}/objects/engagement_letter/records/{letter['id']}/actions/sign", json=sign)
+    assert r.status_code == 403
+    assert "sign" not in {a["name"] for a in get(c, "engagement_letter", letter["id"])["actions"]}
+    wendy = create(
+        c,
+        "contact",
+        {
+            "first_name": "Wendy",
+            "last_name": "Wattle",
+            "email": "wendy@wattle.example",
+            "account": entity["id"],
+        },
     )
-    assert signed["fields"]["status"] == "Signed"
+    portal = portal_for(c, client, outbox, wendy["id"], "wendy@wattle.example")
+    r = portal.post(f"{API}/portal/objects/engagement_letter/records/{letter['id']}/actions/sign", json=sign)
+    assert r.status_code == 200, r.text
+    assert get(c, "engagement_letter", letter["id"])["fields"]["status"] == "Signed"
     eng = get(c, "engagement", eng["id"])
     assert eng["fields"]["letter_signed"] is True and eng["fields"]["stage"] == "Awaiting Information"
 

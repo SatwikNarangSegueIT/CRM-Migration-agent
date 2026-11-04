@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.apps.sales import BusinessRuleError, rule
 from app.apps.service import notify
 from app.core.clock import local_today
-from app.engine.hooks import Change, Event, action, on, ref
+from app.engine.hooks import Change, Event, action, locked_when, on, ref
 from app.engine.records import RecordService
 from app.engine.types import decimal_to_json, format_datetime, money, to_decimal
 from app.models import Record, RecordShare
@@ -335,7 +335,7 @@ def send_letter(svc: RecordService, letter: Record, payload: dict[str, Any]) -> 
     "Sign Engagement Letter",
     pack_key=K,
     requires_edit=False,
-    portal=True,
+    client_only=True,
     visible=lambda r: r.data.get("status") == "Sent",
 )
 def sign_letter(svc: RecordService, letter: Record, payload: dict[str, Any]) -> dict[str, Any]:
@@ -548,6 +548,9 @@ def daily_job(db: Session, today: date | None = None) -> int:
     targets = [("lodgement_deadline", "due_date", "Lodgement due", first_of("responsible"))]
     return overdue + date_reminders(db, targets, days, today)
 
+
+locked_when("engagement_letter", lambda r: r.data.get("status") in ("Signed", "Cancelled"))
+locked_when("engagement_time_entry", lambda r: r.data.get("status") in ("Billed", "Written Off"))
 
 PACK = register(
     Pack(

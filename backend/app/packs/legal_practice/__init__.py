@@ -17,11 +17,11 @@ from typing import Any
 from sqlalchemy import false, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.apps.billing import refresh_invoice_payments
+from app.apps.billing import billing_account_for, refresh_invoice_payments
 from app.apps.sales import BusinessRuleError, rule
 from app.apps.service import notify
 from app.core.clock import local_today
-from app.engine.hooks import Change, Event, action, on, ref
+from app.engine.hooks import Change, Event, action, locked_when, on, ref
 from app.engine.records import RecordService
 from app.engine.types import decimal_to_json, format_datetime, money, to_decimal
 from app.models import Record, RecordShare
@@ -411,12 +411,7 @@ def _billing_account(svc: RecordService, matter: Record) -> Record:
     client = _matter(svc, matter.data.get("client"))
     if client is None:
         raise rule("The matter has no client.")
-    acct = _matter(svc, client.data.get("account"))
-    if acct is None:
-        # An individual client: invoices need a billing organisation, so one is created in the client's
-        # name and linked to them, so their next matter bills the same one rather than a duplicate.
-        acct = svc.elevated().create("account", {"name": client.name, "type": "Customer"})
-        _set(svc, client, {"account": str(acct.id)})
+    acct = billing_account_for(svc, client)
     _set(svc, matter, {"organisation": str(acct.id)})
     return acct
 
@@ -617,6 +612,9 @@ def daily_reminders(db: Session, today: date | None = None) -> int:
     count = date_reminders(db, limitation, s.get("limitation_reminder_days", [90, 30, 7]), today)
     return count + date_reminders(db, court, s.get("court_reminder_days", [7, 1]), today)
 
+
+locked_when("legal_time_entry", lambda r: r.data.get("status") in ("Billed", "Written Off"))
+locked_when("trust_transaction", lambda r: True)
 
 PACK = register(
     Pack(

@@ -152,6 +152,7 @@ def describe_object(svc: RecordService, meta: ObjectMeta) -> dict[str, Any]:
     actions = [
         {"name": a.name, "label": a.label, "requires_edit": a.requires_edit}
         for a in hooks.actions_for(meta.api_name, svc.enabled_packs)
+        if not a.client_only
     ]
     return {
         **object_summary(svc, meta),

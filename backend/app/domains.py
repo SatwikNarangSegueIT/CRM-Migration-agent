@@ -286,7 +286,7 @@ def apply_related_lists(db: Session) -> int:
 # ------------------------------------------------------------------ forms
 
 # Bump when apply_forms changes: existing workspaces are brought up to date at start-up.
-FORMS_VERSION = 3
+FORMS_VERSION = 4
 
 # Sales-oriented fields that a profession workspace doesn't use. They're taken off the page layouts (so off
 # the forms and record pages), not deleted: an administrator can put them back in Object Manager.
@@ -332,6 +332,7 @@ FORM_HINTS: dict[tuple[str, str], str] = {
     ("legal_matter", "responsible_solicitor"): "Leave empty to make it you.",
     ("legal_matter", "hourly_rate"): "Leave empty for the practice's default rate.",
     ("legal_matter", "estimated_costs"): "Costs disclosure is required above $750 (unless pro bono).",
+    ("invoice", "account"): "Leave empty to bill an individual client in their own name.",
     ("legal_time_entry", "timekeeper"): "Leave empty to make it you.",
     ("legal_time_entry", "rate"): "Leave empty for the matter's rate.",
     ("legal_time_entry", "units"): "1 unit = 6 minutes (1.5 hours = 15 units).",
@@ -438,11 +439,13 @@ def apply_forms(db: Session, domain: str) -> int:
             obj.page_layout = layout
             changed += 1
 
-    # An enquiry is often a person, not a company.
-    lead_company = next((f for f in fields_by_object.get("lead", []) if f.api_name == "company"), None)
-    if lead_company is not None and lead_company.required:
-        lead_company.required = False
-        changed += 1
+    # An enquiry is often a person, not a company; an invoice for an individual is billed through the
+    # client (the organisation in their name is filled in by the system).
+    for api, name in (("lead", "company"), ("invoice", "account")):
+        optional = next((f for f in fields_by_object.get(api, []) if f.api_name == name), None)
+        if optional is not None and optional.required:
+            optional.required = False
+            changed += 1
 
     for api, names in HIDE_ON_CREATE.items():
         for f in fields_by_object.get(api, []):
@@ -512,7 +515,15 @@ PRINCIPAL_MODIFY_ALL: dict[str, tuple[str, tuple[str, ...]]] = {
     ),
     "migration": (
         "ma_practice_manager",
-        ("matter", "matter_applicant", "checklist_item", "service_agreement", "visa_type"),
+        (
+            "matter",
+            "matter_applicant",
+            "checklist_item",
+            "service_agreement",
+            "visa_type",
+            "contact",
+            "account",
+        ),
     ),
     "accounting": (
         "ap_partner",
@@ -534,26 +545,93 @@ PRINCIPAL_MODIFY_ALL: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 
 
+# Other profiles that work every client's file: a registered migration agent records passport and visa
+# details on clients intake created.
+EXTRA_MODIFY_ALL: dict[str, list[tuple[str, tuple[str, ...]]]] = {
+    "migration": [("ma_registered_agent", ("contact", "account"))],
+}
+
+
 def apply_principal_access(db: Session, domain: str) -> int:
     """Modify All for the top profile on the profession's records, where the grant is still the shipped
     default (read, create, edit, delete) - a grant an administrator narrowed is left alone."""
     from app.models import Profile, ProfileObjectPermission
 
-    spec = PRINCIPAL_MODIFY_ALL.get(domain)
-    if spec is None:
-        return 0
-    profile = db.scalar(select(Profile).where(Profile.key == spec[0]))
-    if profile is None:
-        return 0
+    specs = [PRINCIPAL_MODIFY_ALL[domain]] if domain in PRINCIPAL_MODIFY_ALL else []
+    specs += EXTRA_MODIFY_ALL.get(domain, [])
     changed = 0
-    for perm in db.scalars(
-        select(ProfileObjectPermission).where(
-            ProfileObjectPermission.profile_id == profile.id,
-            ProfileObjectPermission.object_api_name.in_(spec[1]),
-        )
-    ):
-        if perm.can_read and perm.can_edit and not perm.modify_all:
-            perm.view_all, perm.modify_all = True, True
+    for key, objects in specs:
+        profile = db.scalar(select(Profile).where(Profile.key == key))
+        if profile is None:
+            continue
+        for perm in db.scalars(
+            select(ProfileObjectPermission).where(
+                ProfileObjectPermission.profile_id == profile.id,
+                ProfileObjectPermission.object_api_name.in_(objects),
+            )
+        ):
+            if perm.can_read and perm.can_edit and not perm.modify_all:
+                perm.view_all, perm.modify_all = True, True
+                changed += 1
+    return changed
+
+
+_PORTAL_HIDDEN_VISA_FIELDS = (
+    "default_professional_fee",
+    "default_government_fee",
+    "checklist_template",
+    "description",
+)
+
+
+def apply_pack_grants(db: Session, domain: str) -> int:
+    """Object access a profession pack's profiles ship with that a workspace built earlier lacks (no
+    access at all). Rights a profile already has, or an administrator set, are never reduced."""
+    import importlib
+
+    from app.models import Profile, ProfileObjectPermission
+    from app.security.seed_v1 import _flags
+
+    spec = DOMAINS.get(domain)
+    if spec is None or spec.pack_key is None:
+        return 0
+    definition = importlib.import_module(f"app.packs.{spec.pack_key}.definition")
+    profiles = getattr(definition, "PROFILES", None) or []
+    changed = 0
+    if domain == "migration":
+        # Portal clients read visa types (names only) so their matter shows its visa.
+        from app.models import ProfileFieldPermission
+
+        portal = db.scalar(select(Profile).where(Profile.key == "customer_portal"))
+        if portal is not None and db.get(ProfileObjectPermission, (portal.id, "visa_type")) is None:
+            db.add(ProfileObjectPermission(profile_id=portal.id, object_api_name="visa_type", can_read=True))
+            for f in _PORTAL_HIDDEN_VISA_FIELDS:
+                db.merge(
+                    ProfileFieldPermission(
+                        profile_id=portal.id, object_api_name="visa_type", field_api_name=f, access="hidden"
+                    )
+                )
+            changed += 1
+    for key, _name, _desc, _base, objects, *_rest in profiles:
+        profile = db.scalar(select(Profile).where(Profile.key == key))
+        if profile is None:
+            continue
+        for obj, code in objects.items():
+            perm = db.get(ProfileObjectPermission, (profile.id, obj))
+            flags = _flags(code)
+            if perm is not None and perm.can_read:
+                # Read everything the pack ships with "VA" (an agent sees each client's account).
+                if flags["view_all"] and not perm.view_all:
+                    perm.view_all = True
+                    changed += 1
+                continue
+            if not flags["can_read"]:
+                continue
+            if perm is None:
+                db.add(ProfileObjectPermission(profile_id=profile.id, object_api_name=obj, **flags))
+            else:
+                for k, v in flags.items():
+                    setattr(perm, k, v)
             changed += 1
     return changed
 
@@ -603,6 +681,15 @@ def _firm_name(db: Session) -> str | None:
     return str((get_setting(db, "company") or {}).get("legal_name") or "") or None
 
 
+def seed_starter_records(db: Session, domain: str, actor_id: uuid.UUID | None = None) -> int:
+    """Reference data a profession can't start without (a migration agency's visa types)."""
+    if domain != "migration":
+        return 0
+    from app.packs.migration_agency import seed_visa_types
+
+    return seed_visa_types(db, actor_id)
+
+
 def upgrade_domain_workspace(db: Session, *, force: bool = False) -> int:
     """Bring a profession workspace's related lists and forms up to date (idempotent). Caller commits."""
     from app.services.settings import get_setting, set_setting
@@ -616,9 +703,13 @@ def upgrade_domain_workspace(db: Session, *, force: bool = False) -> int:
         + repair_double_renames(db)
         + apply_forms(db, str(domain))
         + apply_principal_access(db, str(domain))
+        + apply_pack_grants(db, str(domain))
         + apply_compact_layouts(db)
         + apply_firm_name(db, _firm_name(db))
     )
+    db.flush()
+    invalidate_cache()
+    changed += seed_starter_records(db, str(domain))
     set_setting(db, "workspace", {**workspace, "forms_version": FORMS_VERSION})
     if changed:
         bump_revision(db)
@@ -652,6 +743,8 @@ def apply_domain(db: Session, domain: str, actor_id: uuid.UUID | None) -> None:
     apply_firm_name(db, _firm_name(db))
     bump_revision(db)
     invalidate_cache()
+    db.flush()
+    seed_starter_records(db, spec.key, actor_id)
     audit.record(
         db,
         action=AuditAction.UPDATE,

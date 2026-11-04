@@ -642,6 +642,8 @@ def test_migration_agency_pack(
     login(portal, "mia@client.example", "Client-Pass-2026!")
     pm = portal.get(f"{API}/portal/objects/matter/records/{matter['id']}").json()
     assert "case_officer" not in pm["fields"] and "professional_fee" not in pm["fields"]
+    assert pm["display"]["visa_type"]["name"] == "Skills in Demand"  # reference data the client may read
+    assert portal.get(f"{API}/portal/objects/visa_type/records").status_code == 404  # but not browse
     sa = next(r for r in pm["related"] if r["object"] == "service_agreement")["items"][0]
     signed = portal.post(
         f"{API}/portal/objects/service_agreement/records/{sa['id']}/actions/sign",
@@ -735,3 +737,153 @@ def test_migration_agency_pack(
     c.post(f"{API}/setup/packs/migration_agency/disable")
     assert c.get(f"{API}/objects/matter/records").status_code == 404
     assert "ma_matters_by_stage" not in {r["key"] for r in c.get(f"{API}/reports").json()}
+
+
+def test_migration_agency_safeguards(admin_client: TestClient, client: TestClient, db: Session) -> None:
+    """The deep-pass findings: client-only signatures, decisions after lodgement, no duplicate checklist,
+    individual billing and client money paying only that client's invoices."""
+    c = admin_client
+    c.post(f"{API}/setup/packs/migration_agency/install")
+    from app.packs.migration_agency import seed_visa_types
+
+    assert seed_visa_types(db) >= 10 and seed_visa_types(db) == 0  # starter types, once
+    db.commit()
+    agent_user = make_user(db, profile="ma_registered_agent", email="rma2@practice.example")
+    agent = TestClient(client.app)
+    login(agent, agent_user.email)
+    student = next(
+        v
+        for v in c.get(f"{API}/objects/visa_type/records").json()["items"]
+        if v["fields"]["subclass"] == "500"
+    )
+    person = create(c, "contact", {"first_name": "Ravi", "last_name": "Kumar"})
+    matter = create(agent, "matter", {"client": person["id"], "visa_type": student["id"]})
+    url = f"{API}/objects/matter/records/{matter['id']}"
+
+    # Generate Checklist again adds nothing new.
+    before = agent.get(f"{url}/related/checklist_item/matter").json()["items"]
+    assert before and action(agent, "matter", matter["id"], "regenerate_checklist")["created"] == 0
+    assert len(agent.get(f"{url}/related/checklist_item/matter").json()["items"]) == len(before)
+
+    # No decision on a matter that was never lodged.
+    m = get(agent, "matter", matter["id"])
+    r = agent.patch(url, json={"version": m["version"], "fields": {"outcome": "Granted"}})
+    assert r.status_code == 422 and "lodged" in r.text
+
+    # Staff can't sign the client's agreement, and don't see the action.
+    ag = create(
+        agent,
+        "service_agreement",
+        {
+            "matter": matter["id"],
+            "consumer_guide_provided": True,
+            "scope": "Student visa",
+            "professional_fee": 1500,
+        },
+    )
+    action(agent, "service_agreement", ag["id"], "send")
+    sign = {"full_name": "Ravi Kumar", "accept": True}
+    assert (
+        agent.post(f"{API}/objects/service_agreement/records/{ag['id']}/actions/sign", json=sign).status_code
+        == 403
+    )
+    assert "sign" not in {a["name"] for a in get(agent, "service_agreement", ag["id"])["actions"]}
+
+    # An individual is invoiced without an organisation; later invoices reuse the same billing record.
+    inv = create(agent, "invoice", {"contact": person["id"], "matter": matter["id"]})
+    billing = inv["fields"]["account"]
+    assert billing and get(c, "contact", person["id"])["fields"]["account"] == billing
+    assert create(agent, "invoice", {"matter": matter["id"]})["fields"]["account"] == billing
+    r = agent.post(f"{API}/objects/invoice/records", json={"fields": {}})
+    assert r.status_code == 422 and "who the invoice is for" in r.text
+    create(agent, "invoice_line", {"invoice": inv["id"], "description": "Fee", "unit_price": 100})
+    action(agent, "invoice", inv["id"], "issue")
+
+    # Client money pays only that client's invoice.
+    other = create(c, "contact", {"first_name": "Other", "last_name": "Person"})
+    tx = {"type": "Deposit", "amount": 500}
+    create(c, "client_account_transaction", {**tx, "client": other["id"]})
+    r = c.post(
+        f"{API}/objects/client_account_transaction/records",
+        json={
+            "fields": {
+                "client": other["id"],
+                "type": "Transfer to Office",
+                "amount": 50,
+                "invoice": inv["id"],
+            }
+        },
+    )
+    assert r.status_code == 422 and "different client" in r.text
+
+
+def test_upgrade_adds_missing_pack_access(admin_client: TestClient, db: Session) -> None:
+    from app.domains import apply_pack_grants
+    from app.models import Profile, ProfileObjectPermission
+
+    admin_client.post(f"{API}/setup/packs/migration_agency/install")
+    rma = db.scalar(select(Profile).where(Profile.key == "ma_registered_agent"))
+    assert rma is not None
+    perm = db.get(ProfileObjectPermission, (rma.id, "invoice_line"))
+    assert perm is not None and perm.can_create
+    db.delete(perm)
+    db.flush()
+    assert apply_pack_grants(db, "migration") >= 1
+    db.flush()
+    again = db.get(ProfileObjectPermission, (rma.id, "invoice_line"))
+    assert again is not None and again.can_create
+    assert apply_pack_grants(db, "migration") == 0
+    db.rollback()
+
+
+def test_my_matters_locked_records_and_closing_on_decision(
+    admin_client: TestClient, client: TestClient, db: Session
+) -> None:
+    c = admin_client
+    c.post(f"{API}/setup/packs/migration_agency/install")
+    agent_user = make_user(db, profile="ma_registered_agent", email="rma3@practice.example")
+    agent = TestClient(client.app)
+    login(agent, agent_user.email)
+    person = create(c, "contact", {"first_name": "Lena", "last_name": "Park"})
+    # Opened by someone else, assigned to the agent: it is in the agent's "My" list.
+    matter = create(
+        c,
+        "matter",
+        {"client": person["id"], "responsible_rma": str(agent_user.id)},
+    )
+    mine = agent.post(f"{API}/objects/matter/records/query", json={"scope": "mine"}).json()["items"]
+    assert [m["id"] for m in mine] == [matter["id"]]
+
+    ag = create(
+        c, "service_agreement", {"matter": matter["id"], "scope": "Visitor visa", "professional_fee": 300}
+    )
+    assert get(c, "service_agreement", ag["id"])["access"]["edit"] is True
+    c.patch(
+        f"{API}/objects/service_agreement/records/{ag['id']}",
+        json={
+            "version": get(c, "service_agreement", ag["id"])["version"],
+            "fields": {"consumer_guide_provided": True},
+        },
+    )
+    action(c, "service_agreement", ag["id"], "send")
+    from app.engine.records import RecordService
+
+    rec = db.get(Record, uuid.UUID(ag["id"]))
+    assert rec is not None
+    RecordService.as_system(db).update("service_agreement", rec.id, {"status": "Signed"}, record=rec)
+    db.commit()
+    signed = get(c, "service_agreement", ag["id"])
+    assert signed["access"]["edit"] is False and signed["access"]["delete"] is False
+
+    url = f"{API}/objects/matter/records/{matter['id']}"
+    for stage in ("Document Collection", "Preparation", "Ready to Lodge"):
+        c.patch(url, json={"version": get(c, "matter", matter["id"])["version"], "fields": {"stage": stage}})
+    action(c, "matter", matter["id"], "lodge", {"immi_trn": "EGO555"})
+    assert not {"override_agreement_gate", "regenerate_checklist"} & {
+        a["name"] for a in get(c, "matter", matter["id"])["actions"]
+    }
+    decided = c.patch(
+        url, json={"version": get(c, "matter", matter["id"])["version"], "fields": {"outcome": "Granted"}}
+    )
+    assert decided.status_code == 200, decided.text
+    assert decided.json()["fields"]["status"] == "Closed" and decided.json()["fields"]["stage"] == "Decision"

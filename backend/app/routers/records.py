@@ -210,7 +210,9 @@ def get_record(api_name: str, record_id: uuid.UUID, svc: Records, track: bool = 
     out["actions"] = [
         {"name": a.name, "label": a.label}
         for a in hooks.actions_for(api_name, svc.enabled_packs)
-        if (a.visible is None or a.visible(record)) and (not a.requires_edit or out["access"]["edit"])
+        if not a.client_only
+        and (a.visible is None or a.visible(record))
+        and (not a.requires_edit or out["access"]["edit"])
     ]
     return out
 
@@ -352,6 +354,9 @@ def run_action(
     action = hooks.get_action(api_name, action_name)
     if action is None or (action.pack_key and action.pack_key not in svc.enabled_packs):
         raise NotFoundError("Action not found.")
+    if action.client_only:
+        # An e-signature is the client's own act: staff can't sign on their behalf.
+        raise PermissionDeniedError("Only the client can do this, from the client portal.")
     record = svc.get(api_name, record_id, lock=True)
     if action.requires_edit and not svc.can_edit(record):
         raise PermissionDeniedError("You don't have permission to edit this record.")

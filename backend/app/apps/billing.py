@@ -367,9 +367,38 @@ def create_invoice_from_quote(svc: RecordService, quote: Record, payload: dict[s
 # ------------------------------------------------------------------ invoices
 
 
+def billing_account_for(svc: RecordService, contact: Record) -> Record:
+    """The organisation an individual client is billed through: theirs, or one created in their name
+    and linked to them (so every later invoice uses the same one, not a duplicate)."""
+    account = svc.db.get(Record, ref(contact.data.get("account"))) if contact.data.get("account") else None
+    if account is not None and not account.is_deleted:
+        return account
+    sys = svc.elevated()
+    account = sys.create("account", {"name": contact.name, "type": "Customer"})
+    sys.update("contact", contact.id, {"account": str(account.id)}, record=contact)
+    return account
+
+
+# Profession records an invoice can be raised from, and the field holding their client.
+_BILLED_FROM = (("legal_matter", "client"), ("matter", "client"), ("engagement", "contact"))
+
+
 @on("invoice", Event.BEFORE_CREATE)
 def invoice_defaults(change: Change) -> None:
     data = change.data
+    if not data.get("account"):
+        # An individual (no organisation): bill the client named on the invoice or its matter.
+        contact = change.svc.db.get(Record, ref(data.get("contact"))) if data.get("contact") else None
+        for field, client_field in _BILLED_FROM:
+            if contact is None and data.get(field):
+                parent = change.svc.db.get(Record, ref(data[field]))
+                client = parent.data.get(client_field) if parent is not None else None
+                contact = change.svc.db.get(Record, ref(client)) if client else None
+        if contact is not None and contact.object_api_name == "contact" and not contact.is_deleted:
+            data["account"] = str(billing_account_for(change.svc, contact).id)
+            data.setdefault("contact", str(contact.id))
+        else:
+            raise rule("Choose who the invoice is for: a client or an organisation.", "account")
     billing = get_setting(change.svc.db, "billing")
     data["status"] = "Draft"
     data.setdefault("payment_terms_days", billing.get("payment_terms_days", 14))
