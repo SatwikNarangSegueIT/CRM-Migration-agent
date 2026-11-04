@@ -63,10 +63,10 @@ Each profile starts as a copy of a general profile (*based on*) and adds the pro
 
 | Profile | Based on | Loan applications | Fact finds | Lenders | Commissions | Clients & Organisations |
 |---|---|---|---|---|---|---|
-| **Principal Broker** | Sales Manager | RCED VA | RCED VA | RCED VA | RCED VA | RCED VA |
-| **Broker** | Sales Representative | RCE | RCED | R | R | RCE |
+| **Principal Broker** | Sales Manager | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA |
+| **Broker** | Sales Representative | RCE | RCED | R | R (their loans) | RCE |
 | **Loan Processor** | Service Agent | RE VA | RCE VA | R | - | RE / RCE |
-| **Commissions Administrator** | Finance | R VA | - | RCE | RCE VA | R |
+| **Commissions Administrator** | Finance | R VA | - | RCE | RCE VA MA | R |
 
 **Extra permissions by profile**
 
@@ -78,6 +78,14 @@ Each profile starts as a copy of a general profile (*based on*) and adds the pro
 | **Commissions Administrator** | Manage Commissions, Import, Export, Billing Settings, Public Reports |
 
 The commission ledger can't be edited: clawbacks and corrections are new entries.
+
+**Good to know**
+
+- Brokers read the commission on their own loans; only Manage Commissions can record or change it.
+- The Loan Processor sees every application and works the ones they're assigned to as processor.
+- Settled and declined applications are final for brokers and processors; a principal can correct a mistake.
+- Changing the amount, purpose, borrower or lender after the preliminary assessment means recording the assessment again before lodging.
+- Clients see their application and their lender's name in the portal, not commission, rates or the products comparison.
 
 ## 4. Profession permissions
 

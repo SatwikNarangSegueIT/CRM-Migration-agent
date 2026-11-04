@@ -63,8 +63,8 @@ Each profile starts as a copy of a general profile (*based on*) and adds the pro
 
 | Profile | Based on | Matters | Applicants, Checklist | Service agreements | Visa types | Client account | Invoices |
 |---|---|---|---|---|---|---|---|
-| **Practice Manager** | Sales Manager | RCED VA | RCED VA | RCED VA | RCED | R VA | R VA |
-| **Registered Migration Agent** | Sales Representative | RCE VA | RCED VA | RCE VA | R | R | RCE |
+| **Practice Manager** | Sales Manager | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | R VA | R VA |
+| **Registered Migration Agent** | Sales Representative | RCE VA | RCED VA | RCE VA | R | R VA | RCE (with lines) |
 | **Case Officer** | Service Agent | RE (their matters) | RCE / RCED | R | R | - | R |
 | **Intake Consultant** | Sales Representative | RC | - | - | R | - | R |
 | **Accounts** | Finance | R VA | - | - | R | RCE VA | RCE VA MA |
@@ -82,6 +82,15 @@ Each profile starts as a copy of a general profile (*based on*) and adds the pro
 | **Practice Auditor** | View Setup, View Audit Log, Export |
 
 Case officers see a matter when they are its *Case Officer* or *Responsible RMA* (automatic sharing).
+
+**Good to know**
+
+- Registered Migration Agents and Practice Managers can edit every client's details (passport, visa, sponsorship), whoever created the client.
+- Only the client can sign a service agreement, from the client portal; staff don't see a Sign action. If the agreement exists only on paper, the Practice Manager uses **Override Agreement Gate** with a reason.
+- A decision (outcome) can only be recorded once the application has been lodged; recording it closes the matter.
+- Client money can only pay that client's own invoice. An individual is invoiced without an organisation: the system keeps one billing record in their name.
+- "My Matters" lists the matters you're the responsible RMA or case officer on.
+- New agencies start with common visa subclasses and document checklists; set your fees on each visa type.
 
 ## 4. Profession permissions
 

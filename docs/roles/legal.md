@@ -63,7 +63,7 @@ Each profile starts as a copy of a general profile (*based on*) and adds the pro
 
 | Profile | Based on | Matters | Parties, Court dates | Conflict checks | Time entries | Trust ledger | Invoices | Clients & Organisations |
 |---|---|---|---|---|---|---|---|---|
-| **Principal** | Sales Manager | RCED VA | RCED VA | RCED VA | RCED VA | RC VA | RCE VA | RCED VA |
+| **Principal** | Sales Manager | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | RC VA | RCE VA MA | RCED VA MA |
 | **Solicitor** | Sales Representative | RCE | RCED | RCE | RCE | R | RCE | RCE |
 | **Paralegal** | Service Agent | RE | RCED | RC | RCE | - | R | RCE / RE |
 | **Trust Accountant** | Finance | R VA | - | - | R VA | RC VA | RCE VA MA | R |
@@ -80,6 +80,13 @@ Each profile starts as a copy of a general profile (*based on*) and adds the pro
 | **External Examiner** | View Setup, View Audit Log, Export |
 
 The trust ledger is append-only for everyone: there is no edit or delete, corrections are new entries.
+
+**Good to know**
+
+- A principal can update any solicitor's matters, time and invoices (Modify All), for example to take over a file.
+- "My Matters" and the home page list the matters you're the responsible solicitor or supervising principal on, not only the ones you created.
+- Records that can no longer change (billed or written-off time, trust ledger entries) show without Edit or Delete.
+- Billing an individual client creates one billing organisation in their name, linked to them and reused on their later matters.
 
 ## 4. Profession permissions
 

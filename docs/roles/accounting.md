@@ -63,10 +63,10 @@ Each profile starts as a copy of a general profile (*based on*) and adds the pro
 
 | Profile | Based on | Engagements | Engagement letters | Lodgement deadlines | Document requests | Time entries | Invoices | Clients |
 |---|---|---|---|---|---|---|---|---|
-| **Partner** | Sales Manager | RCED VA | RCED VA | RCED VA | RCED VA | RCED VA | RCE VA | RCED VA |
+| **Partner** | Sales Manager | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | RCE VA MA | RCED VA MA |
 | **Accountant** | Sales Representative | RCE | RCE | RCE | RCED | RCE | RCE | RCE |
 | **Bookkeeper** | Service Agent | RE | - | RE | RCE | RCE | R | RE |
-| **Practice Administrator** | Finance | RC VA | RCE VA | RCE VA | RCE VA | R VA | RCE VA MA | R |
+| **Practice Administrator** | Finance | RC VA | RCE VA | RCE VA | RCE VA | R VA | RCE VA MA | RCE VA |
 
 **Extra permissions by profile**
 
@@ -79,6 +79,14 @@ Each profile starts as a copy of a general profile (*based on*) and adds the pro
 
 Reviewer sign-off is enforced separately: only the engagement's assigned reviewer (or someone with Lodge
 Returns) can move it past Review, and the reviewer can't be the preparer.
+
+**Good to know**
+
+- The review is signed off by the engagement's **Reviewer** (or a partner). Lodging rights don't let the preparer sign off their own work.
+- Only the client can sign an engagement letter, from the client portal. For a letter signed on paper, a partner uses **Record Paper Signature** (who signed and where the copy is kept; audited).
+- The **Client Manager** on a client can work that client's file (for example generate BAS deadlines) without owning it.
+- Tax File Numbers and ABNs are checked against the ATO check digits when saved.
+- An engagement's lodgement deadline follows its due date and responsible accountant.
 
 ## 4. Profession permissions
 
