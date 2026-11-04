@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.apps.billing import refresh_invoice_payments
 from app.apps.sales import BusinessRuleError, rule
 from app.apps.service import notify
+from app.core.clock import local_today
 from app.engine.hooks import Change, Event, action, on, ref
 from app.engine.records import RecordService
 from app.engine.types import decimal_to_json, format_datetime, money, to_decimal
@@ -87,11 +88,11 @@ def matter_rules(change: Change) -> None:
                 "Moving a matter to Lodged or beyond needs the Lodge Applications permission.", "stage"
             )
         if new_stage == "Lodged" and not data.get("lodgement_date"):
-            data["lodgement_date"] = date.today().isoformat()
+            data["lodgement_date"] = local_today().isoformat()
     if (change.is_changed("outcome") or change.is_changed("decision_date")) and not _can_lodge(svc):
         raise rule("Recording a decision needs the Lodge Applications permission.", "outcome")
     if data.get("outcome") and not data.get("decision_date"):
-        data["decision_date"] = date.today().isoformat()
+        data["decision_date"] = local_today().isoformat()
     if data.get("outcome") and data.get("stage") != "Decision":
         data["stage"] = "Decision"
     if data.get("lodgement_date") and data.get("decision_date"):
@@ -196,7 +197,7 @@ def lodge(svc: RecordService, matter: Record, payload: dict[str, Any]) -> dict[s
     trn = str(payload.get("immi_trn") or matter.data.get("immi_trn") or "").strip()
     if not trn:
         raise BusinessRuleError("Enter the ImmiAccount TRN.", fields={"immi_trn": "Required"})
-    lodged_on = str(payload.get("lodgement_date") or date.today().isoformat())
+    lodged_on = str(payload.get("lodgement_date") or local_today().isoformat())
     svc.update("matter", matter.id, {"stage": "Lodged", "immi_trn": trn}, record=matter)
     svc.elevated().update("matter", matter.id, {"lodgement_date": lodged_on}, record=matter)
     return svc.serialize(matter)
@@ -461,7 +462,7 @@ def statement(svc: RecordService, client_id: uuid.UUID) -> dict[str, Any]:
 
 
 def expiry_reminders(db: Session, today: date | None = None) -> int:
-    today = today or date.today()
+    today = today or local_today()
     days = (get_setting(db, "migration_agency") or {}).get("expiry_reminder_days", [90, 30])
     targets: list[tuple[str, str, str, Callable[[Record], str | None]]] = [
         (

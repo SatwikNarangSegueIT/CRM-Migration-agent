@@ -6,13 +6,14 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.clock import local_today
 from app.engine.installer import stable_id as record_id
 from app.models import EmailDelivery, Notification, Record
 from tests.conftest import Outbox, login, make_user
@@ -58,7 +59,7 @@ def test_lead_conversion_moves_activities_and_locks_the_lead(
     )
     assert lead["name"] == "Lee Dunn" and lead["fields"]["status"] == "New"
     task = create(
-        rep, "task", {"related_to": lead["id"], "due_date": date.today().isoformat()}, name="Call Lee"
+        rep, "task", {"related_to": lead["id"], "due_date": local_today().isoformat()}, name="Call Lee"
     )
     dupes = action(rep, "lead", lead["id"], "convert", {"check_duplicates": True})
     assert dupes["duplicates"] == {"accounts": [], "contacts": []}
@@ -91,7 +92,7 @@ def test_opportunity_stage_rules(admin_client: TestClient) -> None:
     lost = c.patch(url, json={"version": r.json()["version"], "fields": {"stage": "Closed Lost"}})
     assert lost.status_code == 422 and "loss_reason" in lost.json()["error"]["fields"]
     won = c.patch(url, json={"version": r.json()["version"], "fields": {"stage": "Closed Won"}}).json()
-    assert won["fields"]["is_won"] is True and won["fields"]["closed_date"] == date.today().isoformat()
+    assert won["fields"]["is_won"] is True and won["fields"]["closed_date"] == local_today().isoformat()
     reopen = c.patch(url, json={"version": won["version"], "fields": {"stage": "Proposal"}})
     assert reopen.status_code == 422
 
@@ -131,7 +132,7 @@ def test_quote_to_invoice_to_payments(admin_client: TestClient) -> None:
 
     issued = action(c, "invoice", inv_id, "issue")
     assert issued["fields"]["status"] == "Issued" and issued["fields"]["invoice_number"] == "INV-000001"
-    assert issued["fields"]["due_date"] == (date.today() + timedelta(days=14)).isoformat()
+    assert issued["fields"]["due_date"] == (local_today() + timedelta(days=14)).isoformat()
     edit_line = c.patch(
         f"{API}/objects/invoice_line/records/{lines[0]['id']}",
         json={"version": lines[0]["version"], "fields": {"quantity": 5}},
@@ -334,13 +335,13 @@ def test_reports_respect_sharing_and_formats(
     create(
         rep,
         "opportunity",
-        {"account": acct["id"], "close_date": date.today().isoformat(), "amount": 100, "stage": "Proposal"},
+        {"account": acct["id"], "close_date": local_today().isoformat(), "amount": 100, "stage": "Proposal"},
         name="Mine",
     )
     create(
         admin_client,
         "opportunity",
-        {"account": acct["id"], "close_date": date.today().isoformat(), "amount": 900, "stage": "Proposal"},
+        {"account": acct["id"], "close_date": local_today().isoformat(), "amount": 900, "stage": "Proposal"},
         name="Admin's",
     )
     reports = {r["key"]: r for r in admin_client.get(f"{API}/reports").json()}
@@ -605,7 +606,7 @@ def test_migration_agency_pack(
         "matter",
         {"client": client_contact["id"], "visa_type": visa["id"], "case_officer": str(officer_user.id)},
     )
-    assert re.fullmatch(rf"MAT-{date.today().year}-0001", matter["name"])
+    assert re.fullmatch(rf"MAT-{local_today().year}-0001", matter["name"])
     assert matter["fields"]["professional_fee"] == 3300
     checklist = agent.get(f"{API}/objects/matter/records/{matter['id']}/related/checklist_item/matter").json()
     assert sorted(i["name"] for i in checklist["items"]) == [
@@ -657,7 +658,7 @@ def test_migration_agency_pack(
     lodged = action(agent, "matter", matter["id"], "lodge", {"immi_trn": "EGO1234567"})
     assert (
         lodged["fields"]["stage"] == "Lodged"
-        and lodged["fields"]["lodgement_date"] == date.today().isoformat()
+        and lodged["fields"]["lodgement_date"] == local_today().isoformat()
     )
 
     # Client account (trust ledger): never negative; transfer to office pays an issued invoice.
@@ -724,7 +725,7 @@ def test_migration_agency_pack(
         url,
         json={
             "version": m["version"],
-            "fields": {"visa_expiry": (date.today() + timedelta(days=30)).isoformat()},
+            "fields": {"visa_expiry": (local_today() + timedelta(days=30)).isoformat()},
         },
     )
     assert expiry_reminders(db) == 1

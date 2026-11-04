@@ -31,6 +31,7 @@ def _config(script: str, *x: str) -> Config:
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND_DIR / script))
     cfg.cmd_opts = argparse.Namespace(x=list(x))
+    cfg.attributes["configure_logger"] = False  # keep the app's logging (alembic/env.py)
     return cfg
 
 

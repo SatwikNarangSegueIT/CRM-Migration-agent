@@ -278,18 +278,20 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
             </div>
           )}
         </div>
-        <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-slate-100 px-4 py-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
-          {compact.map((api_) => (
-            <div key={api_} className="min-w-0">
-              <dt className="text-xs text-slate-500">
-                {api_ === "owner_id" ? "Owner" : meta.fields[api_]?.label}
-              </dt>
-              <dd className="truncate text-slate-900">
-                <FieldDisplay field={meta.fields[api_]} record={record} apiName={api_} />
-              </dd>
-            </div>
-          ))}
-        </dl>
+        {compact.length > 0 && (
+          <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-slate-100 px-4 py-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
+            {compact.map((api_) => (
+              <div key={api_} className="min-w-0">
+                <dt className="text-xs text-slate-500">
+                  {api_ === "owner_id" ? "Owner" : meta.fields[api_]?.label}
+                </dt>
+                <dd className="truncate text-slate-900">
+                  <FieldDisplay field={meta.fields[api_]} record={record} apiName={api_} />
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </section>
 
       {pathField && (
@@ -543,6 +545,11 @@ function DetailsTab({
   );
 }
 
+// Compact cards leave out empty values rather than showing a label with nothing after it.
+function hasValue(v: unknown): boolean {
+  return !(v === null || v === undefined || v === "" || (Array.isArray(v) && v.length === 0));
+}
+
 export function RelatedCard({
   parent,
   parentMeta,
@@ -596,7 +603,7 @@ export function RelatedCard({
               </Link>
               <dl className="mt-0.5 grid grid-cols-[auto_1fr] gap-x-2 text-xs text-slate-600">
                 {cols
-                  .filter((c) => c !== "name")
+                  .filter((c) => c !== "name" && (c === "owner_id" || hasValue(r.fields[c])))
                   .slice(0, 3)
                   .map((c) => (
                     <div key={c} className="contents">

@@ -4,12 +4,13 @@ opportunity products and pricing."""
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import false, func, select
 
+from app.core.clock import local_today
 from app.core.errors import AppError, ConflictError
 from app.engine.hooks import Change, Event, action, on, ref
 from app.engine.records import RecordService
@@ -164,10 +165,10 @@ def convert_lead(svc: RecordService, lead: Record, payload: dict[str, Any]) -> d
         values = _mapped(svc, lead, "opportunity", {"lead_source": "lead_source", "campaign": "campaign"})
         values.update(
             {
-                "name": str(payload.get("opportunity_name") or f"{account.name} -").strip(),
-                "account": str(account.id),
+                "name": str(payload.get("opportunity_name") or f"{(account or contact).name} -").strip(),
+                "account": str(account.id) if account is not None else None,
                 "primary_contact": str(contact.id),
-                "close_date": (date.today() + timedelta(days=30)).isoformat(),
+                "close_date": (local_today() + timedelta(days=30)).isoformat(),
             }
         )
         opportunity = svc.create("opportunity", values, owner_id=owner_id)
@@ -202,7 +203,7 @@ def convert_lead(svc: RecordService, lead: Record, payload: dict[str, Any]) -> d
         {
             "is_converted": True,
             "status": "Qualified",
-            "converted_date": date.today().isoformat(),
+            "converted_date": local_today().isoformat(),
             "converted_account": str(account.id) if account else None,
             "converted_contact": str(contact.id),
             "converted_opportunity": str(opportunity.id) if opportunity else None,
@@ -244,7 +245,7 @@ def opportunity_stage(change: Change) -> None:
             data["forecast_category"] = info["forecast"]
         data["is_closed"] = bool(info.get("closed"))
         data["is_won"] = bool(info.get("won"))
-        data["closed_date"] = date.today().isoformat() if info.get("closed") else None
+        data["closed_date"] = local_today().isoformat() if info.get("closed") else None
     if new_stage == "Closed Lost" and not data.get("loss_reason"):
         raise rule("Choose a loss reason to close this opportunity as lost.", "loss_reason")
     if change.record is not None and data.get("has_products"):

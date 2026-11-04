@@ -13,6 +13,7 @@ from sqlalchemy import Connection, Numeric, false, func, select, text
 from sqlalchemy.orm import Session
 
 from app.apps.service import notify
+from app.core.clock import local_today
 from app.engine.types import money
 from app.models import Notification, Record
 from app.packs import grant, permission_key
@@ -126,7 +127,7 @@ def date_reminders(
     db: Session, targets: Iterable[ReminderTarget], days: Iterable[int], today: date | None = None
 ) -> int:
     """Notify once per record, date field and lead time ("Settlement in 3 days: LA-2026-0001")."""
-    today = today or date.today()
+    today = today or local_today()
     count = 0
     for obj, field, label, who in targets:
         for n in days:

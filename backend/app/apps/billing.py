@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import false, select
 
 from app.apps.sales import BusinessRuleError, ensure_unique, find_entry, rule
+from app.core.clock import local_today
 from app.engine.hooks import Change, Event, action, on, ref
 from app.engine.records import RecordService, format_number
 from app.engine.standard_v1 import GST_TAX_RATE_ID, STANDARD_PRICE_BOOK_ID
@@ -303,7 +304,7 @@ def quote_defaults(change: Change) -> None:
             data.setdefault("contact", opp.data.get("primary_contact"))
             data.setdefault("price_book", opp.data.get("price_book"))
     if not data.get("expiry_date"):
-        data["expiry_date"] = (date.today() + timedelta(days=30)).isoformat()
+        data["expiry_date"] = (local_today() + timedelta(days=30)).isoformat()
     for k in ("subtotal", "discount_total", "tax_total", "total"):
         data.setdefault(k, 0)
 
@@ -412,7 +413,7 @@ def issue_invoice(svc: RecordService, invoice: Record, payload: dict[str, Any]) 
     digits = int(billing.get("invoice_number_digits") or 6)
     number = format_number(svc.db, "invoice_number", prefix + "{" + "0" * digits + "}")
     issue_date = (
-        date.fromisoformat(invoice.data["issue_date"]) if invoice.data.get("issue_date") else date.today()
+        date.fromisoformat(invoice.data["issue_date"]) if invoice.data.get("issue_date") else local_today()
     )
     terms = int(_num(invoice.data.get("payment_terms_days")) or billing.get("payment_terms_days", 14))
     due = invoice.data.get("due_date") or (issue_date + timedelta(days=terms)).isoformat()

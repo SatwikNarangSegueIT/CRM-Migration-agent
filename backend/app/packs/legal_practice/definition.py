@@ -105,6 +105,7 @@ PARTY: Final[dict[str, Any]] = {
     ],
     "page_layout": [section("Party", ["name", "legal_matter", "role", "contact", "organisation", "acn_abn", "notes"])],
     "list_columns": ["name", "role", "contact", "organisation"],
+    "compact_layout": ["legal_matter", "role", "contact", "organisation"],
 }  # fmt: skip
 
 CONFLICT_CHECK: Final[dict[str, Any]] = {
@@ -125,6 +126,7 @@ CONFLICT_CHECK: Final[dict[str, Any]] = {
     "page_layout": [section("Conflict Check", ["name", "legal_matter", "result", "match_count", "checked_by", "checked_at", "cleared_by"]),
                     section("Search", ["search_terms", "matches", "clearance_notes"], 1), SYSTEM_SECTION],
     "list_columns": ["name", "legal_matter", "result", "match_count", "checked_at"],
+    "compact_layout": ["legal_matter", "result", "match_count", "checked_by", "checked_at"],
 }  # fmt: skip
 
 TIME_ENTRY: Final[dict[str, Any]] = {
@@ -166,6 +168,7 @@ COURT_DATE: Final[dict[str, Any]] = {
     ],
     "page_layout": [section("Court Date", ["name", "legal_matter", "type", "date_time", "court", "courtroom", "appearing", "is_public", "outcome"])],
     "list_columns": ["name", "type", "date_time", "court", "appearing"],
+    "compact_layout": ["legal_matter", "type", "date_time", "court", "appearing"],
 }  # fmt: skip
 
 TRUST: Final[dict[str, Any]] = {
@@ -249,8 +252,8 @@ def bundle() -> dict[str, Any]:
 
 PROFILES: Final[list[ProfileSpec]] = [
     ("lp_principal", "Principal", "Legal practitioner director / principal: every matter, trust account and conflict clearance.", "sales_manager",
-     {"legal_matter": "RCED VA", "party": "RCED VA", "conflict_check": "RCED VA", "legal_time_entry": "RCED VA", "court_date": "RCED VA",
-      "trust_transaction": "RC VA", "invoice": "RCE VA", "payment": "RC VA", "account": "RCED VA", "contact": "RCED VA"},
+     {"legal_matter": "RCED VA MA", "party": "RCED VA MA", "conflict_check": "RCED VA MA", "legal_time_entry": "RCED VA MA", "court_date": "RCED VA MA",
+      "trust_transaction": "RC VA", "invoice": "RCE VA MA", "payment": "RC VA", "account": "RCED VA MA", "contact": "RCED VA MA"},
      ("manage_portal_users", "transfer_records", "export_data", "import_data", "manage_public_reports"), (CLEAR_CONFLICTS, MANAGE_TRUST)),
     ("lp_solicitor", "Solicitor", "Runs their own matters: time, parties, court dates and invoices.", "sales_representative",
      {"legal_matter": "RCE", "party": "RCED", "conflict_check": "RCE", "legal_time_entry": "RCE", "court_date": "RCED",

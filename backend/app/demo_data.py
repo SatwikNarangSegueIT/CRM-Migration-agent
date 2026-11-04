@@ -9,12 +9,13 @@ from __future__ import annotations
 import json
 import random
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.core.clock import local_today
 from app.engine.records import RecordService
 from app.models import Record, User
 from app.security.policy import load_policy
@@ -70,7 +71,7 @@ def seed_sample_data(db: Session) -> int:
     marketing = _svc(db, "marketing@demo.example.com")
     finance = _svc(db, "finance@demo.example.com")
     count = 0
-    today = date.today()
+    today = local_today()
 
     products = []
     for code, name, family, price in PRODUCTS:

@@ -19,6 +19,7 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.apps.sales import BusinessRuleError, rule
+from app.core.clock import local_today
 from app.engine.hooks import Change, Event, action, on, ref
 from app.engine.records import RecordService
 from app.engine.types import decimal_to_json, money, to_decimal
@@ -104,11 +105,11 @@ def loan_rules(change: Change) -> None:
             raise rule("Choose the lender.", "lender")
         if not _has(svc, d.SUBMIT):
             raise rule("Lodging with a lender needs the Submit to Lender permission.", "stage")
-        data["lodged_date"] = data.get("lodged_date") or date.today().isoformat()
+        data["lodged_date"] = data.get("lodged_date") or local_today().isoformat()
     if new_stage == "Settled":
         if not data.get("lender"):
             raise rule("Choose the lender.", "lender")
-        data["settlement_date"] = data.get("settlement_date") or date.today().isoformat()
+        data["settlement_date"] = data.get("settlement_date") or local_today().isoformat()
         if not data.get("rate_review_date"):
             data["rate_review_date"] = (
                 date.fromisoformat(data["settlement_date"]) + timedelta(days=365)
@@ -130,7 +131,7 @@ def loan_retention(change: Change) -> None:
     assert change.record is not None
     assessed = change.record.data.get("preliminary_assessment_date")
     years = int(_settings(change.svc.db).get("bid_retention_years", 7))
-    if assessed and date.fromisoformat(assessed) > date.today() - timedelta(days=round(365.25 * years)):
+    if assessed and date.fromisoformat(assessed) > local_today() - timedelta(days=round(365.25 * years)):
         raise rule(f"Preliminary assessments and BID records must be kept for {years} years.")
 
 
@@ -201,7 +202,7 @@ def record_assessment(svc: RecordService, loan: Record, payload: dict[str, Any])
     ]
     if not fact_finds:
         raise rule("Complete a fact find (income, expenses, assets and liabilities) first.")
-    values: dict[str, Any] = {"bid_completed": True, "preliminary_assessment_date": date.today().isoformat()}
+    values: dict[str, Any] = {"bid_completed": True, "preliminary_assessment_date": local_today().isoformat()}
     if _index(data.get("stage")) < _index("Preliminary Assessment"):
         values["stage"] = "Preliminary Assessment"
     _set(svc, loan, values)
@@ -256,7 +257,7 @@ def commission_rules(change: Change) -> None:
         raise rule("Enter a positive amount.", "amount")
     data["signed_amount"] = decimal_to_json(-amount if data.get("type") == "Clawback" else amount)
     if data.get("status") == "Received" and not data.get("received_date"):
-        data["received_date"] = date.today().isoformat()
+        data["received_date"] = local_today().isoformat()
 
 
 @on("commission", Event.BEFORE_UPDATE, pack_key=K)
@@ -271,7 +272,7 @@ def commission_locked(change: Change) -> None:
             "Commission amounts can't be changed; record a clawback or a new entry.", sorted(locked)[0]
         )
     if change.data.get("status") == "Received" and not change.data.get("received_date"):
-        change.data["received_date"] = date.today().isoformat()
+        change.data["received_date"] = local_today().isoformat()
 
 
 # ------------------------------------------------------------------ reminders

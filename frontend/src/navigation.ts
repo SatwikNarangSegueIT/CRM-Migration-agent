@@ -49,7 +49,11 @@ function tabMatches(app: AppInfo, tab: AppTab, pathname: string, search: string)
   return pathname === path || pathname.startsWith(`${path}/`);
 }
 
-/** The app whose tabs to show: the one in the URL, the last used one if it contains this page, or any app that does. */
+/**
+ * The app whose tabs to show: the one in the URL, the last used one if it contains this page, or any app
+ * that does. A page no tab leads to (a conflict check, a court date, a checklist item opened from its
+ * parent record) keeps the last used app's tabs, so people don't lose their way back.
+ */
 export function currentApp(apps: AppInfo[], pathname: string, search: string): AppInfo | undefined {
   const m = /^\/app\/([^/]+)/.exec(pathname);
   if (m) return apps.find((a) => a.key === m[1]);
@@ -57,7 +61,7 @@ export function currentApp(apps: AppInfo[], pathname: string, search: string): A
   const contains = (a: AppInfo) => a.tabs.some((t) => tabMatches(a, t, pathname, search));
   const remembered = apps.find((a) => a.key === lastApp());
   if (remembered && contains(remembered)) return remembered;
-  return apps.find(contains);
+  return apps.find(contains) ?? remembered ?? apps.find((a) => a.is_primary);
 }
 
 export function activeTab(app: AppInfo, pathname: string, search: string): AppTab | undefined {

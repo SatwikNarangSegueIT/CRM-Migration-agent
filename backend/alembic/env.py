@@ -15,7 +15,9 @@ from app.models import Base
 from app.tenancy import SCHEMA_NAME, search_path_for
 
 config = context.config
-if config.config_file_name is not None:
+# Only for the `alembic` command line: when the app runs migrations in-process (app.db.migrate, e.g. building
+# a new firm's workspace) this would replace the app's logging configuration.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata

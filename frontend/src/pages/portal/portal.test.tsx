@@ -135,6 +135,30 @@ describe("customer portal", () => {
     await waitFor(() => expect(posted).toEqual({ body: "Thanks!" }));
   });
 
+  it("leaves empty fields and staff bookkeeping off a record", async () => {
+    mockApi({
+      "GET /auth/me": CLIENT,
+      "GET /portal/objects/case/describe": {
+        ...CASE_META,
+        page_layout: [
+          { label: "Case Information", columns: 2, fields: ["subject", "status", "priority"] },
+          { label: "System Information", columns: 2, fields: ["created_by", "updated_at"] },
+        ],
+      },
+      "GET /portal/objects/case/records/k1": {
+        ...record("case", "k1", "CASE-00001", { subject: "Login broken", status: "New", priority: null }),
+        actions: [],
+        timeline: { note: [], file: [] },
+        related: [],
+      },
+    });
+    renderRoute("/portal/o/case/k1");
+    expect(await screen.findByText("Login broken")).toBeInTheDocument();
+    expect(screen.queryByText("Priority")).not.toBeInTheDocument();
+    expect(screen.queryByText("null")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "System Information" })).not.toBeInTheDocument();
+  });
+
   it("signs a service agreement with full name and acceptance", async () => {
     let payload: unknown = null;
     mockApi({

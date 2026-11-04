@@ -112,6 +112,7 @@ LENDER: Final[dict[str, Any]] = {
                     section("Commission", ["upfront_rate", "trail_rate", "clawback_months"]),
                     section("Relationship", ["bdm_name", "bdm_email", "bdm_phone", "notes"]), SYSTEM_SECTION],
     "list_columns": ["name", "lender_type", "upfront_rate", "trail_rate", "is_active"],
+    "compact_layout": ["lender_type", "upfront_rate", "trail_rate", "clawback_months", "is_active"],
     "related_lists": [related("loan_application", "lender", "Loan Applications", ["name", "primary_borrower", "loan_amount", "stage"])],
 }  # fmt: skip
 
@@ -140,6 +141,7 @@ FACT_FIND: Final[dict[str, Any]] = {
                     section("Assets and Liabilities", ["total_assets", "total_liabilities", "net_position"]),
                     section("Notes", ["notes"], 1), SYSTEM_SECTION],
     "list_columns": ["name", "status", "gross_annual_income", "net_position", "monthly_surplus"],
+    "compact_layout": ["loan_application", "status", "gross_annual_income", "monthly_surplus", "expenses_verified"],
 }  # fmt: skip
 
 COMMISSION: Final[dict[str, Any]] = {
@@ -160,6 +162,7 @@ COMMISSION: Final[dict[str, Any]] = {
     ],
     "page_layout": [section("Commission", ["name", "loan_application", "lender", "broker", "type", "amount", "signed_amount", "period", "status", "received_date", "reference"]), SYSTEM_SECTION],
     "list_columns": ["name", "loan_application", "lender", "type", "amount", "status", "period"],
+    "compact_layout": ["loan_application", "lender", "type", "amount", "status"],
 }  # fmt: skip
 
 STANDARD_FIELDS: Final[list[dict[str, Any]]] = [
@@ -231,7 +234,7 @@ def bundle() -> dict[str, Any]:
 
 PROFILES: Final[list[ProfileSpec]] = [
     ("lb_principal", "Principal Broker", "Credit licensee / principal: the whole pipeline, lender panel and commission ledger.", "sales_manager",
-     {"loan_application": "RCED VA", "lender": "RCED VA", "fact_find": "RCED VA", "commission": "RCED VA", "contact": "RCED VA", "account": "RCED VA"},
+     {"loan_application": "RCED VA MA", "lender": "RCED VA MA", "fact_find": "RCED VA MA", "commission": "RCED VA MA", "contact": "RCED VA MA", "account": "RCED VA MA"},
      ("manage_portal_users", "transfer_records", "export_data", "import_data", "manage_public_reports"), (SUBMIT, COMMISSIONS)),
     ("lb_broker", "Broker", "Credit representative: own clients and applications, fact finds and BID records.", "sales_representative",
      {"loan_application": "RCE", "lender": "R", "fact_find": "RCED", "commission": "R"}, ("manage_portal_users",), (SUBMIT,)),

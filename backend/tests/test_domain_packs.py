@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.clock import local_today
 from app.models import Notification
 from tests.conftest import Outbox, set_csrf
 from tests.test_apps import action, get
@@ -74,7 +75,7 @@ def test_legal_practice_pack(admin_client: TestClient, client: TestClient, db: S
     )
     assert r.status_code == 422 and "costs disclosure" in r.text.lower()
     matter = patch(c, "legal_matter", matter["id"], {"costs_disclosure_provided": True, "stage": "Engaged"})
-    assert matter["fields"]["costs_disclosure_date"] == date.today().isoformat()
+    assert matter["fields"]["costs_disclosure_date"] == local_today().isoformat()
 
     # A second matter where Grace is the other party -> potential conflict, cleared only by a principal.
     other_client = create(c, "contact", {"first_name": "Alan", "last_name": "Turing"})
@@ -118,6 +119,13 @@ def test_legal_practice_pack(admin_client: TestClient, client: TestClient, db: S
     assert invoice["fields"]["legal_matter"] == matter["id"] and float(invoice["fields"]["subtotal"]) == 720
     assert float(get(c, "legal_matter", matter["id"])["fields"]["unbilled_amount"]) == 0
     patch(c, "legal_time_entry", entry["id"], {"units": 1}, expect=422)  # billed time is locked
+    # An individual is billed through one organisation in their name, reused on their next matter.
+    billing = invoice["fields"]["account"]
+    assert get(c, "contact", client_contact["id"])["fields"]["account"] == billing
+    later = create(c, "legal_matter", {"title": "Hopper will", "client": client_contact["id"]})
+    create(c, "legal_time_entry", {"legal_matter": later["id"], "units": 2, "rate": 400, "narrative": "Will"})
+    again = action(c, "legal_matter", later["id"], "bill_time")
+    assert get(c, "invoice", again["invoice_id"])["fields"]["account"] == billing
 
     # Trust ledger: no overdraw, transfers only against the matter's issued invoices, append-only.
     t = {"legal_matter": matter["id"], "payer_payee": "Grace Hopper", "description": "Funds on account"}
@@ -152,7 +160,7 @@ def test_legal_practice_pack(admin_client: TestClient, client: TestClient, db: S
         assert r.status_code == 422 and "trust" in r.text
 
     # Limitation-date reminder to the responsible solicitor.
-    soon = (date.today() + timedelta(days=30)).isoformat()
+    soon = (local_today() + timedelta(days=30)).isoformat()
     patch(c, "legal_matter", matter["id"], {"limitation_date": soon})
     from app.packs.legal_practice import daily_reminders
 
@@ -219,7 +227,7 @@ def test_accounting_practice_pack(admin_client: TestClient, client: TestClient, 
     patch(c, "engagement", eng["id"], {"responsible_accountant": other_id})
     patch(c, "engagement", eng["id"], {"stage": "Ready to Lodge"})
     eng = patch(c, "engagement", eng["id"], {"stage": "Lodged"})
-    assert eng["fields"]["lodged_date"] == date.today().isoformat()
+    assert eng["fields"]["lodged_date"] == local_today().isoformat()
     deadline = related(c, "lodgement_deadline", "engagement", eng["id"])[0]
     assert deadline["fields"]["status"] == "Lodged"
 
@@ -276,7 +284,7 @@ def test_loan_broker_pack(admin_client: TestClient, client: TestClient, db: Sess
 
     # NCCP: credit guide and consent before credit assistance; assessment + BID before lodging.
     patch(c, "loan_application", loan["id"], {"stage": "Preliminary Assessment"}, expect=422)
-    today = date.today().isoformat()
+    today = local_today().isoformat()
     patch(
         c,
         "loan_application",

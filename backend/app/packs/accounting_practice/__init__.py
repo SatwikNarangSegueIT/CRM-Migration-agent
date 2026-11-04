@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.apps.sales import BusinessRuleError, rule
 from app.apps.service import notify
+from app.core.clock import local_today
 from app.engine.hooks import Change, Event, action, on, ref
 from app.engine.records import RecordService
 from app.engine.types import decimal_to_json, format_datetime, money, to_decimal
@@ -104,7 +105,7 @@ def engagement_defaults(change: Change) -> None:
     kind = data.get("type") or ""
     if not data.get("financial_year"):
         data["financial_year"] = financial_year(
-            date.today(), ended=kind.endswith("Return") or "Audit" in kind
+            local_today(), ended=kind.endswith("Return") or "Audit" in kind
         )
     if not data.get("due_date"):
         data["due_date"] = default_due_date(svc.db, kind, data["financial_year"])
@@ -141,7 +142,7 @@ def engagement_rules(change: Change) -> None:
         if old.get("stage") not in ("Lodged",) and not _can_lodge(svc):
             raise rule("Lodging needs the Lodge Returns permission (registered tax agent).", "stage")
         if new_stage == "Lodged" or not data.get("lodged_date"):
-            data["lodged_date"] = data.get("lodged_date") or date.today().isoformat()
+            data["lodged_date"] = data.get("lodged_date") or local_today().isoformat()
 
 
 @on("engagement", Event.AFTER_CREATE, pack_key=K)
@@ -476,9 +477,9 @@ def time_changed(change: Change) -> None:
 def deadline_rules(change: Change) -> None:
     data = change.data
     if data.get("status") == "Lodged" and not data.get("lodged_on"):
-        data["lodged_on"] = date.today().isoformat()
+        data["lodged_on"] = local_today().isoformat()
     if data.get("status") in (None, "Upcoming", "Overdue") and data.get("due_date"):
-        data["status"] = "Overdue" if data["due_date"] < date.today().isoformat() else "Upcoming"
+        data["status"] = "Overdue" if data["due_date"] < local_today().isoformat() else "Upcoming"
 
 
 def bas_periods(frequency: str, fy_start: int) -> list[tuple[str, date]]:
@@ -511,7 +512,7 @@ def bas_periods(frequency: str, fy_start: int) -> list[tuple[str, date]]:
     visible=lambda r: r.data.get("bas_frequency") in ("Monthly", "Quarterly", "Annually"),
 )
 def generate_bas_deadlines(svc: RecordService, account: Record, payload: dict[str, Any]) -> dict[str, Any]:
-    today = date.today()
+    today = local_today()
     fy_start = today.year if today.month >= 7 else today.year - 1
     existing = {
         r.data.get("period")
@@ -536,7 +537,7 @@ def generate_bas_deadlines(svc: RecordService, account: Record, payload: dict[st
 
 
 def daily_job(db: Session, today: date | None = None) -> int:
-    today = today or date.today()
+    today = today or local_today()
     overdue = 0
     for r in live(db, "lodgement_deadline", status="Upcoming"):
         if str(r.data.get("due_date") or "9999") < today.isoformat():

@@ -114,6 +114,7 @@ MATTER_APPLICANT: Final[dict[str, Any]] = {
     ],
     "page_layout": [section("Applicant", ["matter", "contact", "role"])],
     "list_columns": ["contact", "role"],
+    "compact_layout": ["matter", "contact", "role"],
 }  # fmt: skip
 
 CHECKLIST_ITEM: Final[dict[str, Any]] = {
@@ -130,6 +131,7 @@ CHECKLIST_ITEM: Final[dict[str, Any]] = {
     ],
     "page_layout": [section("Item", ["name", "matter", "status", "due_date", "is_public", "sort_order", "notes"])],
     "list_columns": ["name", "status", "due_date", "is_public"],
+    "compact_layout": ["matter", "status", "due_date", "is_public"],
 }  # fmt: skip
 
 SERVICE_AGREEMENT: Final[dict[str, Any]] = {
@@ -244,8 +246,8 @@ def bundle() -> dict[str, Any]:
 # Pack profiles: (key, name, description, base profile, {object: code}, system permissions, custom permissions)
 PROFILES: Final = [
     ("ma_practice_manager", "Practice Manager", "Runs the practice: sales manager rights, finance read and every matter.", "sales_manager",
-     {"matter": "RCED VA", "matter_applicant": "RCED VA", "checklist_item": "RCED VA", "service_agreement": "RCED VA",
-      "visa_type": "RCED", "client_account_transaction": "R VA", "invoice": "R VA", "payment": "R VA", "product": "R"},
+     {"matter": "RCED VA MA", "matter_applicant": "RCED VA MA", "checklist_item": "RCED VA MA", "service_agreement": "RCED VA MA",
+      "visa_type": "RCED VA MA", "client_account_transaction": "R VA", "invoice": "R VA", "payment": "R VA", "product": "R"},
      ("manage_portal_users", "transfer_records", "export_data", "import_data", "manage_public_reports"), (LODGE, OVERRIDE)),
     ("ma_registered_agent", "Registered Migration Agent", "Registered migration agent (MARA): all matters, lodgement, agreements.", "sales_representative",
      {"matter": "RCE VA", "matter_applicant": "RCED VA", "checklist_item": "RCED VA", "service_agreement": "RCE VA",

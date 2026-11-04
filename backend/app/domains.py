@@ -286,7 +286,7 @@ def apply_related_lists(db: Session) -> int:
 # ------------------------------------------------------------------ forms
 
 # Bump when apply_forms changes: existing workspaces are brought up to date at start-up.
-FORMS_VERSION = 1
+FORMS_VERSION = 3
 
 # Sales-oriented fields that a profession workspace doesn't use. They're taken off the page layouts (so off
 # the forms and record pages), not deleted: an administrator can put them back in Object Manager.
@@ -451,25 +451,25 @@ def apply_forms(db: Session, domain: str) -> int:
                 changed += 1
     for api, fields_ in fields_by_object.items():
         for f in fields_:
-            hint = FORM_HINTS.get((api, f.api_name))
+            hint: str | None = FORM_HINTS.get((api, f.api_name))
             if hint and not f.help_text:
                 f.help_text = hint
                 changed += 1
-            label = FIELD_RENAMES.get((api, f.api_name))
-            if label and f.label != label:
-                f.label = label
+            new_label = FIELD_RENAMES.get((api, f.api_name))
+            if new_label and f.label != new_label:
+                f.label = new_label
                 changed += 1
     for api, label in NAME_LABELS.items():
-        obj = objects.get(api)
-        if obj is not None and obj.name_label == "Name":
-            obj.name_label = label
+        named = objects.get(api)
+        if named is not None and named.name_label == "Name":
+            named.name_label = label
             changed += 1
     for api in AUTO_NAMED:
-        obj = objects.get(api)
-        if obj is not None and "name" in _layout_fields_from(obj.page_layout or []):
-            obj.page_layout = [
+        auto = objects.get(api)
+        if auto is not None and "name" in _layout_fields_from(auto.page_layout or []):
+            auto.page_layout = [
                 {**sec, "fields": [f for f in sec.get("fields", []) if f != "name"]}
-                for sec in obj.page_layout
+                for sec in auto.page_layout
             ]
             changed += 1
     return changed
@@ -493,6 +493,116 @@ def _layout_fields_from(layout: list[dict[str, Any]]) -> set[str]:
     return {f for s in layout for f in s.get("fields", [])}
 
 
+# The profession's top profile runs the practice: it edits every record of the profession, not only the ones
+# it owns (clearing a solicitor's conflict check, writing off their time). Version 1 packs gave View All
+# without Modify All.
+PRINCIPAL_MODIFY_ALL: dict[str, tuple[str, tuple[str, ...]]] = {
+    "legal": (
+        "lp_principal",
+        (
+            "legal_matter",
+            "party",
+            "conflict_check",
+            "legal_time_entry",
+            "court_date",
+            "invoice",
+            "account",
+            "contact",
+        ),
+    ),
+    "migration": (
+        "ma_practice_manager",
+        ("matter", "matter_applicant", "checklist_item", "service_agreement", "visa_type"),
+    ),
+    "accounting": (
+        "ap_partner",
+        (
+            "engagement",
+            "engagement_letter",
+            "lodgement_deadline",
+            "document_request",
+            "engagement_time_entry",
+            "invoice",
+            "account",
+            "contact",
+        ),
+    ),
+    "lending": (
+        "lb_principal",
+        ("loan_application", "lender", "fact_find", "commission", "contact", "account"),
+    ),
+}
+
+
+def apply_principal_access(db: Session, domain: str) -> int:
+    """Modify All for the top profile on the profession's records, where the grant is still the shipped
+    default (read, create, edit, delete) - a grant an administrator narrowed is left alone."""
+    from app.models import Profile, ProfileObjectPermission
+
+    spec = PRINCIPAL_MODIFY_ALL.get(domain)
+    if spec is None:
+        return 0
+    profile = db.scalar(select(Profile).where(Profile.key == spec[0]))
+    if profile is None:
+        return 0
+    changed = 0
+    for perm in db.scalars(
+        select(ProfileObjectPermission).where(
+            ProfileObjectPermission.profile_id == profile.id,
+            ProfileObjectPermission.object_api_name.in_(spec[1]),
+        )
+    ):
+        if perm.can_read and perm.can_edit and not perm.modify_all:
+            perm.view_all, perm.modify_all = True, True
+            changed += 1
+    return changed
+
+
+PRODUCT_NAME = "Meridian CRM"
+
+
+def apply_firm_name(db: Session, firm: str | None) -> int:
+    """The firm's name on the portal, PDFs and client e-mails where the product's name was seeded."""
+    from app.services.settings import get_setting, set_setting
+
+    if not firm:
+        return 0
+    changed = 0
+    for key, attr in (("branding", "name"), ("marketing", "from_name")):
+        value = dict(get_setting(db, key) or {})
+        if value.get(attr) in (None, "", PRODUCT_NAME):
+            value[attr] = firm
+            set_setting(db, key, value)
+            changed += 1
+    return changed
+
+
+def apply_compact_layouts(db: Session) -> int:
+    """Record-header highlights for profession objects installed before their pack shipped one."""
+    from app import packs
+
+    wanted: dict[str, list[str]] = {}
+    for key in ("legal_practice", "migration_agency", "accounting_practice", "loan_broker"):
+        objects_ = packs.get(key).bundle().get("objects", [])
+        wanted.update({o["api_name"]: o["compact_layout"] for o in objects_ if o.get("compact_layout")})
+    changed = 0
+    for obj in db.scalars(select(ObjectDefinition).where(ObjectDefinition.api_name.in_(wanted))):
+        if not obj.compact_layout:
+            obj.compact_layout = list(wanted[obj.api_name])
+            changed += 1
+    return changed
+
+
+def _firm_name(db: Session) -> str | None:
+    from app.services.settings import get_setting
+    from app.tenancy import current_tenant
+
+    tenant = current_tenant(db)
+    if tenant is not None and tenant.id is not None:
+        return tenant.name
+    return str((get_setting(db, "company") or {}).get("legal_name") or "") or None
+
+
 def upgrade_domain_workspace(db: Session, *, force: bool = False) -> int:
     """Bring a profession workspace's related lists and forms up to date (idempotent). Caller commits."""
     from app.services.settings import get_setting, set_setting
@@ -501,7 +611,14 @@ def upgrade_domain_workspace(db: Session, *, force: bool = False) -> int:
     domain = workspace.get("domain")
     if not domain or (not force and int(workspace.get("forms_version") or 0) >= FORMS_VERSION):
         return 0
-    changed = apply_related_lists(db) + repair_double_renames(db) + apply_forms(db, str(domain))
+    changed = (
+        apply_related_lists(db)
+        + repair_double_renames(db)
+        + apply_forms(db, str(domain))
+        + apply_principal_access(db, str(domain))
+        + apply_compact_layouts(db)
+        + apply_firm_name(db, _firm_name(db))
+    )
     set_setting(db, "workspace", {**workspace, "forms_version": FORMS_VERSION})
     if changed:
         bump_revision(db)
@@ -532,6 +649,7 @@ def apply_domain(db: Session, domain: str, actor_id: uuid.UUID | None) -> None:
     if not branding.get("primary_color") or branding.get("primary_color") == "#0176d3":
         branding["primary_color"] = spec.color
         set_setting(db, "branding", branding)
+    apply_firm_name(db, _firm_name(db))
     bump_revision(db)
     invalidate_cache()
     audit.record(

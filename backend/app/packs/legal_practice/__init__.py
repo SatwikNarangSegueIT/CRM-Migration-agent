@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.apps.billing import refresh_invoice_payments
 from app.apps.sales import BusinessRuleError, rule
 from app.apps.service import notify
+from app.core.clock import local_today
 from app.engine.hooks import Change, Event, action, on, ref
 from app.engine.records import RecordService
 from app.engine.types import decimal_to_json, format_datetime, money, to_decimal
@@ -81,7 +82,7 @@ def matter_rules(change: Change) -> None:
     record = change.record
     assert record is not None
     if data.get("costs_disclosure_provided") and not data.get("costs_disclosure_date"):
-        data["costs_disclosure_date"] = date.today().isoformat()
+        data["costs_disclosure_date"] = local_today().isoformat()
     closing = (change.is_changed("stage") and data.get("stage") == "Closed") or (
         change.is_changed("status") and data.get("status") == "Closed"
     )
@@ -103,7 +104,7 @@ def matter_rules(change: Change) -> None:
             raise rule(f"Account for the {balance} held in trust before closing the matter.", "stage")
         data["stage"], data["status"] = "Closed", "Closed"
         data.setdefault("closed_date", None)
-        data["closed_date"] = data["closed_date"] or date.today().isoformat()
+        data["closed_date"] = data["closed_date"] or local_today().isoformat()
 
 
 @on("legal_matter", Event.AFTER_CREATE, pack_key=K)
@@ -412,7 +413,10 @@ def _billing_account(svc: RecordService, matter: Record) -> Record:
         raise rule("The matter has no client.")
     acct = _matter(svc, client.data.get("account"))
     if acct is None:
+        # An individual client: invoices need a billing organisation, so one is created in the client's
+        # name and linked to them, so their next matter bills the same one rather than a duplicate.
         acct = svc.elevated().create("account", {"name": client.name, "type": "Customer"})
+        _set(svc, client, {"account": str(acct.id)})
     _set(svc, matter, {"organisation": str(acct.id)})
     return acct
 

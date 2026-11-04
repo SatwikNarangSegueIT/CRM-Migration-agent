@@ -14,7 +14,7 @@ import json
 import re
 import secrets
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote, urlencode
 
@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.apps.sales import BusinessRuleError, ensure_unique, rule
 from app.auth.security import _secret
+from app.core.clock import local_today
 from app.engine.filters import compile_filter
 from app.engine.hooks import Change, Event, action, on, ref
 from app.engine.records import RecordService
@@ -61,7 +62,7 @@ def member_rules(change: Change) -> None:
         change.system["name"] = person.name
     if data.get("status") in ("Responded", "Registered", "Attended") and not data.get("has_responded"):
         data["has_responded"] = True
-        data["first_responded_date"] = date.today().isoformat()
+        data["first_responded_date"] = local_today().isoformat()
 
 
 @action("campaign", "add_members", "Add Members", requires_edit=False)

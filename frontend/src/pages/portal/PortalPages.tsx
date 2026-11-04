@@ -47,9 +47,22 @@ function label(meta: PortalDescribe, api: string) {
   return meta.fields[api]?.label ?? api;
 }
 
+// Staff bookkeeping a client doesn't need, and empty fields, are left off portal pages.
+const STAFF_ONLY = new Set(["owner_id", "created_by", "updated_by", "created_at", "updated_at"]);
+
+function filled(record: RecordData, api: string): boolean {
+  if (STAFF_ONLY.has(api)) return false;
+  if (api === "name") return true;
+  const v = record.fields[api];
+  return !(v === null || v === undefined || v === "" || (Array.isArray(v) && v.length === 0));
+}
+
 function Value({ meta, record, api }: { meta: PortalDescribe; record: RecordData; api: string }) {
   const field = meta.fields[api];
-  if (field?.type === "picklist") return <PicklistPill field={field} value={record.fields[api]} />;
+  if (field?.type === "picklist") {
+    const v = record.fields[api];
+    return v === null || v === undefined || v === "" ? null : <PicklistPill field={field} value={v} />;
+  }
   return <FieldDisplay field={field} record={record} apiName={api} linkBase="/portal" />;
 }
 
@@ -86,21 +99,24 @@ export function PortalHomePage() {
         />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
-          {me.data.objects.map((o) => (
-            <Link
-              key={o.api_name}
-              to={`/portal/o/${o.api_name}`}
-              className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-brand-300 hover:shadow"
-            >
-              <ObjectIcon icon={o.icon} color="#0176d3" size={36} />
-              <span>
-                <span className="block font-semibold text-slate-900">{o.plural_label}</span>
-                {me.data.counts[o.api_name] !== undefined && (
-                  <span className="text-sm text-slate-600">{me.data.counts[o.api_name]} total</span>
-                )}
-              </span>
-            </Link>
-          ))}
+          {me.data.objects
+            // The client's own record is under "Your details"; a card for it alone adds nothing.
+            .filter((o) => !(o.api_name === "contact" && me.data.contact && me.data.counts.contact === 1))
+            .map((o) => (
+              <Link
+                key={o.api_name}
+                to={`/portal/o/${o.api_name}`}
+                className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-brand-300 hover:shadow"
+              >
+                <ObjectIcon icon={o.icon} color="#0176d3" size={36} />
+                <span>
+                  <span className="block font-semibold text-slate-900">{o.plural_label}</span>
+                  {me.data.counts[o.api_name] !== undefined && (
+                    <span className="text-sm text-slate-600">{me.data.counts[o.api_name]} total</span>
+                  )}
+                </span>
+              </Link>
+            ))}
         </div>
       )}
       {me.data.contact && (
@@ -255,7 +271,10 @@ export function PortalRecordPage() {
   if (record.isError) return <Alert tone="error">{errorMessage(record.error)}</Alert>;
   const m = meta.data;
   const r = record.data;
-  const highlights = m.compact_layout.filter((f) => f !== "name");
+  const highlights = m.compact_layout.filter((f) => f !== "name" && filled(r, f));
+  const sections = m.page_layout
+    .map((s) => ({ ...s, fields: s.fields.filter((f) => filled(r, f)) }))
+    .filter((s) => s.fields.length > 0);
   const status = (r.fields.status as string | undefined) ?? undefined;
   const showPdf = PDF_OBJECTS.has(object) && status !== "Draft";
   return (
@@ -307,7 +326,7 @@ export function PortalRecordPage() {
           </dl>
         )}
       </section>
-      {m.page_layout.map((s) => (
+      {sections.map((s) => (
         <section key={s.label} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="font-semibold text-slate-900">{s.label}</h2>
           <dl className={cx("mt-3 grid gap-x-6 gap-y-3 text-sm", s.columns === 2 && "sm:grid-cols-2")}>

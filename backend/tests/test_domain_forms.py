@@ -147,3 +147,51 @@ def test_an_individual_enquiry_converts_without_an_organisation(
     assert out["account_id"] is None and out["contact_id"]
     contact = c.get(f"{API}/objects/contact/records/{out['contact_id']}").json()
     assert not contact["fields"].get("account")
+
+
+def test_principals_can_edit_their_teams_records_and_headers_have_highlights(db: Session) -> None:
+    from app.models import Profile, ProfileObjectPermission
+
+    apply_domain(db, "legal", None)
+    db.flush()
+    principal = db.scalar(select(Profile).where(Profile.key == "lp_principal"))
+    assert principal is not None
+    perm = db.scalar(
+        select(ProfileObjectPermission).where(
+            ProfileObjectPermission.profile_id == principal.id,
+            ProfileObjectPermission.object_api_name == "legal_matter",
+        )
+    )
+    assert perm is not None and perm.view_all and perm.modify_all
+    # A workspace built before highlights shipped gets them on upgrade.
+    check = _obj(db, "conflict_check")
+    check.compact_layout = []
+    db.flush()
+    assert upgrade_domain_workspace(db, force=True) >= 1
+    assert _obj(db, "conflict_check").compact_layout[:2] == ["legal_matter", "result"]
+    db.rollback()
+
+
+def test_date_defaults_use_the_firms_calendar_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    from datetime import UTC, datetime
+    from zoneinfo import ZoneInfo
+
+    from app.core import clock
+
+    # 23:30 UTC on 4 November is 10:30 on 5 November in Sydney.
+    fixed = datetime(2026, 11, 4, 23, 30, tzinfo=UTC)
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[no-untyped-def, override]
+            return fixed.astimezone(tz) if tz else fixed
+
+    monkeypatch.setattr(clock, "datetime", _Clock)
+    assert clock.local_today().isoformat() == "2026-11-05"
+    assert clock.local_now().tzinfo == ZoneInfo("Australia/Sydney")
+
+
+def test_in_process_migrations_leave_app_logging_alone() -> None:
+    from app.db.migrate import _config
+
+    assert _config("alembic").attributes.get("configure_logger") is False

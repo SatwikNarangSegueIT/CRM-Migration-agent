@@ -35,6 +35,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session
 
 from app.core.cache import new_cache, tenant_of
+from app.core.clock import local_today
 from app.core.errors import AppError, ConflictError, NotFoundError, PermissionDeniedError
 from app.db.session import escape_like
 from app.engine import hooks
@@ -676,7 +677,7 @@ class RecordService:
                 continue
             default = f.default_value
             if f.type == "date" and default == "today":
-                default = datetime.now(UTC).date().isoformat()
+                default = local_today().isoformat()
             elif f.type == "datetime" and default == "now":
                 default = utcnow().isoformat().replace("+00:00", "Z")
             elif f.type == "picklist" and default not in f.active_values():

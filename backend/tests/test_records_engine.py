@@ -3,13 +3,13 @@ queries, list views, search and the Object Manager."""
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.clock import local_today
 from app.core.config import Settings
 from app.security.seed_v1 import stable_id
 from tests.conftest import Outbox, client_as, login, make_user
@@ -171,7 +171,7 @@ def test_master_detail_cascade_and_restrict(admin_client: TestClient) -> None:
     c = admin_client
     account = create(c, "account", name="Globex")
     opp = create(
-        c, "opportunity", {"account": account["id"], "close_date": date.today().isoformat()}, name="Big deal"
+        c, "opportunity", {"account": account["id"], "close_date": local_today().isoformat()}, name="Big deal"
     )
     product = create(c, "product", {"product_code": "W-1", "standard_price": 100}, name="Widget")
     line = create(
@@ -401,7 +401,7 @@ def test_relative_dates_list_views_kanban_and_search(admin_client: TestClient) -
     create(
         c,
         "opportunity",
-        {"account": acct["id"], "close_date": date.today().isoformat(), "amount": 100, "stage": "Proposal"},
+        {"account": acct["id"], "close_date": local_today().isoformat(), "amount": 100, "stage": "Proposal"},
         name="Now",
     )
     create(c, "opportunity", {"account": acct["id"], "close_date": "2001-01-01", "amount": 50}, name="Old")

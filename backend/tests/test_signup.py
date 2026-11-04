@@ -89,6 +89,8 @@ def test_migration_domain_installs_its_pack(client: TestClient, outbox: Outbox, 
     set_csrf(client)
     packs = {p["key"]: p for p in client.get(f"{API}/setup/packs").json()}
     assert packs["migration_agency"]["is_enabled"] is True
+    # Clients see the firm's name in the portal, on PDFs and on e-mails, not the product's.
+    assert client.get(f"{API}/public/branding").json()["name"] == "Visa Pathways"
 
 
 def test_warm_pool_is_used_first(client: TestClient, outbox: Outbox, no_mfa: None) -> None:

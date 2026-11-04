@@ -115,6 +115,7 @@ LETTER: Final[dict[str, Any]] = {
                     section("Terms", ["scope", "client_responsibilities"], 1),
                     section("Signature", ["sent_at", "signed_name", "signed_at", "signed_ip"]), SYSTEM_SECTION],
     "list_columns": ["name", "engagement", "status", "fee_estimate", "signed_at"],
+    "compact_layout": ["engagement", "status", "fee_estimate", "sent_at", "signed_at"],
 }  # fmt: skip
 
 DEADLINE: Final[dict[str, Any]] = {
@@ -134,6 +135,7 @@ DEADLINE: Final[dict[str, Any]] = {
     ],
     "page_layout": [section("Deadline", ["name", "client", "engagement", "lodgement_type", "period", "due_date", "status", "lodged_on", "responsible", "notes"]), SYSTEM_SECTION],
     "list_columns": ["name", "client", "lodgement_type", "period", "due_date", "status", "responsible"],
+    "compact_layout": ["client", "lodgement_type", "period", "due_date", "status"],
 }  # fmt: skip
 
 DOCUMENT_REQUEST: Final[dict[str, Any]] = {
@@ -150,6 +152,7 @@ DOCUMENT_REQUEST: Final[dict[str, Any]] = {
     ],
     "page_layout": [section("Request", ["name", "engagement", "status", "due_date", "is_public", "sort_order", "instructions"])],
     "list_columns": ["name", "status", "due_date", "is_public"],
+    "compact_layout": ["engagement", "status", "due_date", "is_public"],
 }  # fmt: skip
 
 TIME_ENTRY: Final[dict[str, Any]] = {
@@ -171,6 +174,7 @@ TIME_ENTRY: Final[dict[str, Any]] = {
     ],
     "page_layout": [section("Time", ["name", "engagement", "staff", "entry_date", "units", "hours", "rate", "amount", "billable", "status", "invoice", "narrative"]), SYSTEM_SECTION],
     "list_columns": ["name", "engagement", "staff", "entry_date", "units", "amount", "status"],
+    "compact_layout": ["engagement", "staff", "entry_date", "units", "amount"],
 }  # fmt: skip
 
 STANDARD_FIELDS: Final[list[dict[str, Any]]] = [
@@ -244,8 +248,8 @@ def bundle() -> dict[str, Any]:
 
 PROFILES: Final[list[ProfileSpec]] = [
     ("ap_partner", "Partner", "Runs the practice: every client and engagement, review and lodgement, WIP and billing.", "sales_manager",
-     {"engagement": "RCED VA", "engagement_letter": "RCED VA", "lodgement_deadline": "RCED VA", "document_request": "RCED VA",
-      "engagement_time_entry": "RCED VA", "invoice": "RCE VA", "payment": "RC VA", "account": "RCED VA", "contact": "RCED VA"},
+     {"engagement": "RCED VA MA", "engagement_letter": "RCED VA MA", "lodgement_deadline": "RCED VA MA", "document_request": "RCED VA MA",
+      "engagement_time_entry": "RCED VA MA", "invoice": "RCE VA MA", "payment": "RC VA", "account": "RCED VA MA", "contact": "RCED VA MA"},
      ("manage_portal_users", "transfer_records", "export_data", "import_data", "manage_public_reports"), (LODGE,)),
     ("ap_accountant", "Accountant", "Registered tax agent staff: prepares and lodges returns, letters and document requests.", "sales_representative",
      {"engagement": "RCE", "engagement_letter": "RCE", "lodgement_deadline": "RCE", "document_request": "RCED",

@@ -82,15 +82,14 @@ def me(svc: PortalRecords) -> dict[str, Any]:
         a = svc.db.get(Record, svc.sharing.account_id)
         if a is not None:
             account = {"id": str(a.id), "name": a.name}
-    counts: dict[str, int] = {}
-    for obj in ("case", "invoice"):
-        if svc.policy.object(obj).read:
-            counts[obj] = svc.query(obj, limit=1).total
+    objects = _portal_objects(svc)
+    # Every card on the portal home shows how many records it holds (each is one indexed count).
+    counts = {o["api_name"]: svc.query(o["api_name"], limit=1).total for o in objects}
     branding = get_setting(svc.db, "branding") or {}
     return {
         "contact": contact,
         "account": account,
-        "objects": _portal_objects(svc),
+        "objects": objects,
         "counts": counts,
         "branding": branding,
     }
