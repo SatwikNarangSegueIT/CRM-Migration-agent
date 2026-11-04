@@ -1,0 +1,181 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Meridian CRM – Implementation Plan v4</title>
+<style>
+  @page { size: A4; margin: 18mm 15mm 18mm 15mm; }
+  :root { --ink:#1b2333; --muted:#5b6578; --brand:#1449e1; --line:#d7dce5; --soft:#f3f6fb; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: var(--ink); font-size: 10pt; line-height: 1.45; margin: 0; }
+  h1 { font-size: 26pt; margin: 0 0 6px; color: var(--brand); }
+  h2 { font-size: 15pt; color: var(--brand); border-bottom: 2px solid var(--brand); padding-bottom: 3px; margin: 22px 0 10px; break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 14px 0 6px; break-after: avoid; }
+  p { margin: 4px 0 8px; }
+  ul { margin: 4px 0 8px; padding-left: 18px; }
+  li { margin: 2px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 9pt; }
+  th, td { border: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  tr { break-inside: avoid; }
+  code { font-family: Menlo, Consolas, monospace; font-size: 8.6pt; background: var(--soft); padding: 0 3px; border-radius: 3px; }
+  pre { font-family: Menlo, Consolas, monospace; font-size: 8.2pt; background: var(--soft); border: 1px solid var(--line); padding: 8px 10px; border-radius: 4px; white-space: pre; line-height: 1.35; break-inside: avoid; }
+  .cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; break-after: page; }
+  .cover .sub { font-size: 14pt; color: var(--muted); margin-bottom: 26px; }
+  .meta td { border: none; padding: 2px 10px 2px 0; font-size: 10.5pt; }
+  .meta td:first-child { color: var(--muted); width: 140px; }
+  .note { background: #fff8e6; border-left: 4px solid #e0a100; padding: 6px 10px; margin: 8px 0; font-size: 9pt; }
+  .matrix { font-size: 7.6pt; }
+  .matrix th, .matrix td { padding: 3px 3px; text-align: center; }
+  .matrix td:first-child, .matrix th:first-child { text-align: left; white-space: nowrap; }
+  .matrix .grp td { background: #e8eefc; font-weight: 700; text-align: left; }
+  .y { color: #127a3a; font-weight: 700; }
+  .o { color: #9a5b00; font-weight: 700; }
+  .toc li { margin: 3px 0; }
+  .pb { break-before: page; }
+  .small { font-size: 8.6pt; color: var(--muted); }
+  .diagram { width: 100%; margin: 6px 0 12px; }
+</style>
+</head>
+<body>
+
+</head><body>
+<section class="cover">
+  <h1>Meridian CRM</h1>
+  <div class="sub">Implementation Plan v4 — Multi-tenant SaaS with domain-specific CRMs<br>and a fast, smooth experience</div>
+  <table class="meta">
+    <tr><td>Version</td><td>4.0 — extends v3 (v3 security model, engine and apps stay)</td></tr>
+    <tr><td>Date</td><td>4 November 2026</td></tr>
+    <tr><td>Decisions taken</td><td>Multi-tenant SaaS with public sign-up · Australian rules for all domains · domain-first navigation · slowness observed with <code>npm run dev</code></td></tr>
+    <tr><td>Domains at sign-up</td><td>Lawyer · Migration Agent · Chartered Accountant · Loan Broker</td></tr>
+  </table>
+  <h3 style="margin-top:24px">Contents</h3>
+  <ol class="toc">
+    <li>Goals</li>
+    <li>Performance: what was measured and how it will be fixed</li>
+    <li>Multi-tenant architecture</li>
+    <li>Sign-up and sign-in</li>
+    <li>Domain-specific CRMs</li>
+    <li>Domain packs (Australia)</li>
+    <li>Security and isolation</li>
+    <li>Testing</li>
+    <li>Neon and deployment</li>
+    <li>Delivery order</li>
+    <li>Risks and open questions</li>
+  </ol>
+</section>
+
+<h2>1. Goals</h2>
+<ul>
+  <li><b>Self-service sign-up:</b> a firm signs up, chooses its domain and immediately gets a CRM shaped for that profession (objects, fields, stages, terminology, dashboards, roles).</li>
+  <li><b>Complete isolation</b> between firms (tenants): no query, cache, file, e-mail link or background job can cross tenants.</li>
+  <li><b>Fast:</b> pages feel instant after the first load; API answers in tens of milliseconds even with the database in another region.</li>
+  <li>Keep everything built so far (v3 engine, apps, security, portal, packs). Existing data becomes the first tenant.</li>
+</ul>
+
+<h2>2. Performance: measured, and how it will be fixed</h2>
+<h3>Measurements (local, 4 Nov 2026)</h3>
+<table>
+  <tr><th style="width:38%">Request</th><th>SQL queries</th><th>Local time</th><th>Estimated with Neon at 150 ms/round trip*</th></tr>
+  <tr><td>GET /auth/me</td><td>4</td><td>12 ms</td><td>≈ 0.6 s</td></tr>
+  <tr><td>GET /meta/apps</td><td>7–9</td><td>16–80 ms</td><td>≈ 1.2 s</td></tr>
+  <tr><td>GET /me/notifications</td><td>7</td><td>19–59 ms</td><td>≈ 1.1 s</td></tr>
+  <tr><td>GET /me/recent</td><td>19</td><td>33–45 ms</td><td>≈ 2.9 s</td></tr>
+  <tr><td>POST /objects/account/records/query (list view)</td><td>14</td><td>23–29 ms</td><td>≈ 2.1 s</td></tr>
+  <tr><td>GET /setup/objects</td><td>44</td><td>56–63 ms</td><td>≈ 6.6 s</td></tr>
+  <tr><td>Full page load in <code>npm run dev</code></td><td colspan="3">≈ 100 unbundled script files, 0.8–2.4 s; in-app navigation 40–240 ms</td></tr>
+</table>
+<p class="small">* Queries run one after another, so each pays the network round trip to the database. India ↔ Sydney is typically 120–180 ms; Sydney ↔ Sydney 1–5 ms.</p>
+<p><b>Conclusion:</b> the main cause is the number of sequential database round trips per request (session, profile permissions, packs, sharing context, metadata revision, then the data), multiplied by the latency to Neon. The dev server adds a slower first load.</p>
+<h3>Fixes</h3>
+<table>
+  <tr><th style="width:26%">Area</th><th>Change</th><th style="width:22%">Target</th></tr>
+  <tr><td>Per-request queries</td><td>Session, user, profile and role in one query. Permissions, enabled packs, sharing context (role ancestry, groups, queues) and the metadata registry cached in memory per tenant, invalidated by revision counters held in Redis (no database query to check freshness). Totals computed with the page query where possible.</td><td>≤ 3 queries for typical requests (session + data + count)</td></tr>
+  <tr><td>Fewer requests</td><td>A <code>/bootstrap</code> endpoint returns user, permissions, apps, branding and unread-notification count in one call; record pages load record + describe + related counts in one call.</td><td>Home / list / record: 1–3 API calls</td></tr>
+  <tr><td>Front-end caching</td><td>Metadata and app definitions cached across reloads (persisted query cache, versioned by metadata revision); stale-while-revalidate for lists; previous page kept while the next loads; prefetch on hover/focus of links and tabs.</td><td>Repeat visits render instantly</td></tr>
+  <tr><td>Perceived speed</td><td>Skeleton placeholders instead of spinners, optimistic updates for inline edits and stage changes, no layout shift.</td><td>No blank screens</td></tr>
+  <tr><td>Transport</td><td>gzip/brotli compression and ETags on metadata responses; HTTP keep-alive.</td><td>Smaller, cacheable payloads</td></tr>
+  <tr><td>Dev server</td><td>Vite pre-bundling and module warm-up for the main routes; documented option to run against a local Postgres or a Neon branch in the nearest region.</td><td>First dev load ≈ 2× faster</td></tr>
+  <tr><td>Guard rails</td><td>Automated query-budget tests per endpoint and a latency test that injects 150 ms per query, so regressions fail CI.</td><td>Budgets enforced</td></tr>
+</table>
+
+<h2 class="pb">3. Multi-tenant architecture</h2>
+<p><b>Decision: one PostgreSQL schema per tenant</b> (firm), plus a small shared <code>platform</code> schema.</p>
+<table>
+  <tr><th style="width:24%">Concern</th><th>Design</th></tr>
+  <tr><td>Why schema-per-tenant</td><td>Strong isolation with no tenant column to forget in thousands of queries; the existing engine, seeds and migrations work unchanged inside each schema; per-tenant backup/restore and deletion are simple. Suits a professional-firm SaaS (hundreds to low thousands of tenants).</td></tr>
+  <tr><td>Platform schema</td><td><code>tenants</code> (id, slug, firm name, domain, schema name, status, region, created/verified dates), <code>user_directory</code> (e-mail → tenant + user, for sign-in), <code>signup_requests</code> (verification tokens), <code>provisioned_schemas</code> (warm pool), platform audit log.</td></tr>
+  <tr><td>Routing a request</td><td>The session cookie carries the tenant id with the token (<code>&lt;tenant&gt;.&lt;token&gt;</code>). Each transaction starts with <code>SET LOCAL search_path = &lt;tenant schema&gt;</code>, which is safe with Neon's pooled (PgBouncer transaction-mode) connections.</td></tr>
+  <tr><td>Caches</td><td>Every in-memory cache (registry, permissions, sharing context, settings) is keyed by tenant and revision.</td></tr>
+  <tr><td>Links in e-mails</td><td>Invitation, reset, verification, unsubscribe and tracking links carry the tenant, so public endpoints resolve the right schema.</td></tr>
+  <tr><td>Background jobs</td><td>Every job carries its tenant; scheduled jobs (reminders, escalations, retention, scheduled reports) iterate active tenants.</td></tr>
+  <tr><td>Files</td><td>Storage keys prefixed by tenant; downloads check the tenant.</td></tr>
+  <tr><td>Migrations</td><td>Platform migrations once; tenant migrations applied to every tenant schema (CLI <code>migrate-tenants</code>, also run on deploy).</td></tr>
+  <tr><td>Existing data</td><td>The current <code>public</code> schema becomes the first tenant, so no data is moved.</td></tr>
+</table>
+
+<h2>4. Sign-up and sign-in</h2>
+<ol>
+  <li><b>Sign-up page</b> (public): choose a domain from four cards (with a one-line description of what each includes), then firm name, your name, work e-mail, password, ABN (optional), and acceptance of terms and privacy policy.</li>
+  <li><b>Verify e-mail:</b> a single-use link (24 h). Unverified sign-ups are removed after 7 days.</li>
+  <li><b>Workspace creation:</b> takes a pre-built schema from a warm pool (instant), otherwise builds one in the background with a progress screen (target &lt; 10 s). Installs the domain pack, applies domain-first navigation and terminology, creates the firm's administrator (System Administrator profile, MFA enrolment at first sign-in in production).</li>
+  <li><b>First-run guide</b> on the home page: invite colleagues, import clients (CSV), set company/billing details, connect e-mail sending.</li>
+  <li><b>Sign-in:</b> e-mail + password. If the e-mail belongs to several workspaces, a workspace picker appears. Portal clients sign in the same way and land in their firm's portal.</li>
+  <li><b>Abuse controls:</b> rate limits per IP and e-mail, reserved/blocked slugs, verification before use, CAPTCHA hook.</li>
+</ol>
+
+<h2 class="pb">5. Domain-specific CRMs</h2>
+<ul>
+  <li><b>Domain-first navigation:</b> the domain's app is the main app (Home, Clients, Matters/Engagements/Loans…, Calendar, Reports). Generic Sales, Service, Marketing and Billing apps are hidden (not deleted) and can be switched on in Setup → App Manager.</li>
+  <li><b>Terminology:</b> standard objects are renamed for the profession (e.g. Contact → Client, Account → Organisation/Entity, Opportunity → Enquiry), and every label, list view and report follows.</li>
+  <li><b>Defaults:</b> stage paths, list views, home cards, dashboards, report library, document checklists, profiles and roles suited to the profession.</li>
+  <li><b>Branding:</b> the workspace carries the firm's name; colours default per domain.</li>
+</ul>
+
+<h2>6. Domain packs (Australia)</h2>
+<table>
+  <tr><th style="width:15%">Domain</th><th style="width:35%">Objects and stages</th><th>Compliance and profession features</th></tr>
+  <tr><td><b>Lawyer</b> (law practice)</td><td><b>Legal Matter</b> (practice area, client, other parties, responsible solicitor, court/jurisdiction, key dates; stages Intake → Conflict Check → Engaged → Active → Settlement/Hearing → Closed), <b>Party</b>, <b>Conflict Check</b>, <b>Time Entry</b> (6-minute units, rate, billable, narrative), <b>Court Date</b>, <b>Trust Transaction</b>.</td><td>Conflict search across clients and parties before opening a matter; Legal Profession Uniform Law costs disclosure and estimate (required above $750) before work; trust account ledger with no overdraw and statements; time → invoice; reports: WIP, billable hours, trust balances, limitation-date alerts.</td></tr>
+  <tr><td><b>Migration Agent</b></td><td>Existing pack: Matter (visa stages), Visa Type, Applicants, Checklist, Service Agreement, Client Account.</td><td>Code of Conduct agreement and Consumer Guide, Lodge Applications permission, client-account ledger, expiry reminders, portal e-signature (unchanged).</td></tr>
+  <tr><td><b>Chartered Accountant</b></td><td><b>Engagement</b> (type: individual/company/trust/partnership/SMSF tax return, BAS/IAS, SMSF audit, bookkeeping, advisory; financial year; stages Not Started → Awaiting Information → In Progress → Review → Ready to Lodge → Lodged → Complete), <b>Engagement Letter</b>, <b>Lodgement Deadline</b>, <b>Document Request</b>, <b>Time Entry</b>; entity fields on Organisation (entity type, ABN, TFN encrypted, GST registration, BAS frequency).</td><td>APES 305 engagement letter sign-off (portal e-signature); ATO lodgement due dates with reminders; client document requests through the portal; WIP and recoverability reports; workload by accountant.</td></tr>
+  <tr><td><b>Loan Broker</b></td><td><b>Loan Application</b> (borrowers, purpose, loan amount, security value, LVR calculated, lender, product, rate, term; stages Enquiry → Fact Find → Preliminary Assessment → Lodged → Conditional Approval → Valuation → Unconditional → Settlement → Settled / Declined), <b>Lender</b>, <b>Fact Find</b> (income, expenses, assets, liabilities), <b>Commission</b> (upfront, trail, clawback).</td><td>NCCP: credit guide and privacy consent recorded before credit assistance; Best Interests Duty record and preliminary assessment kept 7 years; settlement and rate-review reminders; commission ledger and pipeline-by-stage reports.</td></tr>
+</table>
+<p class="small">Each pack also ships domain profiles (e.g. Principal, Solicitor, Paralegal / Partner, Accountant, Bookkeeper / Principal Broker, Broker, Processor), roles, list views, dashboards and portal access for clients. The packs support compliance workflows; they do not replace professional advice on the rules.</p>
+
+<h2 class="pb">7. Security and isolation</h2>
+<ul>
+  <li>Tenant resolved from the signed session cookie only (never from user input); the tenant id must exist and be active.</li>
+  <li>The database role used by the API has no access to the platform tables beyond what sign-in needs.</li>
+  <li>Automated cross-tenant tests: every endpoint called with another tenant's ids, sessions, links and file ids must return 404/401.</li>
+  <li>Per-tenant export and deletion (closing a workspace), and per-tenant audit logs.</li>
+</ul>
+
+<h2>8. Testing</h2>
+<ul>
+  <li>Back end: tenancy unit tests (routing, caches, search_path), cross-tenant isolation suite, sign-up/verification/provisioning, each domain pack's rules, query-budget tests.</li>
+  <li>Front end: sign-up flow, workspace picker, domain-first navigation and terminology per domain.</li>
+  <li>End-to-end: sign up once per domain, verify e-mail, sign in, create the domain's core record and move it through its stages; isolation check between two firms; performance run with injected latency.</li>
+</ul>
+
+<h2>9. Neon and deployment</h2>
+<ul>
+  <li>Neon main currently holds the single-tenant schema at revision 8ad0e7e5a8f8 with 7 users. After this work a SQL script (generated and verified the same way as before) upgrades it: platform schema plus the existing data as the first tenant.</li>
+  <li>New tenants are created by the application itself. The container used for development cannot reach Neon, so production provisioning runs from the deployed API.</li>
+</ul>
+
+<h2>10. Delivery order</h2>
+<table>
+  <tr><th style="width:6%">#</th><th style="width:28%">Step</th><th>Deliverables</th></tr>
+  <tr><td>1</td><td>Performance</td><td>Query reduction and caches, bootstrap endpoint, front-end caching/prefetch/skeletons, dev-server warm-up, query-budget tests.</td></tr>
+  <tr><td>2</td><td>Tenancy core</td><td>Platform schema, tenant routing, per-tenant caches/jobs/files/links, tenant migrations, existing data as first tenant, isolation tests.</td></tr>
+  <tr><td>3</td><td>Sign-up and sign-in</td><td>Sign-up with domain choice, e-mail verification, provisioning (warm pool), workspace picker, first-run guide.</td></tr>
+  <tr><td>4</td><td>Domain packs</td><td>Legal, Accounting and Loan Broker packs; domain-first navigation and terminology for all four domains.</td></tr>
+  <tr><td>5</td><td>Verification</td><td>Full test suites, end-to-end per domain, performance run, docs, Neon upgrade script.</td></tr>
+</table>
+
+<h2>11. Risks and open questions</h2>
+<table>
+  <tr><th style="width:35%">Item</th><th>Approach / decision needed</th></tr>
+  <tr><td>Schema count at very large scale</td><td>Fine for thousands of firms; beyond that, shard tenants across Neon projects (the platform table records each tenant's location).</td></tr>
+  <tr><td>Sign-up e-mails need a real provider</td><td>Production needs SMTP (e.g. Amazon SES Sydney) for verification e-mails.</td></tr>
+  <tr><td>Open: SaaS subscriptions</td><td>Not in this plan: plans/pricing, trials and card billing (e.g. Stripe). Confirm if wanted.</td></tr>
+  <tr><td>Open: workspace URLs</td><td>This plan uses one address for all firms with a workspace picker; per-firm sub-domains (firm.example.com) can be added later.</td></tr>
+</table>
+
+</body></html>
