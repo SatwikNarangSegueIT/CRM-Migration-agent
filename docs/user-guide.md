@@ -2,7 +2,8 @@
 
 For everyone who uses Meridian CRM day to day: principals, practitioners, case officers, accountants,
 brokers, administrators. Profession-specific steps (matters, engagements, loan applications) are in
-[How each profession's workspace works](domain-workflows.md); who can do what is in
+[How each profession's workspace works](domain-workflows.md) (law firms: see the
+[Legal Practice user guide](user-guide-legal.md)); who can do what is in
 [Roles and permissions](roles-and-permissions.md).
 
 **Contents**

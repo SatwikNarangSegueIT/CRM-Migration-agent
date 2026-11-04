@@ -36,6 +36,7 @@ shaped for that profession. See [docs/domains.md](docs/domains.md).
 | Document | For |
 |---|---|
 | [User guide](docs/user-guide.md) | Everyone: signing up, lists, records, portal, import/export, reports, troubleshooting |
+| [Legal Practice user guide](docs/user-guide-legal.md) | Law firms: matters, conflict checks, costs disclosure, time, billing, trust accounting, court dates |
 | [How each profession's workspace works](docs/domain-workflows.md) | Step-by-step flow, stage checks, automation and reminders for law, migration, accounting and lending |
 | [Roles and permissions](docs/roles-and-permissions.md) | Profiles, roles, sharing, field security and each profession's default profiles |
 | [Operations runbook](docs/operations.md) | Deploying, upgrading the database, sign-up checklist, backups, performance |
