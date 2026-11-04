@@ -40,3 +40,12 @@ def test_breach_check_matches_the_hash_suffix(monkeypatch) -> None:  # type: ign
 
     monkeypatch.setattr(httpx, "get", down)
     assert not security.is_breached_password("Correct-Horse-Battery-9")  # fails open
+
+
+def test_terminology_is_replaced_in_one_pass() -> None:
+    from app.domains import swap_words
+
+    pairs = [("Contacts", "Contact People"), ("Accounts", "Clients"), ("Contact", "Contact Person")]
+    assert swap_words("Contacts", pairs) == "Contact People"
+    assert swap_words("My contacts and Contact roles", pairs) == "My contact People and Contact Person roles"
+    assert swap_words("Accounts by Contact", pairs) == "Clients by Contact Person"

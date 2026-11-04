@@ -190,6 +190,28 @@ def sync_indexes() -> int:
     return 0
 
 
+def refresh_domain_layouts() -> int:
+    """Re-apply domain related lists in every workspace set up for a profession (safe to repeat)."""
+    from app.db.session import get_sessionmaker as sessions
+    from app.domains import apply_related_lists, repair_double_renames
+    from app.engine.meta import bump_revision, invalidate_cache
+    from app.services.settings import get_setting
+    from app.tenancy import active_tenants, bind_tenant
+
+    for tenant in active_tenants():
+        with sessions()() as db:
+            bind_tenant(db, tenant)
+            if not (get_setting(db, "workspace") or {}).get("domain"):
+                continue
+            changed = apply_related_lists(db) + repair_double_renames(db)
+            if changed:
+                bump_revision(db)
+            db.commit()
+        invalidate_cache()
+        print(f"{tenant.slug or tenant.schema}: {changed} object(s) updated.")
+    return 0
+
+
 def migrate() -> int:
     from app.db.migrate import migrate_all
 
@@ -233,6 +255,9 @@ def main(argv: list[str] | None = None) -> int:
     p_admin.add_argument("--password", help="Omit to be prompted (recommended)")
     sub.add_parser("seed-demo", help="Create one demo user per default staff profile (development only)")
     sub.add_parser("sync-indexes", help="Create missing field indexes (run after deploys)")
+    sub.add_parser(
+        "refresh-domain-layouts", help="Re-apply profession related lists in every domain workspace"
+    )
     p_load = sub.add_parser("seed-load", help="Insert synthetic rows for load tests (development only)")
     p_load.add_argument("--count", type=int, default=100_000)
     p_load.add_argument("--object", default="account")
@@ -248,6 +273,8 @@ def main(argv: list[str] | None = None) -> int:
         return create_admin(args.email, args.name, args.password)
     if args.command == "sync-indexes":
         return sync_indexes()
+    if args.command == "refresh-domain-layouts":
+        return refresh_domain_layouts()
     if args.command == "seed-load":
         return seed_load(args.count, args.object)
     return seed_demo()

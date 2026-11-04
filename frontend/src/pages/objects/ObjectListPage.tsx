@@ -24,7 +24,6 @@ import {
   ListIcon,
   PinIcon,
   PlusIcon,
-  RefreshIcon,
   SettingsIcon,
   UploadIcon,
 } from "../../components/icons";
@@ -284,44 +283,44 @@ function ListView({ meta }: { meta: ObjectDescribe }) {
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <ButtonGroup label="List actions">
-                {access.create && (
-                  <button type="button" className={groupButtonClass} onClick={() => setCreating(true)}>
-                    <PlusIcon size={16} /> New
-                  </button>
-                )}
-                {access.create && can("import_data") && (
-                  <Link to={`/import?object=${api}`} className={groupButtonClass}>
-                    <UploadIcon size={16} /> Import
-                  </Link>
-                )}
-                {access.edit && (
-                  <button
-                    type="button"
-                    className={groupButtonClass}
-                    disabled={selected.size === 0}
-                    onClick={() => setOwnerOpen(true)}
-                  >
-                    Change Owner
-                  </button>
-                )}
-                {access.delete && (
-                  <button
-                    type="button"
-                    className={groupButtonClass}
-                    disabled={selected.size === 0}
-                    onClick={() => setConfirmDelete("records")}
-                  >
-                    Delete
-                  </button>
-                )}
-                {can("export_data") && (
-                  <button type="button" className={groupButtonClass} onClick={() => void exportCsv()}>
-                    <DownloadIcon size={16} /> Export
-                  </button>
-                )}
-              </ButtonGroup>
+            <div className="flex flex-wrap items-center gap-2">
+              {selected.size > 0 && (access.edit || access.delete) && (
+                <ButtonGroup label="Selected records">
+                  {access.edit && (
+                    <button type="button" className={groupButtonClass} onClick={() => setOwnerOpen(true)}>
+                      Change owner
+                    </button>
+                  )}
+                  {access.delete && (
+                    <button
+                      type="button"
+                      className={cx(groupButtonClass, "text-red-700")}
+                      onClick={() => setConfirmDelete("records")}
+                    >
+                      Delete {selected.size}
+                    </button>
+                  )}
+                </ButtonGroup>
+              )}
+              {((access.create && can("import_data")) || can("export_data")) && (
+                <ButtonGroup label="List actions">
+                  {access.create && can("import_data") && (
+                    <Link to={`/import?object=${api}`} className={groupButtonClass}>
+                      <UploadIcon size={16} /> Import
+                    </Link>
+                  )}
+                  {can("export_data") && (
+                    <button type="button" className={groupButtonClass} onClick={() => void exportCsv()}>
+                      <DownloadIcon size={16} /> Export
+                    </button>
+                  )}
+                </ButtonGroup>
+              )}
+              {access.create && (
+                <Button size="sm" onClick={() => setCreating(true)}>
+                  <PlusIcon size={16} /> New
+                </Button>
+              )}
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -406,15 +405,6 @@ function ListView({ meta }: { meta: ObjectDescribe }) {
                   </button>
                 </div>
               )}
-              <button
-                type="button"
-                aria-label="Refresh"
-                title="Refresh"
-                className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2 text-slate-600 shadow-sm hover:bg-slate-50"
-                onClick={() => void queryClient.invalidateQueries({ queryKey: ["records", api] })}
-              >
-                <RefreshIcon size={16} />
-              </button>
               <button
                 type="button"
                 aria-label="Edit columns"

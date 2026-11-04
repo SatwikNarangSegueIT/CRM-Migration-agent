@@ -10,27 +10,13 @@ import {
 import { AppShell } from "./components/AppShell";
 import { PortalLayout } from "./components/PortalLayout";
 import { Spinner } from "./components/ui/Spinner";
-import { AccountPage } from "./pages/AccountPage";
-import { AuditLogPage } from "./pages/admin/AuditLogPage";
-import { UserCreatePage } from "./pages/admin/UserCreatePage";
-import { UserDetailPage } from "./pages/admin/UserDetailPage";
-import { UsersListPage } from "./pages/admin/UsersListPage";
-import { AcceptInvitationPage } from "./pages/auth/AcceptInvitationPage";
-import { ForgotPasswordPage } from "./pages/auth/ForgotPasswordPage";
 import { LoginPage } from "./pages/auth/LoginPage";
-import { MfaSetupPage } from "./pages/auth/MfaSetupPage";
-import { MfaVerifyPage } from "./pages/auth/MfaVerifyPage";
-import { ResetPasswordPage } from "./pages/auth/ResetPasswordPage";
-import { SignupPage } from "./pages/auth/SignupPage";
-import { VerifySignupPage } from "./pages/auth/VerifySignupPage";
 import { ForbiddenPage } from "./pages/ForbiddenPage";
 import { HomePage } from "./pages/HomePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { ObjectListPage } from "./pages/objects/ObjectListPage";
 import { RecordPage } from "./pages/objects/RecordPage";
-import { UnsubscribePage } from "./pages/public/UnsubscribePage";
 import { SetupHomePage, SetupLayout } from "./pages/setup/SetupLayout";
-import { CalendarPage, RecycleBinPage, SearchPage } from "./pages/WorkspacePages";
 
 /**
  * Code-split pages: Setup, analytics, import and the customer portal load on first use, so the
@@ -53,6 +39,25 @@ function lazyPage(load: () => Promise<Record<string, unknown>>, name: string) {
   };
 }
 
+const AccountPage = lazyPage(() => import("./pages/AccountPage"), "AccountPage");
+const AuditLogPage = lazyPage(() => import("./pages/admin/AuditLogPage"), "AuditLogPage");
+const UserCreatePage = lazyPage(() => import("./pages/admin/UserCreatePage"), "UserCreatePage");
+const UserDetailPage = lazyPage(() => import("./pages/admin/UserDetailPage"), "UserDetailPage");
+const UsersListPage = lazyPage(() => import("./pages/admin/UsersListPage"), "UsersListPage");
+const AcceptInvitationPage = lazyPage(
+  () => import("./pages/auth/AcceptInvitationPage"),
+  "AcceptInvitationPage",
+);
+const ForgotPasswordPage = lazyPage(() => import("./pages/auth/ForgotPasswordPage"), "ForgotPasswordPage");
+const MfaSetupPage = lazyPage(() => import("./pages/auth/MfaSetupPage"), "MfaSetupPage");
+const MfaVerifyPage = lazyPage(() => import("./pages/auth/MfaVerifyPage"), "MfaVerifyPage");
+const ResetPasswordPage = lazyPage(() => import("./pages/auth/ResetPasswordPage"), "ResetPasswordPage");
+const SignupPage = lazyPage(() => import("./pages/auth/SignupPage"), "SignupPage");
+const VerifySignupPage = lazyPage(() => import("./pages/auth/VerifySignupPage"), "VerifySignupPage");
+const UnsubscribePage = lazyPage(() => import("./pages/public/UnsubscribePage"), "UnsubscribePage");
+const CalendarPage = lazyPage(() => import("./pages/WorkspacePages"), "CalendarPage");
+const RecycleBinPage = lazyPage(() => import("./pages/WorkspacePages"), "RecycleBinPage");
+const SearchPage = lazyPage(() => import("./pages/WorkspacePages"), "SearchPage");
 const DashboardPage = lazyPage(() => import("./pages/analytics/DashboardsPages"), "DashboardPage");
 const DashboardsPage = lazyPage(() => import("./pages/analytics/DashboardsPages"), "DashboardsPage");
 const NewReportPage = lazyPage(() => import("./pages/analytics/ReportsPages"), "NewReportPage");

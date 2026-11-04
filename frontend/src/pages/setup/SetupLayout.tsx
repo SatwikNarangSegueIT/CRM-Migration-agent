@@ -128,9 +128,9 @@ export function SetupHomePage() {
   const sections = useSetupSections();
   return (
     <div>
-      <div className="mb-4 rounded-lg bg-gradient-to-r from-[#032d60] to-brand-700 px-6 py-5 text-white shadow-sm">
+      <div className="mb-4 rounded-lg bg-gradient-to-br from-brand-900 to-brand-700 px-6 py-5 text-white shadow-sm">
         <h1 className="text-2xl font-semibold">Setup</h1>
-        <p className="mt-1 text-sm text-blue-100">
+        <p className="mt-1 text-sm text-white/75">
           Shape the CRM to your business: users and access, objects and fields, apps, industry packs and
           company settings.
         </p>

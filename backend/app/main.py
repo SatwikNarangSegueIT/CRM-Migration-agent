@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, FastAPI
+from starlette.middleware.gzip import GZipMiddleware
 
 from app import apps as _apps  # noqa: F401 - registers the standard apps' object hooks
 from app import packs
@@ -41,6 +42,31 @@ packs.available()  # registers industry packs and their hooks
 API_PREFIX = "/api/v1"
 
 
+def _warm_up_in_background() -> None:
+    """Open the first pooled connections (waking a suspended Neon compute) and top up the warm pool of
+    pre-built workspaces, so neither the first request nor the first sign-up after a deploy is slow."""
+    import threading
+
+    def run() -> None:
+        try:
+            from sqlalchemy import text
+
+            from app.db.session import get_engine
+
+            with get_engine().connect() as conn:
+                conn.execute(text("SELECT 1"))
+            from app.tenancy import tenants
+
+            tenants()  # load the workspace catalogue
+            from app.db.migrate import refill_warm_pool_soon
+
+            refill_warm_pool_soon()
+        except Exception:
+            logging.getLogger("app").warning("Start-up warm-up skipped", exc_info=True)
+
+    threading.Thread(target=run, name="warm-up", daemon=True).start()
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.log_json)
@@ -49,6 +75,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         logger.info("Starting %s", settings.app_name, extra={"environment": settings.app_env})
+        if settings.app_env != "test":
+            _warm_up_in_background()
         yield
         logger.info("Shutting down %s", settings.app_name)
 
@@ -61,6 +89,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
         openapi_url=f"{API_PREFIX}/openapi.json" if docs_enabled else None,
     )
+    # Compress JSON (list views, metadata) when the client accepts it; small bodies are left as they are.
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     app.add_middleware(RequestContextMiddleware, hsts=settings.app_env in ("staging", "production"))
     register_error_handlers(app)
 

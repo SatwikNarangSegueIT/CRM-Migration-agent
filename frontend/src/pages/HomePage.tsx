@@ -431,22 +431,43 @@ export function HomePage() {
   const starters = (STARTERS[key] ?? STARTERS.sales!).filter((s) => !s.object || object(s.object).read);
   const firstName = me?.user.name.split(" ")[0] ?? "";
 
+  // Until the apps are known the layout isn't: rendering the generic cards first would fire queries for
+  // objects this workspace doesn't use (and flash the wrong page).
+  if (apps.isPending) {
+    return (
+      <div className="space-y-4" aria-busy="true">
+        <div className="h-36 animate-pulse rounded-xl bg-slate-200/70" />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-48 animate-pulse rounded-xl bg-slate-200/50" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <section className="rounded-lg bg-gradient-to-r from-[#032d60] to-brand-700 px-6 py-5 text-white shadow-sm">
-        <p className="text-sm text-blue-100">{app ? app.label : "Home"}</p>
-        <h1 className="text-2xl font-semibold">
+      <section className="rounded-xl bg-gradient-to-br from-brand-900 to-brand-700 px-6 py-6 text-white shadow-sm">
+        <p className="text-xs font-medium uppercase tracking-wider text-white/70">
+          {app ? app.label : "Home"}
+        </p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">
           {greeting()}, {firstName}
         </h1>
-        <p className="mt-1 text-sm text-blue-100">
+        <p className="mt-1 text-sm text-white/75">
           {app?.description ?? "Here's what needs your attention today."}
         </p>
         {starters.length > 0 && (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {starters.map((s) => (
-              <Link key={s.title} to={s.to} className="rounded-md bg-white/10 px-4 py-3 hover:bg-white/20">
-                <p className="font-semibold">{s.title}</p>
-                <p className="text-xs text-blue-100">{s.text}</p>
+              <Link
+                key={s.title}
+                to={s.to}
+                className="group rounded-lg bg-white/10 px-4 py-3 ring-1 ring-white/10 transition hover:bg-white/15"
+              >
+                <p className="font-medium">{s.title}</p>
+                <p className="mt-0.5 text-xs text-white/70">{s.text}</p>
               </Link>
             ))}
           </div>

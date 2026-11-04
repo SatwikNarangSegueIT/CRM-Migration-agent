@@ -9,11 +9,9 @@ import { useDismiss } from "../lib/useDismiss";
 import { activeTab, appHref, currentApp, rememberApp, tabHref } from "../navigation";
 import { HeaderIconButton, PanelHeader } from "./HeaderMenus";
 import {
-  AppsIcon,
   BellIcon,
   BuildingIcon,
   CloseIcon,
-  HelpIcon,
   HomeIcon,
   InboxIcon,
   MenuIcon,
@@ -21,6 +19,7 @@ import {
   SearchIcon,
   SettingsIcon,
 } from "./icons";
+import { useBranding } from "../lib/branding";
 import { Logo } from "./Logo";
 import { iconFor, ObjectIcon } from "./record/ObjectIcon";
 import { cx } from "./ui/cx";
@@ -47,14 +46,18 @@ function RailItem({ entry, onNavigate }: { entry: RailEntry; onNavigate?: () => 
         }}
         aria-current={entry.active ? "page" : undefined}
         className={cx(
-          "mx-1.5 flex flex-col items-center gap-1 rounded-lg border px-1 py-2 text-center text-[11px] font-medium leading-tight",
+          "relative mx-2 flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-center text-[11px] font-medium leading-tight transition-colors",
           "focus-visible:outline focus-visible:outline-2 focus-visible:outline-white",
-          entry.active
-            ? "border-white/70 bg-white/10 text-white"
-            : "border-transparent text-blue-100 hover:bg-white/10 hover:text-white",
+          entry.active ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/5 hover:text-white",
         )}
       >
-        <Icon size={22} />
+        {entry.active && (
+          <span
+            aria-hidden="true"
+            className="absolute -left-2 top-2 bottom-2 w-1 rounded-r-full bg-brand-400"
+          />
+        )}
+        <Icon size={20} />
         <span className="w-full truncate" title={entry.label}>
           {entry.label}
         </span>
@@ -245,7 +248,7 @@ function Notifications() {
 
 export function AppShell() {
   const { canSeeSetup, object } = useAuth();
-  const navigate = useNavigate();
+  const brand = useBranding();
   const { pathname, search } = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
@@ -277,33 +280,41 @@ export function AppShell() {
   // Object names follow the workspace's terminology (e.g. "Clients" for a law firm); app tabs carry them.
   const objectLabel = (api: string, fallback: string) =>
     list.flatMap((a) => a.tabs).find((t) => t.kind === "object" && t.object === api)?.label ?? fallback;
+  // A domain workspace's own app is its home page, and its tabs already hold clients and organisations:
+  // the rail then lists only the apps, so nothing appears twice.
+  const domainWorkspace = list.some((a) => a.is_primary);
+  const generic: RailEntry[] = domainWorkspace
+    ? []
+    : [
+        { id: "home", label: "Home", href: "/", icon: HomeIcon, active: pathname === "/" },
+        ...(object("contact").read
+          ? [
+              {
+                id: "contacts",
+                label: objectLabel("contact", "Contacts"),
+                href: "/o/contact",
+                icon: PersonIcon,
+                active: !app && pathname.startsWith("/o/contact"),
+              },
+            ]
+          : []),
+        ...(object("account").read
+          ? [
+              {
+                id: "accounts",
+                label: objectLabel("account", "Accounts"),
+                href: "/o/account",
+                icon: BuildingIcon,
+                active: !app && pathname.startsWith("/o/account"),
+              },
+            ]
+          : []),
+      ];
   const entries: RailEntry[] = [
-    { id: "home", label: "Home", href: "/", icon: HomeIcon, active: pathname === "/" },
-    ...(object("contact").read
-      ? [
-          {
-            id: "contacts",
-            label: objectLabel("contact", "Contacts"),
-            href: "/o/contact",
-            icon: PersonIcon,
-            active: !app && pathname.startsWith("/o/contact"),
-          },
-        ]
-      : []),
-    ...(object("account").read
-      ? [
-          {
-            id: "accounts",
-            label: objectLabel("account", "Accounts"),
-            href: "/o/account",
-            icon: BuildingIcon,
-            active: !app && pathname.startsWith("/o/account"),
-          },
-        ]
-      : []),
+    ...generic,
     ...list.map((a) => ({
       id: a.key,
-      label: a.label,
+      label: domainWorkspace ? a.label.split(" ")[0]! : a.label,
       href: appHref(a),
       icon: iconFor(a.icon),
       active: a.key === app?.key,
@@ -315,7 +326,7 @@ export function AppShell() {
   ];
 
   return (
-    <div className="flex min-h-screen bg-slate-100">
+    <div className="flex min-h-screen bg-slate-50">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-white focus:px-3 focus:py-2"
@@ -323,10 +334,14 @@ export function AppShell() {
         Skip to content
       </a>
 
-      <aside className="sticky top-0 hidden h-screen w-[76px] flex-none overflow-y-auto bg-[#032d60] md:block">
-        <div className="flex h-14 items-center justify-center border-b border-white/10 text-white">
-          <AppsIcon size={22} />
-        </div>
+      <aside className="sticky top-0 hidden h-screen w-[76px] flex-none overflow-y-auto bg-slate-900 md:block">
+        <Link
+          to="/"
+          aria-label="Home"
+          className="flex h-14 items-center justify-center border-b border-white/5"
+        >
+          <img src={brand.logoUrl ?? "/favicon.svg"} alt="" className="h-8 w-8 rounded-lg" />
+        </Link>
         <nav aria-label="Apps">
           <ul className="flex flex-col gap-1 py-3">
             {entries.map((e) => (
@@ -339,7 +354,7 @@ export function AppShell() {
       {drawerOpen && (
         <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="Apps">
           <div className="absolute inset-0 bg-slate-900/40" onClick={closeDrawer} aria-hidden="true" />
-          <div className="absolute inset-x-0 top-0 bg-[#032d60] pb-2 shadow-xl">
+          <div className="absolute inset-x-0 top-0 bg-slate-900 pb-2 shadow-xl">
             <div className="flex h-14 items-center justify-between px-4 text-white">
               <span className="font-semibold">Apps</span>
               <button
@@ -373,24 +388,13 @@ export function AppShell() {
             >
               <MenuIcon />
             </button>
-            <Link to="/" className="flex-none" aria-label="Home">
+            <Link to="/" className="flex-none md:hidden" aria-label="Home">
               <Logo />
             </Link>
             <div className="hidden flex-1 sm:block">
               <GlobalSearch />
             </div>
             <div className="ml-auto flex items-center gap-1">
-              <HeaderIconButton label="Help" icon={<HelpIcon />}>
-                <PanelHeader>Help</PanelHeader>
-                <ul className="space-y-2 px-4 py-3 text-slate-700">
-                  <li>Use the search bar to find any record you can access.</li>
-                  <li>Pin a list view to make it your default.</li>
-                  <li>Ask your administrator to adjust fields, layouts or access in Setup.</li>
-                </ul>
-              </HeaderIconButton>
-              {canSeeSetup && (
-                <HeaderIconButton label="Setup" icon={<SettingsIcon />} onClick={() => navigate("/setup")} />
-              )}
               <Notifications />
               <div className="ml-1">
                 <UserMenu />

@@ -24,7 +24,20 @@ export default defineConfig({
   optimizeDeps: {
     include: ["react", "react-dom", "react-dom/client", "react-router-dom", "@tanstack/react-query"],
   },
-  build: { sourcemap: true },
+  build: {
+    sourcemap: true,
+    rolldownOptions: {
+      output: {
+        // Third-party code changes rarely: its own chunk stays cached in browsers across deploys.
+        advancedChunks: {
+          groups: [
+            { name: "react", test: /node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/ },
+            { name: "vendor", test: /node_modules/ },
+          ],
+        },
+      },
+    },
+  },
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],

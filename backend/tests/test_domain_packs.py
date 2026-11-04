@@ -368,3 +368,20 @@ def test_signup_shapes_the_workspace(
     # The domain's core record can be created straight away.
     describe = client.get(f"{API}/meta/objects/{core_object}")
     assert describe.status_code == 200
+
+
+def test_domain_related_lists_follow_the_visible_apps(db: Session) -> None:  # noqa: F811
+    from sqlalchemy import select as _select
+
+    from app.domains import apply_domain
+    from app.models import ObjectDefinition
+
+    apply_domain(db, "migration", None)
+    db.flush()
+    contact = db.scalar(_select(ObjectDefinition).where(ObjectDefinition.api_name == "contact"))
+    assert contact is not None
+    objects = [rl["object"] for rl in contact.related_lists]
+    assert objects[0] == "matter"
+    assert "opportunity" not in objects and "case" not in objects and "campaign_member" not in objects
+    assert "consent" in objects and "invoice" in objects
+    db.rollback()
