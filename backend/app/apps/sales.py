@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import false, func, select
 
 from app.core.errors import AppError, ConflictError
 from app.engine.hooks import Change, Event, action, on, ref
@@ -254,7 +254,7 @@ def find_entry(svc: RecordService, price_book_id: uuid.UUID, product_id: uuid.UU
     return svc.db.scalar(
         select(Record).where(
             Record.object_api_name == "price_book_entry",
-            Record.is_deleted.is_(False),
+            Record.is_deleted == false(),
             Record.data["price_book"].astext == str(price_book_id),
             Record.data["product"].astext == str(product_id),
         )
@@ -299,7 +299,7 @@ def recompute_opportunity_amount(svc: RecordService, opportunity_id: uuid.UUID) 
             func.count(), func.coalesce(func.sum(Record.data["line_total"].astext.cast(sys_numeric())), 0)
         ).where(
             Record.object_api_name == "opportunity_product",
-            Record.is_deleted.is_(False),
+            Record.is_deleted == false(),
             Record.data["opportunity"].astext == str(opportunity_id),
         )
     ).one()
@@ -348,7 +348,7 @@ def stamp_now() -> str:
 def ensure_unique(
     svc: RecordService, obj: str, conditions: dict[str, str], exclude: uuid.UUID | None, message: str
 ) -> None:
-    stmt = select(Record.id).where(Record.object_api_name == obj, Record.is_deleted.is_(False))
+    stmt = select(Record.id).where(Record.object_api_name == obj, Record.is_deleted == false())
     for k, v in conditions.items():
         stmt = stmt.where(Record.data[k].astext == v)
     if exclude is not None:

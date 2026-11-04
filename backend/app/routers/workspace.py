@@ -10,7 +10,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, Query, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import false, func, select, true, update
 
 from app.core.errors import AppError, NotFoundError
 from app.engine.deps import Records
@@ -39,8 +39,13 @@ def search(
     for meta in readable_objects(svc):
         if not meta.searchable or meta.is_detail_only or (wanted and meta.api_name not in wanted):
             continue
+        # No per-object count: a search touches every searchable object, counts would dominate.
         result = svc.query(
-            meta.api_name, search=q, limit=limit, sort=[{"field": "updated_at", "direction": "desc"}]
+            meta.api_name,
+            search=q,
+            limit=limit,
+            sort=[{"field": "updated_at", "direction": "desc"}],
+            count=False,
         )
         if not result.records:
             continue
@@ -51,7 +56,8 @@ def search(
                 "label": meta.plural_label,
                 "icon": meta.icon,
                 "color": meta.color,
-                "total": result.total,
+                "total": len(result.records),
+                "more": result.next_cursor is not None,
                 "columns": cols,
                 "items": svc.serialize_many(meta.api_name, result.records, columns=cols, with_access=False),
             }
@@ -66,7 +72,7 @@ def recent(
     stmt = (
         select(Record, RecentItem.viewed_at)
         .join(RecentItem, RecentItem.record_id == Record.id)
-        .where(RecentItem.user_id == svc.user_id, Record.is_deleted.is_(False))
+        .where(RecentItem.user_id == svc.user_id, Record.is_deleted == false())
         .order_by(RecentItem.viewed_at.desc())
         .limit(limit * 3)
     )
@@ -103,7 +109,7 @@ def recycle_bin(svc: Records, limit: Annotated[int, Query(ge=1, le=200)] = 100) 
         access = svc.policy.object(meta.api_name)
         if not access.delete:
             continue
-        stmt = select(Record).where(Record.object_api_name == meta.api_name, Record.is_deleted.is_(True))
+        stmt = select(Record).where(Record.object_api_name == meta.api_name, Record.is_deleted == true())
         if not access.modify_all:
             stmt = stmt.where(Record.deleted_by_id == svc.user_id)
         for r in svc.db.scalars(stmt.order_by(Record.deleted_at.desc()).limit(limit)):
@@ -275,6 +281,7 @@ def store_file(
         raise AppError("This file type isn't allowed.", code="file_type_blocked", status_code=415)
     if _scan(content) != "clean":
         raise AppError("The file failed the malware scan.", code="malware_detected", status_code=422)
+    # File content is stored in the database (Neon), so it is covered by the database's backups and PITR.
     stored = StoredFile(
         storage="db",
         content=content,

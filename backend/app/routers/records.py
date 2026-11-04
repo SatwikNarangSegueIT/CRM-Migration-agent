@@ -12,7 +12,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import Numeric, delete, func, select
+from sqlalchemy import Numeric, delete, false, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.errors import AppError, NotFoundError, PermissionDeniedError
@@ -371,7 +371,7 @@ def lookup(
             .where(
                 RecentItem.user_id == svc.user_id,
                 Record.object_api_name == api_name,
-                Record.is_deleted.is_(False),
+                Record.is_deleted == false(),
                 svc.sharing.where_readable(api_name),
             )
             .order_by(RecentItem.viewed_at.desc())

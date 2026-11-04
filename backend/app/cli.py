@@ -1,7 +1,9 @@
 """Management commands.
 
 uv run python -m app.cli create-admin --email you@agency.com.au --name "Your Name"
-uv run python -m app.cli seed-demo            # development/test only
+uv run python -m app.cli seed-demo            # development/test only: demo users + sample data
+uv run python -m app.cli sync-indexes         # after each deploy
+uv run python -m app.cli seed-load --count 1000000   # disposable databases only (load tests)
 """
 
 from __future__ import annotations
@@ -109,7 +111,32 @@ def seed_demo() -> int:
             )
             created += 1
         db.commit()
-    print(f"Seeded {created} demo user(s). Password for all: {DEMO_PASSWORD}")
+        import app.apps  # noqa: F401 - object hooks (prices, totals, SLAs) must run for sample data
+        from app.demo_data import seed_sample_data
+
+        records = seed_sample_data(db)
+    print(
+        f"Seeded {created} demo user(s) and {records} sample record(s). "
+        f"Password for all users: {DEMO_PASSWORD}"
+    )
+    return 0
+
+
+def seed_load(count: int, object_api_name: str) -> int:
+    """Synthetic rows for load tests. Refuses to run in staging/production."""
+    settings = get_settings()
+    if settings.app_env not in ("development", "test"):
+        print("seed-load is only allowed when APP_ENV is development or test.", file=sys.stderr)
+        return 1
+    from app.demo_data import seed_load_data
+
+    with get_sessionmaker()() as db:
+        owners = list(db.scalars(select(User.id).where(User.is_active.is_(True))))
+        if not owners:
+            print("Create users first (seed-demo).", file=sys.stderr)
+            return 1
+        n = seed_load_data(db, object_api_name, count, owners)
+    print(f"Inserted {n} {object_api_name} row(s). Run ANALYZE records; before measuring.")
     return 0
 
 
@@ -141,11 +168,16 @@ def main(argv: list[str] | None = None) -> int:
     p_admin.add_argument("--password", help="Omit to be prompted (recommended)")
     sub.add_parser("seed-demo", help="Create one demo user per default staff profile (development only)")
     sub.add_parser("sync-indexes", help="Create missing field indexes (run after deploys)")
+    p_load = sub.add_parser("seed-load", help="Insert synthetic rows for load tests (development only)")
+    p_load.add_argument("--count", type=int, default=100_000)
+    p_load.add_argument("--object", default="account")
     args = parser.parse_args(argv)
     if args.command == "create-admin":
         return create_admin(args.email, args.name, args.password)
     if args.command == "sync-indexes":
         return sync_indexes()
+    if args.command == "seed-load":
+        return seed_load(args.count, args.object)
     return seed_demo()
 
 

@@ -23,6 +23,9 @@ def build_engine(settings: Settings, url: str | None = None, *, null_pool: bool 
         # Neon pooled endpoints run PgBouncer in transaction mode; psycopg prepared statements are
         # disabled to stay safe regardless of the libpq/PgBouncer versions in use.
         connect_args["prepare_threshold"] = None
+    elif settings.db_statement_timeout_ms and not null_pool:
+        # Direct connections: cap runaway queries (reports, exports) server-side.
+        connect_args["options"] = f"-c statement_timeout={settings.db_statement_timeout_ms}"
     if null_pool:
         return create_engine(url or settings.database_url, poolclass=NullPool, connect_args=connect_args)
     return create_engine(

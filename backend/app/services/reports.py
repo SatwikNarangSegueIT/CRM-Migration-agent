@@ -18,7 +18,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Date, String, and_, case, cast, func, literal, or_, select
+from sqlalchemy import Date, String, and_, case, cast, false, func, literal, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.core.errors import AppError, NotFoundError, PermissionDeniedError
@@ -201,7 +201,7 @@ class Runner:
                 and_(
                     cast(alias.id, String) == Record.data[via_name].astext,
                     alias.object_api_name == target,
-                    alias.is_deleted.is_(False),
+                    alias.is_deleted == false(),
                     readable,
                 ),
             )

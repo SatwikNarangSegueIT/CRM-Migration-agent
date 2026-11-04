@@ -13,7 +13,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, false, func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ConflictError, NotFoundError
@@ -464,7 +464,7 @@ def create_field(
         required
         and db.scalar(
             select(Record.id)
-            .where(Record.object_api_name == object_api, Record.is_deleted.is_(False))
+            .where(Record.object_api_name == object_api, Record.is_deleted == false())
             .limit(1)
         )
         is not None

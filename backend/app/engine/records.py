@@ -19,12 +19,14 @@ from sqlalchemy import (
     ColumnElement,
     and_,
     delete,
+    false,
     func,
     literal,
     not_,
     or_,
     select,
     text,
+    true,
     update,
 )
 from sqlalchemy.orm import Session
@@ -52,6 +54,7 @@ from app.models import (
     RecordLink,
     RecordShare,
     Role,
+    StoredFile,
     User,
 )
 from app.security.catalog import FieldAccess, SystemPermission
@@ -300,7 +303,7 @@ class RecordService:
             self._readable_clause(meta.api_name),
         )
         if not include_deleted:
-            stmt = stmt.where(Record.is_deleted.is_(False))
+            stmt = stmt.where(Record.is_deleted == false())
         if lock:
             stmt = stmt.with_for_update(of=Record)
         record = self.db.scalar(stmt)
@@ -323,7 +326,7 @@ class RecordService:
         stmt = select(Record.id).where(
             Record.id.in_(ids),
             Record.object_api_name == api_name,
-            Record.is_deleted.is_(False),
+            Record.is_deleted == false(),
             self._readable_clause(api_name),
         )
         return set(self.db.scalars(stmt))
@@ -559,7 +562,7 @@ class RecordService:
                 continue
             stmt = select(Record.id).where(
                 Record.object_api_name == meta.api_name,
-                Record.is_deleted.is_(False),
+                Record.is_deleted == false(),
                 func.lower(Record.data[name].astext) == str(data[name]).lower(),
             )
             if exclude is not None:
@@ -991,7 +994,7 @@ class RecordService:
                     RecordLink.to_record_id == record.id,
                     RecordLink.field_api_name == f.api_name,
                     RecordLink.from_object == child.api_name,
-                    Record.is_deleted.is_(False),
+                    Record.is_deleted == false(),
                 )
                 .limit(1)
             )
@@ -1009,7 +1012,7 @@ class RecordService:
         children = self.db.scalars(
             select(Record)
             .join(RecordLink, RecordLink.from_record_id == Record.id)
-            .where(RecordLink.to_record_id == record.id, RecordLink.is_master, Record.is_deleted.is_(False))
+            .where(RecordLink.to_record_id == record.id, RecordLink.is_master, Record.is_deleted == false())
         ).all()
         for child in children:
             self._soft_delete_tree(child, now)
@@ -1054,7 +1057,7 @@ class RecordService:
             .where(
                 RecordLink.to_record_id == record.id,
                 RecordLink.is_master,
-                Record.is_deleted.is_(True),
+                Record.is_deleted == true(),
                 Record.deleted_at == deleted_at,
             )
         ).all()
@@ -1083,13 +1086,19 @@ class RecordService:
                 ref_rec.data = data
         self.db.execute(delete(RecordLink).where(RecordLink.to_record_id == record.id))
         self.db.flush()
+        stored_id = record.data.get("stored_file_id") if record.object_api_name == "file" else None
         self.db.delete(record)
         self.db.flush()
+        if stored_id:
+            stored = self.db.get(StoredFile, uuid.UUID(str(stored_id)))
+            if stored is not None:
+                self.db.delete(stored)
+                self.db.flush()
 
     def purge_deleted(self, older_than_days: int = RECYCLE_DAYS) -> int:
         cutoff = utcnow() - timedelta(days=older_than_days)
         roots = self.db.scalars(
-            select(Record).where(Record.is_deleted.is_(True), Record.deleted_at < cutoff).limit(500)
+            select(Record).where(Record.is_deleted == true(), Record.deleted_at < cutoff).limit(500)
         ).all()
         count = 0
         for rec in roots:
@@ -1101,7 +1110,9 @@ class RecordService:
     # ------------------------------------------------------------------ query
 
     def base_query(self, meta: ObjectMeta, *, scope: str = "all", deleted: bool = False) -> Any:
-        stmt = select(Record).where(Record.object_api_name == meta.api_name, Record.is_deleted.is_(deleted))
+        stmt = select(Record).where(
+            Record.object_api_name == meta.api_name, Record.is_deleted == (true() if deleted else false())
+        )
         if not self.system:
             stmt = stmt.where(self._readable_clause(meta.api_name))
         uid = self.user_id
@@ -1127,8 +1138,9 @@ class RecordService:
         term = term.strip()[:100]
         like = f"%{escape_like(term)}%"
         clauses: list[ColumnElement[bool]] = [
+            # Name only: auto-numbered objects store their number as the name, and a second ILIKE
+            # column would defeat the trigram index.
             Record.name.ilike(like, escape="\\"),
-            Record.record_number.ilike(like, escape="\\"),
         ]
         words = [w for w in re.split(r"\W+", term) if w]
         if words and meta.searchable:

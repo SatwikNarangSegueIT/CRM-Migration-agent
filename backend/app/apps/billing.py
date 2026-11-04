@@ -12,7 +12,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import false, select
 
 from app.apps.sales import BusinessRuleError, ensure_unique, find_entry, rule
 from app.engine.hooks import Change, Event, action, on, ref
@@ -34,7 +34,7 @@ def _children(svc: RecordService, obj: str, field: str, parent_id: uuid.UUID) ->
         svc.db.scalars(
             select(Record).where(
                 Record.object_api_name == obj,
-                Record.is_deleted.is_(False),
+                Record.is_deleted == false(),
                 Record.data[field].astext == str(parent_id),
             )
         )
@@ -46,7 +46,7 @@ def default_tax_rate(svc: RecordService) -> Record | None:
         select(Record)
         .where(
             Record.object_api_name == "tax_rate",
-            Record.is_deleted.is_(False),
+            Record.is_deleted == false(),
             Record.data["is_default"].astext == "true",
         )
         .limit(1)

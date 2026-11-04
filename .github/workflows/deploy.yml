@@ -1,0 +1,78 @@
+name: Deploy
+
+# Staging -> production with manual approval (plan v3 section 15).
+# 1. Build and push the API (also worker/beat) and web images to GHCR, tagged with the commit SHA.
+# 2. Staging: run migrations against the staging Neon branch, roll out, smoke test.
+# 3. Production: same, after a required reviewer approves the "production" environment.
+#
+# Per-environment secrets (Settings -> Environments): DATABASE_URL_DIRECT (Neon direct endpoint),
+# DEPLOY_WEBHOOK_URL (your platform's deploy hook, receives the image tags), APP_URL (public URL).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  API_IMAGE: ghcr.io/${{ github.repository }}/api
+  WEB_IMAGE: ghcr.io/${{ github.repository }}/web
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          docker build -t "$API_IMAGE:$GITHUB_SHA" backend
+          docker build -t "$WEB_IMAGE:$GITHUB_SHA" frontend
+          docker push "$API_IMAGE:$GITHUB_SHA"
+          docker push "$WEB_IMAGE:$GITHUB_SHA"
+
+  staging:
+    needs: images
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Migrate
+        run: |
+          docker run --rm -e APP_ENV=staging -e SECRET_KEY=migration-only-not-used-at-runtime-000 \
+            -e DATABASE_URL="${{ secrets.DATABASE_URL_DIRECT }}" -e DATABASE_URL_DIRECT="${{ secrets.DATABASE_URL_DIRECT }}" \
+            "$API_IMAGE:$GITHUB_SHA" sh -c "alembic upgrade head && python -m app.cli sync-indexes"
+      - name: Roll out
+        run: |
+          curl -fsS -X POST "${{ secrets.DEPLOY_WEBHOOK_URL }}" -H 'Content-Type: application/json' \
+            -d "{\"api_image\":\"$API_IMAGE:$GITHUB_SHA\",\"web_image\":\"$WEB_IMAGE:$GITHUB_SHA\"}"
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 60); do curl -sf "${{ secrets.APP_URL }}/api/v1/health/ready" && exit 0; sleep 5; done; exit 1
+
+  production:
+    needs: staging
+    runs-on: ubuntu-latest
+    environment: production # configure "Required reviewers" on this environment
+    steps:
+      - name: Migrate
+        run: |
+          docker run --rm -e APP_ENV=staging -e SECRET_KEY=migration-only-not-used-at-runtime-000 \
+            -e DATABASE_URL="${{ secrets.DATABASE_URL_DIRECT }}" -e DATABASE_URL_DIRECT="${{ secrets.DATABASE_URL_DIRECT }}" \
+            "$API_IMAGE:$GITHUB_SHA" sh -c "alembic upgrade head && python -m app.cli sync-indexes"
+      - name: Roll out
+        run: |
+          curl -fsS -X POST "${{ secrets.DEPLOY_WEBHOOK_URL }}" -H 'Content-Type: application/json' \
+            -d "{\"api_image\":\"$API_IMAGE:$GITHUB_SHA\",\"web_image\":\"$WEB_IMAGE:$GITHUB_SHA\"}"
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 60); do curl -sf "${{ secrets.APP_URL }}/api/v1/health/ready" && exit 0; sleep 5; done; exit 1

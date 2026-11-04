@@ -258,7 +258,7 @@ class SharingContext:
                                 link.from_record_id == r.id,
                                 link.field_api_name == parent_field.api_name,
                                 parent.object_api_name == target,
-                                parent.is_deleted.is_(False),
+                                parent.is_deleted == false(),
                                 parent_pred,
                             )
                         ),

@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     db_max_overflow: int = Field(default=5, ge=0, le=50)
     db_pool_recycle_seconds: int = Field(default=300, ge=30)
     db_connect_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    # Server-side cap on any single statement (0 = off). Applied as a startup option on direct connections;
+    # for Neon's pooled endpoint set it on the role instead (ALTER ROLE ... SET statement_timeout), see
+    # docs/operations.md.
+    db_statement_timeout_ms: int = Field(default=30_000, ge=0, le=600_000)
 
     redis_url: str = "redis://localhost:6379/0"
 

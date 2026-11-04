@@ -1,0 +1,64 @@
+name: Security
+
+# Weekly and on demand (plan v3 sections 14-15): secret scanning, container image vulnerabilities and an
+# OWASP ZAP baseline scan of the running stack. Dependency audits run on every PR in ci.yml.
+on:
+  schedule:
+    - cron: "0 17 * * 0" # Monday 03:00 AEST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  images:
+    name: Image scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t meridian-api:scan backend
+      - run: docker build -t meridian-web:scan frontend
+      - name: Scan API image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: meridian-api:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Scan web image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: meridian-web:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  zap:
+    name: OWASP ZAP baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the stack
+        run: |
+          docker compose up -d --build db redis api
+          for i in $(seq 1 60); do curl -sf http://localhost:8000/api/v1/health/ready && break; sleep 2; done
+      - name: ZAP baseline (API)
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: http://localhost:8000/api/v1/openapi.json
+          rules_file_name: .zap/rules.tsv
+          cmd_options: "-a"
+          allow_issue_writing: false
+      - if: always()
+        run: docker compose logs api | tail -200

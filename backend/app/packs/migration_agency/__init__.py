@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, false, func, select
 from sqlalchemy.orm import Session
 
 from app.apps.billing import refresh_invoice_payments
@@ -57,7 +57,7 @@ def _signed_agreement(svc: RecordService, matter_id: uuid.UUID) -> bool:
             select(Record.id)
             .where(
                 Record.object_api_name == "service_agreement",
-                Record.is_deleted.is_(False),
+                Record.is_deleted == false(),
                 Record.data["matter"].astext == str(matter_id),
                 Record.data["status"].astext == "Signed",
             )
@@ -158,7 +158,7 @@ def _generate_checklist(svc: RecordService, matter: Record, *, only_if_empty: bo
         select(Record.id)
         .where(
             Record.object_api_name == "checklist_item",
-            Record.is_deleted.is_(False),
+            Record.is_deleted == false(),
             Record.data["matter"].astext == str(matter.id),
         )
         .limit(1)
@@ -329,7 +329,7 @@ def client_balance(db: Session, client_id: uuid.UUID) -> Decimal:
     total = db.scalar(
         select(func.coalesce(func.sum(Record.data["signed_amount"].astext.cast(_numeric())), 0)).where(
             Record.object_api_name == "client_account_transaction",
-            Record.is_deleted.is_(False),
+            Record.is_deleted == false(),
             Record.data["client"].astext == str(client_id),
         )
     )
@@ -477,7 +477,7 @@ def expiry_reminders(db: Session, today: date | None = None) -> int:
             rows = db.scalars(
                 select(Record).where(
                     Record.object_api_name == obj,
-                    Record.is_deleted.is_(False),
+                    Record.is_deleted == false(),
                     Record.data[field].astext == day,
                 )
             ).all()

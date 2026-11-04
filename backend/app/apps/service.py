@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import false, select
 from sqlalchemy.orm import Session
 
 from app.apps.sales import BusinessRuleError, rule, stamp_now
@@ -144,7 +144,7 @@ def escalate_overdue_cases(db: Session, now: datetime | None = None) -> int:
         select(Record)
         .where(
             Record.object_api_name == "case",
-            Record.is_deleted.is_(False),
+            Record.is_deleted == false(),
             Record.data["status"].astext != CLOSED,
             Record.data["is_escalated"].astext.is_distinct_from("true"),
             Record.data["resolution_due"].astext.is_not(None),
@@ -197,7 +197,7 @@ def web_to_case(db: Session, payload: dict[str, Any]) -> Record:
             select(Record)
             .where(
                 Record.object_api_name == "contact",
-                Record.is_deleted.is_(False),
+                Record.is_deleted == false(),
                 Record.data["email"].astext == email,
             )
             .limit(1)

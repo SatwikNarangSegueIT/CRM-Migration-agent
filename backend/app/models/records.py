@@ -38,6 +38,14 @@ class Record(UUIDPrimaryKeyMixin, Base):
     __table_args__ = (
         CheckConstraint("NOT (owner_id IS NOT NULL AND queue_id IS NOT NULL)", name="one_owner"),
         Index("ix_records_object_name", "object_api_name", "is_deleted", "name"),
+        # List views sort on lower(name); keyset pagination adds the id.
+        Index(
+            "ix_records_object_lower_name",
+            "object_api_name",
+            text("lower(name)"),
+            "id",
+            postgresql_where=text("NOT is_deleted"),
+        ),
         Index("ix_records_object_created", "object_api_name", "created_at"),
         Index("ix_records_owner", "owner_id"),
         Index("ix_records_queue", "queue_id"),

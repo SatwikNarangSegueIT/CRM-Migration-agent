@@ -1,0 +1,3 @@
+# ZAP baseline rule overrides: rule-id<TAB>IGNORE|WARN|FAIL<TAB>reason
+10049	IGNORE	Non-storable content: API responses are deliberately not cached
+10027	IGNORE	Information disclosure (suspicious comments) - OpenAPI descriptions

@@ -18,7 +18,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from sqlalchemy import func, select, update
+from sqlalchemy import false, func, select, update
 from sqlalchemy.orm import Session
 
 from app.apps.sales import BusinessRuleError, ensure_unique, rule
@@ -293,7 +293,7 @@ def _latest_email_consent(db: Session, obj: str, person_id: uuid.UUID) -> str | 
         select(Record)
         .where(
             Record.object_api_name == "consent",
-            Record.is_deleted.is_(False),
+            Record.is_deleted == false(),
             Record.data[obj].astext == str(person_id),
             Record.data["channel"].astext == "Email",
         )
@@ -315,7 +315,7 @@ def build_recipients(db: Session, send: Record) -> list[EmailDelivery]:
         members = db.scalars(
             select(Record).where(
                 Record.object_api_name == "campaign_member",
-                Record.is_deleted.is_(False),
+                Record.is_deleted == false(),
                 Record.data["campaign"].astext == str(send.data["campaign"]),
             )
         ).all()
@@ -530,7 +530,7 @@ def due_sends(db: Session) -> list[uuid.UUID]:
         db.scalars(
             select(Record.id).where(
                 Record.object_api_name == "email_send",
-                Record.is_deleted.is_(False),
+                Record.is_deleted == false(),
                 Record.data["status"].astext == "Scheduled",
                 Record.data["scheduled_at"].astext <= now,
             )

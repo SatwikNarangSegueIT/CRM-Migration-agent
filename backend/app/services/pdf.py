@@ -11,7 +11,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import false, select
 
 from app.engine.records import RecordService
 from app.engine.types import display_text, money, to_decimal
@@ -135,7 +135,7 @@ def render_document(svc: RecordService, record: Record) -> bytes:
             select(Record)
             .where(
                 Record.object_api_name == line_obj,
-                Record.is_deleted.is_(False),
+                Record.is_deleted == false(),
                 Record.data[record.object_api_name].astext == str(record.id),
             )
             .order_by(Record.created_at)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import false, select
 from sqlalchemy.orm import Session
 
 from app.apps.sales import rule, stamp_now
@@ -47,7 +47,7 @@ def send_due_reminders(db: Session, now: datetime | None = None) -> int:
         select(Record)
         .where(
             Record.object_api_name.in_(("task", "event")),
-            Record.is_deleted.is_(False),
+            Record.is_deleted == false(),
             Record.data["reminder_at"].astext.is_not(None),
             Record.data["reminder_sent"].astext.is_distinct_from("true"),
         )
