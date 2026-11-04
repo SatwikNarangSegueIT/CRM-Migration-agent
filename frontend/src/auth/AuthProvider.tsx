@@ -5,6 +5,7 @@ import { ApiError } from "../api/client";
 import { ME_QUERY_KEY } from "../queryClient";
 import { AuthContext, meQueryOptions, type AuthActions } from "./context";
 import { fetchMe } from "./me";
+import { clearPersistedMetadata } from "../persistMetadata";
 import { markSignedOut } from "./signOutFlag";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -26,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await authApi.logout();
     } finally {
+      clearPersistedMetadata();
       queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== ME_QUERY_KEY[0] });
       queryClient.setQueryData(ME_QUERY_KEY, null);
     }

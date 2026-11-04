@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { workspaceApi } from "../api/records";
-import type { AppInfo } from "../api/types";
+import { metaApi, recordsApi, workspaceApi } from "../api/records";
+import type { AppInfo, AppTab } from "../api/types";
 import { useAuth } from "../auth/context";
 import { recordPath, useApps } from "../lib/records";
 import { useDismiss } from "../lib/useDismiss";
@@ -254,6 +254,21 @@ export function AppShell() {
   const inSetup = pathname.startsWith("/setup") || pathname.startsWith("/admin");
   const app = inSetup ? undefined : currentApp(list, pathname, search);
   const tab = app ? activeTab(app, pathname, search) : undefined;
+  const queryClient = useQueryClient();
+  // Start loading a tab's layout while the pointer is on it, so the click shows the page at once.
+  const prefetchTab = (t: AppTab) => {
+    if (t.kind !== "object" || !t.object) return;
+    const api = t.object;
+    void queryClient.prefetchQuery({
+      queryKey: ["meta", "object", api],
+      queryFn: ({ signal }) => metaApi.object(api, signal),
+      staleTime: 5 * 60_000,
+    });
+    void queryClient.prefetchQuery({
+      queryKey: ["list-views", api],
+      queryFn: ({ signal }) => recordsApi.listViews(api, signal),
+    });
+  };
 
   useEffect(() => {
     if (app) rememberApp(app.key);
@@ -398,6 +413,8 @@ export function AppShell() {
                       key={href}
                       to={href}
                       onClick={() => rememberApp(app.key)}
+                      onMouseEnter={() => prefetchTab(t)}
+                      onFocus={() => prefetchTab(t)}
                       aria-current={isActive ? "page" : undefined}
                       className={cx(
                         "whitespace-nowrap border-b-[3px] px-3 py-3 text-sm",
