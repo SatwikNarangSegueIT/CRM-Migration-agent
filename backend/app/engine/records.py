@@ -11,6 +11,7 @@ import base64
 import json
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -22,15 +23,18 @@ from sqlalchemy import (
     false,
     func,
     literal,
+    literal_column,
     not_,
     or_,
     select,
     text,
     true,
+    union_all,
     update,
 )
 from sqlalchemy.orm import Session
 
+from app.core.cache import new_cache, tenant_of
 from app.core.errors import AppError, ConflictError, NotFoundError, PermissionDeniedError
 from app.db.session import escape_like
 from app.engine import hooks
@@ -141,6 +145,9 @@ def _decode_cursor(cursor: str) -> tuple[Any, uuid.UUID]:
         raise AppError("Invalid cursor.", code="invalid_cursor", status_code=422) from exc
 
 
+_packs_cache = new_cache(256)
+
+
 class RecordService:
     """Per-request record engine bound to one user (or the system)."""
 
@@ -205,8 +212,16 @@ class RecordService:
     @property
     def enabled_packs(self) -> frozenset[str]:
         if self._packs is None:
-            self._packs = frozenset(
-                self.db.scalars(select(PackInstallation.pack_key).where(PackInstallation.is_enabled)).all()
+            # Pack enable/disable bumps the metadata revision, which keys this cache.
+            key = (tenant_of(self.db), "packs", self.registry.revision)
+            self._packs = _packs_cache.get_or_build(
+                self.db,
+                key,
+                lambda: frozenset(
+                    self.db.scalars(
+                        select(PackInstallation.pack_key).where(PackInstallation.is_enabled)
+                    ).all()
+                ),
             )
         return self._packs
 
@@ -286,10 +301,9 @@ class RecordService:
         if not self.policy.object(api_name).edit:
             return set()
         pred = self.sharing.editable(api_name)
-        stmt = select(Record.id).where(Record.id.in_(ids))
-        if pred is not None:
-            stmt = stmt.where(pred)
-        return set(self.db.scalars(stmt))
+        if pred is None:
+            return set(ids)
+        return set(self.db.scalars(select(Record.id).where(Record.id.in_(ids), pred)))
 
     # ------------------------------------------------------------------ reads
 
@@ -331,59 +345,147 @@ class RecordService:
         )
         return set(self.db.scalars(stmt))
 
+    def visible_ids_many(self, ids_by_object: dict[str, list[uuid.UUID]]) -> set[uuid.UUID]:
+        """visible_ids for several objects in one query."""
+        clauses = [
+            and_(Record.object_api_name == obj, Record.id.in_(ids), self._readable_clause(obj))
+            for obj, ids in ids_by_object.items()
+            if ids and (self.system or self.policy.object(obj).read)
+        ]
+        if not clauses:
+            return set()
+        return set(self.db.scalars(select(Record.id).where(Record.is_deleted == false(), or_(*clauses))))
+
     # ------------------------------------------------------------------ serialisation
 
-    def _lookup_labels(
-        self, metas_records: list[tuple[ObjectMeta, Record]]
-    ) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
-        """Names for lookup values (only records the user can read) and for users."""
-        ids_by_object: dict[str, set[uuid.UUID]] = {}
-        raw_ids: set[uuid.UUID] = set()
+    def _prefetch(
+        self, meta: ObjectMeta, records: list[Record], *, with_access: bool
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, str], dict[str, str], set[uuid.UUID]]:
+        return self._prefetch_groups([(meta, records)], with_access=with_access)
+
+    def _prefetch_groups(
+        self, groups: list[tuple[ObjectMeta, list[Record]]], *, with_access: bool
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, str], dict[str, str], set[uuid.UUID]]:
+        """Everything serialisation needs about other rows, in one round trip (UNION ALL):
+        names of lookup targets the user can read, user names, queue names, and which records are editable.
+        """
+        lookup_ids: set[uuid.UUID] = set()
+        targets: set[str] = set()
         user_ids: set[uuid.UUID] = set()
-        for meta, rec in metas_records:
+        all_records = [(meta, rec) for meta, recs in groups for rec in recs]
+        for meta, rec in all_records:
             for f in meta.data_fields:
-                if f.is_lookup and rec.data.get(f.api_name):
+                value = rec.data.get(f.api_name)
+                if not value:
+                    continue
+                if f.is_lookup or f.type == "user":
                     try:
-                        raw_ids.add(uuid.UUID(str(rec.data[f.api_name])))
+                        parsed = uuid.UUID(str(value))
                     except ValueError:
                         continue
+                    if f.type == "user":
+                        user_ids.add(parsed)
+                    else:
+                        lookup_ids.add(parsed)
+                        targets.update(t for t in f.targets if t in self.registry.objects)
             for uid in (rec.owner_id, rec.created_by_id, rec.updated_by_id):
                 if uid:
                     user_ids.add(uid)
-            for f in meta.data_fields:
-                if f.type == "user" and rec.data.get(f.api_name):
-                    try:
-                        user_ids.add(uuid.UUID(str(rec.data[f.api_name])))
-                    except ValueError:
-                        continue
-        records: dict[str, dict[str, Any]] = {}
-        if raw_ids:
-            rows = self.db.execute(
-                select(Record.id, Record.object_api_name, Record.name, Record.is_deleted).where(
-                    Record.id.in_(raw_ids)
+        queue_ids = {r.queue_id for _, r in all_records if r.queue_id}
+
+        parts: list[Any] = []
+        kind: Any = literal_column("'r'").label("kind")
+        obj_col: Any = Record.object_api_name.label("obj")
+        if lookup_ids and targets:
+            readable_targets = [t for t in sorted(targets) if self.system or self.policy.object(t).read]
+            if readable_targets:
+                clause = or_(
+                    *(and_(Record.object_api_name == t, self._readable_clause(t)) for t in readable_targets)
                 )
-            ).all()
-            for rid, obj, _, deleted in rows:
-                if not deleted:
-                    ids_by_object.setdefault(obj, set()).add(rid)
-            visible: set[uuid.UUID] = set()
-            for obj, ids in ids_by_object.items():
-                if obj in self.registry.objects:
-                    visible |= self.visible_ids(obj, list(ids))
-            for rid, obj, name, _ in rows:
-                if rid in visible:
+                parts.append(
+                    select(kind, Record.id.label("rid"), Record.name.label("label"), obj_col).where(
+                        Record.id.in_(lookup_ids), Record.is_deleted == false(), clause
+                    )
+                )
+        if user_ids:
+            parts.append(
+                select(
+                    literal_column("'u'").label("kind"), User.id, User.name, literal_column("NULL::varchar")
+                ).where(User.id.in_(user_ids))
+            )
+        if queue_ids:
+            parts.append(
+                select(
+                    literal_column("'q'").label("kind"), Queue.id, Queue.name, literal_column("NULL::varchar")
+                ).where(Queue.id.in_(queue_ids))
+            )
+        editable: set[uuid.UUID] = set()
+        restricted: list[Any] = []
+        if with_access:
+            for meta, recs in groups:
+                ids = [r.id for r in recs]
+                if not ids:
+                    continue
+                if self.system:
+                    editable.update(ids)
+                elif self.policy.object(meta.api_name).edit:
+                    pred = self.sharing.editable(meta.api_name)
+                    if pred is None:
+                        editable.update(ids)
+                    else:
+                        restricted.append(and_(Record.id.in_(ids), pred))
+        if restricted:
+            parts.append(
+                select(
+                    literal_column("'e'").label("kind"),
+                    Record.id,
+                    literal_column("NULL::varchar"),
+                    literal_column("NULL::varchar"),
+                ).where(or_(*restricted))
+            )
+
+        labels: dict[str, dict[str, Any]] = {}
+        users: dict[str, str] = {}
+        queues: dict[str, str] = {}
+        if parts:
+            combined: Any = parts[0] if len(parts) == 1 else union_all(*parts)
+            for row_kind, rid, name, obj in self.db.execute(combined).all():
+                if row_kind == "r":
                     target_meta = self.registry.objects.get(obj)
-                    records[str(rid)] = {
+                    labels[str(rid)] = {
                         "id": str(rid),
                         "name": name,
                         "object": obj,
                         "object_label": target_meta.label if target_meta else obj,
                     }
-        users: dict[str, str] = {}
-        if user_ids:
-            for uid, name in self.db.execute(select(User.id, User.name).where(User.id.in_(user_ids))).all():
-                users[str(uid)] = name
-        return records, users
+                elif row_kind == "u":
+                    users[str(rid)] = name
+                elif row_kind == "q":
+                    queues[str(rid)] = name
+                else:
+                    editable.add(rid)
+        return labels, users, queues, editable
+
+    def serialize_groups(
+        self,
+        groups: list[tuple[str, list[Record]]],
+        *,
+        columns: dict[str, list[str]] | None = None,
+        with_access: bool = True,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """serialize_many for several objects with one shared prefetch query."""
+        metas = [(self.registry.get(api), recs) for api, recs in groups]
+        prefetched = self._prefetch_groups(metas, with_access=with_access)
+        return {
+            meta.api_name: self.serialize_many(
+                meta.api_name,
+                recs,
+                columns=(columns or {}).get(meta.api_name),
+                with_access=with_access,
+                prefetched=prefetched,
+            )
+            for meta, recs in metas
+        }
 
     def serialize_many(
         self,
@@ -392,19 +494,15 @@ class RecordService:
         *,
         columns: list[str] | None = None,
         with_access: bool = True,
+        prefetched: tuple[dict[str, dict[str, Any]], dict[str, str], dict[str, str], set[uuid.UUID]]
+        | None = None,
     ) -> list[dict[str, Any]]:
         meta = self.registry.get(api_name)
         readable = {f.api_name: f for f in self.readable_fields(meta)}
         wanted = [c for c in (columns or list(readable)) if c in readable]
-        labels, users = self._lookup_labels([(meta, r) for r in records])
-        queue_names: dict[str, str] = {}
-        queue_ids = {r.queue_id for r in records if r.queue_id}
-        if queue_ids:
-            for qid, qname in self.db.execute(
-                select(Queue.id, Queue.name).where(Queue.id.in_(queue_ids))
-            ).all():
-                queue_names[str(qid)] = qname
-        editable = self.editable_ids(api_name, [r.id for r in records]) if with_access else set()
+        labels, users, queue_names, editable = prefetched or self._prefetch(
+            meta, records, with_access=with_access
+        )
         can_delete_obj = self.system or self.policy.object(api_name).delete
         out: list[dict[str, Any]] = []
         for r in records:
@@ -1175,19 +1273,12 @@ class RecordService:
         for clause in extra or []:
             stmt = stmt.where(clause)
 
-        total = 0
-        capped = False
-        if count:
-            n = int(
-                self.db.scalar(
-                    select(func.count()).select_from(
-                        stmt.with_only_columns(Record.id).limit(COUNT_CAP + 1).subquery()
-                    )
-                )
-                or 0
-            )
-            capped = n > COUNT_CAP
-            total = min(n, COUNT_CAP)
+        # The total (capped) is computed in the same statement as the page, as a scalar subquery.
+        count_expr = (
+            select(func.count())
+            .select_from(stmt.with_only_columns(Record.id).limit(COUNT_CAP + 1).subquery())
+            .scalar_subquery()
+        )
 
         sort = sort or [{"field": "name", "direction": "asc"}]
         primary = sort[0]
@@ -1212,12 +1303,28 @@ class RecordService:
             (expr.desc() if desc else expr.asc()).nulls_last(),
             Record.id.desc() if desc else Record.id.asc(),
         ]
-        rows = list(self.db.scalars(stmt.order_by(*order).limit(limit + 1)))
+        # One round trip: page rows, the sort value of each row (for the next-page cursor) and the total.
+        columns: list[Any] = [Record, expr.label("_sort_value")]
+        if count:
+            columns.append(count_expr.label("_total"))
+        result = self.db.execute(stmt.with_only_columns(*columns).order_by(*order).limit(limit + 1)).all()
+        rows = [r[0] for r in result]
+        total = 0
+        capped = False
+        if count:
+            if result:
+                n = int(result[0][2] or 0)
+            elif cursor is None:
+                n = 0
+            else:
+                n = int(self.db.scalar(select(count_expr)) or 0)
+            capped = n > COUNT_CAP
+            total = min(n, COUNT_CAP)
         next_cursor = None
         if len(rows) > limit:
             rows = rows[:limit]
             last_rec = rows[-1]
-            value = self.db.scalar(select(expr).where(Record.id == last_rec.id))
+            value = result[limit - 1][1]
             if isinstance(value, datetime | date):
                 value = value.isoformat()
             elif value is not None and not isinstance(value, str | int | float | bool):
@@ -1255,6 +1362,40 @@ class RecordService:
             cursor=cursor,
             sort=sort or [{"field": "created_at", "direction": "desc"}],
         )
+
+    def top_records(
+        self, specs: Sequence[tuple[ObjectMeta, Sequence[Any], Any]], limit: int
+    ) -> dict[str, list[Record]]:
+        """Up to ``limit + 1`` readable records per object, in one round trip.
+
+        ``specs``: (object, extra conditions, sort expression - newest/highest first). Callers trim to
+        ``limit`` and use the extra row to show "more".
+        """
+        ranked = []
+        for meta, conditions, order in specs:
+            base = self.base_query(meta)
+            ranked.append(
+                base.with_only_columns(
+                    Record.id.label("rid"),
+                    func.row_number()
+                    .over(order_by=(order.desc().nulls_last(), Record.id.desc()))
+                    .label("rn"),
+                ).where(*conditions)
+            )
+        if not ranked:
+            return {}
+        combined: Any = ranked[0] if len(ranked) == 1 else union_all(*ranked)
+        inner = combined.subquery()
+        rows = self.db.execute(
+            select(Record)
+            .join(inner, inner.c.rid == Record.id)
+            .where(inner.c.rn <= limit + 1)
+            .order_by(Record.object_api_name, inner.c.rn)
+        ).scalars()
+        out: dict[str, list[Record]] = {meta.api_name: [] for meta, _, _ in specs}
+        for rec in rows:
+            out.setdefault(rec.object_api_name, []).append(rec)
+        return out
 
     def history(self, api_name: str, record_id: uuid.UUID) -> list[dict[str, Any]]:
         meta = self.object(api_name)

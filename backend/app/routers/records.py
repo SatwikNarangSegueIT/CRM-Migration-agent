@@ -19,10 +19,10 @@ from app.core.errors import AppError, NotFoundError, PermissionDeniedError
 from app.engine import hooks
 from app.engine.deps import Records
 from app.engine.describe import visible_list_views
-from app.engine.filters import FilterError, compile_filter
+from app.engine.filters import FilterError, compile_filter, sort_expr
 from app.engine.records import QueryResult, RecordService
-from app.models import ListView, RecentItem, Record, UserPreference
-from app.security.catalog import SystemPermission
+from app.models import ListView, RecentItem, Record, RecordLink, UserPreference
+from app.security.catalog import FieldAccess, SystemPermission
 from app.services import audit
 from app.services.audit import AuditAction
 
@@ -274,25 +274,37 @@ def related(
 
 @router.get("/records/{record_id}/activities")
 def activities(api_name: str, record_id: uuid.UUID, svc: Records) -> dict[str, Any]:
-    """Activity timeline: tasks, events, notes and files related to the record (newest first)."""
+    """Activity timeline: tasks, events, notes and files related to the record (newest first).
+
+    One query for all four kinds (ranked per kind) and one for names, instead of eight-plus.
+    """
     svc.get(api_name, record_id)
-    out: dict[str, Any] = {}
+    specs = []
     for child in ("task", "event", "note", "file"):
         meta = svc.registry.objects.get(child)
         if (
             meta is None
             or "related_to" not in meta.fields
             or api_name not in meta.fields["related_to"].targets
+            or not svc.policy.object(child).read
+            or svc.field_access(meta, meta.fields["related_to"]) is FieldAccess.HIDDEN
         ):
             continue
-        if not svc.policy.object(child).read:
-            continue
-        sort = {"task": "due_date", "event": "start_at"}.get(child, "created_at")
-        result = svc.related(
-            api_name, record_id, child, "related_to", limit=50, sort=[{"field": sort, "direction": "desc"}]
+        sort_field = meta.fields.get({"task": "due_date", "event": "start_at"}.get(child, "created_at"))
+        order = sort_expr(sort_field, Record) if sort_field is not None else Record.created_at
+        linked = Record.id.in_(
+            select(RecordLink.from_record_id).where(
+                RecordLink.to_record_id == record_id,
+                RecordLink.field_api_name == "related_to",
+                RecordLink.from_object == child,
+            )
         )
-        out[child] = svc.serialize_many(child, result.records)
-    return out
+        specs.append((meta, [linked], order))
+    found = svc.top_records(specs, 50)
+    serialized = svc.serialize_groups(
+        [(meta.api_name, found.get(meta.api_name, [])[:50]) for meta, _, _ in specs]
+    )
+    return {meta.api_name: serialized[meta.api_name] for meta, _, _ in specs}
 
 
 @router.get("/records/{record_id}/history")

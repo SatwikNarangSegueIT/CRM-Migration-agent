@@ -34,6 +34,7 @@ from sqlalchemy import text  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.auth.security import hash_password  # noqa: E402
+from app.core.cache import clear_all as clear_all_caches  # noqa: E402
 from app.core.config import Settings, get_settings  # noqa: E402
 from app.core.redis_client import get_redis  # noqa: E402
 from app.db.seeds import apply_seeds  # noqa: E402
@@ -79,6 +80,8 @@ def _clean_state() -> None:
         apply_seeds(db.connection())
         db.commit()
     invalidate_cache()
+    # TRUNCATE resets the revision counters, so revision-keyed caches must be emptied too.
+    clear_all_caches()
     get_redis().flushdb()
 
 

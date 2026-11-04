@@ -35,33 +35,31 @@ def search(
 ) -> dict[str, Any]:
     """Global search over every searchable object the user can read, grouped by object."""
     wanted = {o.strip() for o in objects.split(",")} if objects else None
-    groups = []
-    for meta in readable_objects(svc):
-        if not meta.searchable or meta.is_detail_only or (wanted and meta.api_name not in wanted):
-            continue
-        # No per-object count: a search touches every searchable object, counts would dominate.
-        result = svc.query(
-            meta.api_name,
-            search=q,
-            limit=limit,
-            sort=[{"field": "updated_at", "direction": "desc"}],
-            count=False,
-        )
-        if not result.records:
-            continue
-        cols = meta.compact_layout[:3]
-        groups.append(
-            {
-                "object": meta.api_name,
-                "label": meta.plural_label,
-                "icon": meta.icon,
-                "color": meta.color,
-                "total": len(result.records),
-                "more": result.next_cursor is not None,
-                "columns": cols,
-                "items": svc.serialize_many(meta.api_name, result.records, columns=cols, with_access=False),
-            }
-        )
+    metas = [
+        m
+        for m in readable_objects(svc)
+        if m.searchable and not m.is_detail_only and (not wanted or m.api_name in wanted)
+    ]
+    # One query for every object (ranked per object), one query for names/lookups; no per-object counts.
+    found = svc.top_records([(m, [svc.search_clause(m, q)], Record.updated_at) for m in metas], limit)
+    hits = [(m, found.get(m.api_name, [])) for m in metas if found.get(m.api_name)]
+    columns = {m.api_name: m.compact_layout[:3] for m, _ in hits}
+    serialized = svc.serialize_groups(
+        [(m.api_name, recs[:limit]) for m, recs in hits], columns=columns, with_access=False
+    )
+    groups = [
+        {
+            "object": m.api_name,
+            "label": m.plural_label,
+            "icon": m.icon,
+            "color": m.color,
+            "total": min(len(recs), limit),
+            "more": len(recs) > limit,
+            "columns": columns[m.api_name],
+            "items": serialized[m.api_name],
+        }
+        for m, recs in hits
+    ]
     return {"query": q, "groups": groups}
 
 
@@ -78,12 +76,18 @@ def recent(
     )
     if object_api_name:
         stmt = stmt.where(Record.object_api_name == object_api_name)
-    out = []
-    for record, viewed_at in svc.db.execute(stmt).all():
+    rows = svc.db.execute(stmt).all()
+    # One visibility query for all candidates (grouped by object), instead of one per item.
+    ids_by_object: dict[str, list[uuid.UUID]] = {}
+    for record, _ in rows:
         meta = svc.registry.objects.get(record.object_api_name)
-        if meta is None or not svc.policy.object(meta.api_name).read:
-            continue
-        if not svc.visible_ids(meta.api_name, [record.id]):
+        if meta is not None and svc.policy.object(meta.api_name).read:
+            ids_by_object.setdefault(meta.api_name, []).append(record.id)
+    visible = svc.visible_ids_many(ids_by_object)
+    out = []
+    for record, viewed_at in rows:
+        meta = svc.registry.objects.get(record.object_api_name)
+        if meta is None or record.id not in visible:
             continue
         out.append(
             {

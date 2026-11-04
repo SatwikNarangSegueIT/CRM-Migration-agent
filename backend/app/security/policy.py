@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.cache import new_cache, revisions, tenant_of
 from app.models import ProfileFieldPermission, ProfileObjectPermission, ProfileSystemPermission, User
 from app.security.catalog import FieldAccess, ObjectAccess, SystemPermission
 
@@ -67,11 +68,15 @@ class AccessPolicy:
         return sorted(self.system)
 
 
-def load_policy(db: Session, user: User) -> AccessPolicy:
-    profile = user.profile
+_grants_cache = new_cache(512)
+
+Grants = tuple[frozenset[str], dict[str, ObjectAccess], dict[tuple[str, str], FieldAccess]]
+
+
+def _load_grants(db: Session, profile_id: uuid.UUID) -> Grants:
     system = frozenset(
         db.scalars(
-            select(ProfileSystemPermission.permission).where(ProfileSystemPermission.profile_id == profile.id)
+            select(ProfileSystemPermission.permission).where(ProfileSystemPermission.profile_id == profile_id)
         )
     )
     objects = {
@@ -84,15 +89,23 @@ def load_policy(db: Session, user: User) -> AccessPolicy:
             modify_all=row.modify_all,
         )
         for row in db.scalars(
-            select(ProfileObjectPermission).where(ProfileObjectPermission.profile_id == profile.id)
+            select(ProfileObjectPermission).where(ProfileObjectPermission.profile_id == profile_id)
         )
     }
     fields = {
         (row.object_api_name, row.field_api_name): FieldAccess(row.access)
         for row in db.scalars(
-            select(ProfileFieldPermission).where(ProfileFieldPermission.profile_id == profile.id)
+            select(ProfileFieldPermission).where(ProfileFieldPermission.profile_id == profile_id)
         )
     }
+    return system, objects, fields
+
+
+def load_policy(db: Session, user: User) -> AccessPolicy:
+    profile = user.profile
+    # Profile grants are shared by every user of the profile and cached per security revision.
+    key = (tenant_of(db), "grants", profile.id, revisions(db).security)
+    system, objects, fields = _grants_cache.get_or_build(db, key, lambda: _load_grants(db, profile.id))
     return AccessPolicy(
         user_id=user.id,
         profile_id=profile.id,

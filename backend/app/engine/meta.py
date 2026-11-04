@@ -11,11 +11,12 @@ import threading
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from sqlalchemy import select, text, update
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.cache import cache_allowed, mark_pending, revisions, tenant_of
 from app.core.errors import NotFoundError
-from app.models import MetadataRevision, ObjectDefinition
+from app.models import ObjectDefinition
 from app.security.catalog import FieldAccess
 
 # System fields exist on every object as real columns of `records`.
@@ -257,46 +258,47 @@ def _resolve_wildcards(metas: dict[str, ObjectMeta]) -> dict[str, ObjectMeta]:
 
 
 _lock = threading.Lock()
-_cache: Registry | None = None
+# Latest registry per tenant. A registry is only replaced by one with a different revision.
+_cache: dict[str, Registry] = {}
 
 
 def current_revision(db: Session) -> int:
-    return int(db.scalar(select(MetadataRevision.revision).where(MetadataRevision.id == 1)) or 0)
+    return revisions(db).metadata
 
 
 def load_registry(db: Session) -> Registry:
-    """Return the cached registry, reloading it when the stored revision has changed."""
-    global _cache
-    revision = current_revision(db)
-    cached = _cache
-    if cached is not None and cached.revision == revision:
+    """Return the cached registry for the session's tenant, reloading it when the revision has changed.
+
+    The revision normally comes from the session lookup (no extra query); see app.core.cache.
+    """
+    tenant = tenant_of(db)
+    revision = revisions(db).metadata
+    cached = _cache.get(tenant)
+    if cached is not None and cached.revision == revision and cache_allowed(db):
         return cached
     objects = db.scalars(select(ObjectDefinition).options(selectinload(ObjectDefinition.fields))).all()
     metas = {o.api_name: _to_meta(o) for o in objects}
     registry = Registry(revision=revision, objects=_resolve_wildcards(metas))
-    with _lock:
-        _cache = registry
+    if cache_allowed(db):
+        with _lock:
+            _cache[tenant] = registry
     return registry
 
 
 def bump_revision(db: Session) -> None:
     """Call in the same transaction as any metadata change."""
-    result = db.execute(
-        update(MetadataRevision)
-        .where(MetadataRevision.id == 1)
-        .values(revision=MetadataRevision.revision + 1)
-    )
-    if getattr(result, "rowcount", 0) == 0:
-        db.execute(
-            text(
-                "INSERT INTO metadata_revision (id, revision) VALUES (1, 2) "
-                "ON CONFLICT (id) DO UPDATE SET revision = metadata_revision.revision + 1"
-            )
+    row = db.execute(
+        text(
+            "INSERT INTO metadata_revision (id, revision, security) VALUES (1, 2, 1) "
+            "ON CONFLICT (id) DO UPDATE SET revision = metadata_revision.revision + 1 "
+            "RETURNING revision, security"
         )
+    ).first()
+    if row is not None:
+        mark_pending(db, metadata=int(row[0]), security=int(row[1]))
     db.flush()
 
 
 def invalidate_cache() -> None:
-    global _cache
     with _lock:
-        _cache = None
+        _cache.clear()

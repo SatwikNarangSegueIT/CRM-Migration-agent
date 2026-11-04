@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
@@ -11,6 +12,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import or_, select
 
 from app.core.errors import NotFoundError, PermissionDeniedError
+from app.db.session import sibling_session
 from app.engine.deps import Records
 from app.engine.records import RecordService
 from app.models import Dashboard, Report, ReportFolder, ReportSchedule, User
@@ -19,6 +21,9 @@ from app.security.policy import load_policy
 from app.services import audit
 from app.services import reports as svc_reports
 from app.services.audit import AuditAction
+
+# Components of one dashboard run concurrently (each holds one pooled connection while it runs).
+DASHBOARD_PARALLELISM = 4
 
 router = APIRouter(tags=["analytics"])
 
@@ -575,23 +580,40 @@ def run_dashboard(dashboard_id: uuid.UUID, svc: Records, body: RunIn | None = No
         if user is not None and user.is_active:
             runner = RecordService.for_user(svc.db, user, load_policy(svc.db, user), svc.request_meta)
             viewing_as = user.name
-    components = []
-    for c in dash.components:
-        try:
-            report = svc_reports.get_report(runner, uuid.UUID(c["report_id"]))
-            overrides: dict[str, Any] = {}
-            if body is not None and body.filters:
-                base = report.definition.get("filters")
-                overrides["filters"] = (
-                    {"logic": "and", "conditions": [base, body.filters]} if base else body.filters
-                )
-            result = svc_reports.run_report(runner, report, overrides)
-            components.append({**c, "result": result, "error": None})
-        except Exception as exc:
-            svc.db.rollback()
-            components.append(
-                {**c, "result": None, "error": getattr(exc, "message", "This component can't be shown.")}
-            )
+    run_as = runner.user_id or svc.user_id
+    extra_filters = body.filters if body is not None else None
+
+    def run_component(c: dict[str, Any]) -> dict[str, Any]:
+        # Each component runs on its own read-only session so components run in parallel: the dashboard
+        # takes about as long as its slowest component instead of the sum of all of them.
+        with sibling_session(svc.db) as db:
+            try:
+                user = db.get(User, run_as)
+                if user is None:
+                    raise NotFoundError("Running user not found.")
+                worker = RecordService.for_user(db, user, load_policy(db, user), svc.request_meta)
+                report = svc_reports.get_report(worker, uuid.UUID(c["report_id"]))
+                overrides: dict[str, Any] = {}
+                if extra_filters:
+                    base = report.definition.get("filters")
+                    overrides["filters"] = (
+                        {"logic": "and", "conditions": [base, extra_filters]} if base else extra_filters
+                    )
+                return {**c, "result": svc_reports.run_report(worker, report, overrides), "error": None}
+            except Exception as exc:
+                db.rollback()
+                return {
+                    **c,
+                    "result": None,
+                    "error": getattr(exc, "message", "This component can't be shown."),
+                }
+
+    parts = list(dash.components)
+    if len(parts) <= 1:
+        components = [run_component(c) for c in parts]
+    else:
+        with ThreadPoolExecutor(max_workers=min(DASHBOARD_PARALLELISM, len(parts))) as pool:
+            components = list(pool.map(run_component, parts))
     svc.db.commit()
     return {
         "dashboard": _dash_out(dash, svc, _visible_folders(svc)),

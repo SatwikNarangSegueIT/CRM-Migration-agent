@@ -10,7 +10,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.auth.deps import AuthContext, DbSession, require
 from app.engine import admin
@@ -18,7 +18,7 @@ from app.engine.describe import describe_field
 from app.engine.indexes import index_statements, schedule_index_ddl
 from app.engine.meta import load_registry
 from app.engine.records import RecordService
-from app.models import App, ObjectDefinition
+from app.models import App, FieldDefinition, ObjectDefinition
 from app.models.metadata import FIELD_TYPES
 from app.security.catalog import SystemPermission
 from app.services.audit import RequestMeta
@@ -137,9 +137,16 @@ def _object_out(db: DbSession, auth: AuthContext, api_name: str) -> dict[str, An
 
 @router.get("/objects")
 def list_objects(db: DbSession, _: Reader) -> list[dict[str, Any]]:
-    rows = db.scalars(select(ObjectDefinition).order_by(ObjectDefinition.label)).all()
+    # Field counts in the same query (previously one query per object).
+    field_count = (
+        select(func.count(FieldDefinition.id))
+        .where(FieldDefinition.object_id == ObjectDefinition.id, FieldDefinition.deleted_at.is_(None))
+        .correlate(ObjectDefinition)
+        .scalar_subquery()
+    )
+    rows = db.execute(select(ObjectDefinition, field_count).order_by(ObjectDefinition.label)).all()
     out = []
-    for o in rows:
+    for o, n_fields in rows:
         out.append(
             {
                 "api_name": o.api_name,
@@ -150,7 +157,7 @@ def list_objects(db: DbSession, _: Reader) -> list[dict[str, Any]]:
                 "is_custom": o.is_custom,
                 "pack_key": o.pack_key,
                 "description": o.description,
-                "field_count": sum(1 for f in o.fields if f.deleted_at is None),
+                "field_count": int(n_fields or 0),
                 "updated_at": o.updated_at,
             }
         )

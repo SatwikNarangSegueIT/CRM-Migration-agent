@@ -26,9 +26,11 @@ from sqlalchemy import (
     select,
     true,
 )
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.elements import False_
 
+from app.core.cache import new_cache, revisions, tenant_of
 from app.models import (
     GroupMember,
     QueueMember,
@@ -308,14 +310,27 @@ class SharingContext:
         return bool(db.scalar(select(literal(True)).where(Record.id == record.id, pred)))
 
 
-def build_sharing_context(db: Session, policy: AccessPolicy, registry: Registry) -> SharingContext:
-    defaults = {d.object_api_name: d for d in db.scalars(select(SharingDefault))}
+_org_cache = new_cache(256)
+_user_cache = new_cache(4096)
+
+
+def _detached(obj: Any) -> Any:
+    """A transient copy holding only column values, safe to share across sessions and threads."""
+    mapper = sa_inspect(type(obj))
+    return type(obj)(**{attr.key: getattr(obj, attr.key) for attr in mapper.column_attrs})
+
+
+def _org_sharing(db: Session) -> tuple[dict[str, SharingDefault], dict[str, list[SharingRule]]]:
+    defaults = {d.object_api_name: _detached(d) for d in db.scalars(select(SharingDefault))}
     rules: dict[str, list[SharingRule]] = {}
     for rule in db.scalars(select(SharingRule)):
-        rules.setdefault(rule.object_api_name, []).append(rule)
-    ancestors: frozenset[uuid.UUID] = frozenset()
-    if policy.role_path:
-        ancestors = frozenset(uuid.UUID(p) for p in policy.role_path.strip("/").split("/") if p)
+        rules.setdefault(rule.object_api_name, []).append(_detached(rule))
+    return defaults, rules
+
+
+def _user_memberships(
+    db: Session, policy: AccessPolicy, ancestors: frozenset[uuid.UUID]
+) -> tuple[frozenset[uuid.UUID], frozenset[uuid.UUID]]:
     group_ids: set[uuid.UUID] = set()
     group_ids.update(
         db.scalars(select(GroupMember.group_id).where(GroupMember.user_id == policy.user_id)).all()
@@ -334,6 +349,21 @@ def build_sharing_context(db: Session, policy: AccessPolicy, registry: Registry)
     queue_ids = frozenset(
         db.scalars(select(QueueMember.queue_id).where(QueueMember.user_id == policy.user_id)).all()
     )
+    return frozenset(group_ids), queue_ids
+
+
+def build_sharing_context(db: Session, policy: AccessPolicy, registry: Registry) -> SharingContext:
+    # Cached per security revision (app.core.cache): sharing settings per tenant, memberships per user.
+    tenant, security = tenant_of(db), revisions(db).security
+    defaults, rules = _org_cache.get_or_build(db, (tenant, "org", security), lambda: _org_sharing(db))
+    ancestors: frozenset[uuid.UUID] = frozenset()
+    if policy.role_path:
+        ancestors = frozenset(uuid.UUID(p) for p in policy.role_path.strip("/").split("/") if p)
+    group_ids, queue_ids = _user_cache.get_or_build(
+        db,
+        (tenant, "user", policy.user_id, policy.role_id, security),
+        lambda: _user_memberships(db, policy, ancestors),
+    )
     contact_id = account_id = None
     if policy.is_portal:
         user = db.get(User, policy.user_id)
@@ -347,7 +377,7 @@ def build_sharing_context(db: Session, policy: AccessPolicy, registry: Registry)
         registry=registry,
         defaults=defaults,
         rules=rules,
-        group_ids=frozenset(group_ids),
+        group_ids=group_ids,
         queue_ids=queue_ids,
         ancestor_role_ids=ancestors,
         contact_id=contact_id,

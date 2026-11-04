@@ -46,7 +46,26 @@ def get_engine() -> Engine:
 
 @lru_cache
 def get_sessionmaker() -> sessionmaker[Session]:
+    # Registers the session events that keep cached security data fresh (import has side effects).
+    import app.security.revision  # noqa: F401
+
     return sessionmaker(bind=get_engine(), autoflush=False, expire_on_commit=False)
+
+
+def sibling_session(db: Session) -> Session:
+    """A new session in the same tenant as ``db`` for read-only work on another thread.
+
+    Shares the revisions ``db`` already knows (so caches are hit) unless ``db`` has uncommitted changes.
+    """
+    from app.core.cache import cache_allowed
+
+    session = get_sessionmaker()()
+    for key in ("tenant", "tenant_schema"):
+        if key in db.info:
+            session.info[key] = db.info[key]
+    if "revisions" in db.info and cache_allowed(db):
+        session.info["revisions"] = db.info["revisions"]
+    return session
 
 
 def get_db() -> Iterator[Session]:

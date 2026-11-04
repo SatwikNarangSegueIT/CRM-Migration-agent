@@ -12,10 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.auth.security import hash_token, tokens_equal
+from app.core.cache import set_revisions
 from app.core.config import get_settings
 from app.core.errors import AppError, PermissionDeniedError
 from app.db.session import get_db
-from app.models import User, UserSession
+from app.models import MetadataRevision, User, UserSession
 from app.security.catalog import SystemPermission
 from app.security.policy import AccessPolicy, load_policy
 
@@ -91,13 +92,18 @@ def get_optional_auth(request: Request, db: DbSession) -> AuthContext | None:
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return None
-    session = db.scalar(
-        select(UserSession)
+    # One round trip: the session with its user, profile and role, plus the metadata/security revisions
+    # that key the in-memory caches (app.core.cache).
+    row = db.execute(
+        select(UserSession, MetadataRevision.revision, MetadataRevision.security)
         .options(joinedload(UserSession.user))
+        .outerjoin(MetadataRevision, MetadataRevision.id == 1)
         .where(UserSession.token_hash == hash_token(token))
-    )
-    if session is None:
+    ).first()
+    if row is None:
         return None
+    session, metadata_revision, security_revision = row
+    set_revisions(db, metadata_revision, security_revision)
 
     settings = get_settings()
     now = utcnow()

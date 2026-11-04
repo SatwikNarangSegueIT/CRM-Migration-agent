@@ -154,6 +154,9 @@ class MetadataRevision(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     revision: Mapped[int] = mapped_column(BigInteger, default=1, server_default="1")
+    # Incremented on every security change: profiles, permissions, roles, groups, queues, sharing,
+    # user access (app.security.revision).
+    security: Mapped[int] = mapped_column(BigInteger, default=1, server_default="1")
 
 
 class App(UUIDPrimaryKeyMixin, TimestampMixin, Base):
