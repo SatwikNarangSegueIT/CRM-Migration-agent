@@ -24,6 +24,7 @@ os.environ.update(
         "MFA_REQUIRED_FOR_STAFF": "true",
         "RATE_LIMIT_ENABLED": "false",
         "SIGNUP_WARM_POOL_SIZE": "0",
+        "PASSWORD_BREACH_CHECK": "false",
         "EMAIL_BACKEND": "console",
         "LOG_JSON": "true",
         "LOG_LEVEL": "WARNING",

@@ -6,6 +6,8 @@ import { errorMessage } from "../../api/client";
 import { useAuth } from "../../auth/context";
 import { safeNext } from "../../auth/redirect";
 import { AuthLayout } from "../../components/AuthLayout";
+import { PasswordInput } from "../../components/NewPasswordFields";
+import { FormField } from "../../components/ui/FormField";
 import { Alert, Button, TextField } from "../../components/ui";
 
 type Workspaces = NonNullable<LoginResult["workspaces"]>;
@@ -77,39 +79,49 @@ export function LoginPage() {
   }
 
   return (
-    <AuthLayout title="Sign in" subtitle="Use your work account.">
-      <form onSubmit={onSubmit} className="space-y-4" noValidate>
-        {login.isError && <Alert tone="error">{errorMessage(login.error)}</Alert>}
-        <TextField
-          label="E-mail"
-          type="email"
-          autoComplete="username"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <TextField
-          label="Password"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <Button type="submit" className="w-full" loading={login.isPending} disabled={!email || !password}>
-          Sign in
-        </Button>
-        <p className="text-center text-sm">
-          <Link to="/forgot-password" className="font-medium text-brand-700 hover:underline">
-            Forgot your password?
-          </Link>
-        </p>
-        <p className="border-t border-slate-100 pt-4 text-center text-sm text-slate-600">
-          New to Meridian CRM?{" "}
+    <AuthLayout
+      title="Welcome back"
+      subtitle={
+        <>
+          New here?{" "}
           <Link to="/signup" className="font-medium text-brand-700 hover:underline">
             Create a workspace for your firm
           </Link>
-        </p>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="space-y-5" noValidate>
+        {login.isError && <Alert tone="error">{errorMessage(login.error)}</Alert>}
+        <TextField
+          label="Work e-mail"
+          type="email"
+          autoComplete="username"
+          autoFocus
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <FormField
+          label="Password"
+          hint={
+            <Link to="/forgot-password" className="font-medium text-brand-700 hover:underline">
+              Forgot your password?
+            </Link>
+          }
+        >
+          {({ id, describedBy, invalid }) => (
+            <PasswordInput
+              id={id}
+              describedBy={describedBy}
+              invalid={invalid}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          )}
+        </FormField>
+        <Button type="submit" className="w-full" loading={login.isPending} disabled={!email || !password}>
+          Sign in
+        </Button>
       </form>
     </AuthLayout>
   );

@@ -14,6 +14,7 @@ from app.auth import security
 from app.auth.deps import mfa_setup_required
 from app.core.config import get_settings
 from app.core.errors import AppError
+from app.core.validators import digits, is_valid_abn
 from app.domains import DOMAINS, apply_domain
 from app.models import User
 from app.models.platform import SignupRequest, Tenant
@@ -53,6 +54,13 @@ def start_signup(
     if domain not in DOMAINS:
         raise SignupError("Choose what kind of firm you run.", fields={"domain": "Choose a domain."})
     email = email.strip().lower()
+    if not firm_name.strip():
+        raise SignupError("Enter your firm's name.", fields={"firm_name": "Required."})
+    if abn and digits(abn) and not is_valid_abn(abn):
+        raise SignupError(
+            "That ABN isn't valid. Check the 11 digits, or leave it blank.",
+            fields={"abn": "Not a valid ABN."},
+        )
     errors = security.password_policy_errors(password, email=email, name=name)
     if errors:
         raise AppError(errors[0], status_code=422, code="weak_password", fields={"password": errors[0]})
@@ -64,7 +72,7 @@ def start_signup(
             name=name.strip(),
             firm_name=firm_name.strip(),
             domain=domain,
-            abn=(abn or "").replace(" ", "") or None,
+            abn=digits(abn or "") or None,
             password_hash=security.hash_password(password),
             expires_at=utcnow() + timedelta(hours=get_settings().signup_verification_hours),
         )

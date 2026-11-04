@@ -23,7 +23,7 @@ function loginScenario(state: string, afterLogin: MeResponse | null) {
 }
 
 async function submitLogin() {
-  fireEvent.change(await screen.findByLabelText(/E-mail/), { target: { value: "admin@demo.example.com" } });
+  fireEvent.change(await screen.findByLabelText(/e-mail/i), { target: { value: "admin@demo.example.com" } });
   fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "Demo-Password-2026!" } });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 }
@@ -32,7 +32,7 @@ describe("route guards", () => {
   it("sends signed-out users to the login page, keeping the destination", async () => {
     mockApi({ "GET /auth/me": () => errorResponse(401, "unauthenticated") });
     const { router } = renderRoute("/admin/users?page=2");
-    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/login");
     expect(router.state.location.search).toBe("?next=%2Fadmin%2Fusers%3Fpage%3D2");
   });

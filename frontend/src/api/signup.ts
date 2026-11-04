@@ -10,6 +10,7 @@ export type DomainOption = {
   profession: string;
   description: string;
   includes: string[];
+  color?: string;
 };
 
 export type SignupBody = {

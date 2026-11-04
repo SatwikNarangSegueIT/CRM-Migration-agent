@@ -31,11 +31,16 @@ describe("sign-up", () => {
     fireEvent.change(screen.getByLabelText(/Confirm/), { target: { value: "Fresh-Firm-Password-77" } });
     const create = screen.getByRole("button", { name: "Create workspace" });
     expect(create).toBeDisabled();
-    fireEvent.click(screen.getByLabelText(/I accept the terms/));
+    fireEvent.click(screen.getByLabelText(/I agree to the terms/));
     fireEvent.click(create);
 
-    expect(await screen.findByRole("heading", { name: "Check your e-mail" })).toBeInTheDocument();
-    expect(sent).toMatchObject({ domain: "legal", firm_name: "Harbour Legal", accept_terms: true, abn: null });
+    expect(await screen.findByRole("heading", { name: "Check your inbox" })).toBeInTheDocument();
+    expect(sent).toMatchObject({
+      domain: "legal",
+      firm_name: "Harbour Legal",
+      accept_terms: true,
+      abn: null,
+    });
   });
 });
 
@@ -63,13 +68,15 @@ describe("workspace picker", () => {
       },
     });
     const { router } = renderRoute("/login");
-    fireEvent.change(await screen.findByLabelText(/E-mail/), { target: { value: "both@example.com" } });
+    fireEvent.change(await screen.findByLabelText(/e-mail/i), { target: { value: "both@example.com" } });
     fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "Correct-Horse-Battery-9" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(await screen.findByRole("heading", { name: "Choose a workspace" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Second Firm/ }));
-    expect(await screen.findByRole("heading", { name: /^Good (morning|afternoon|evening)/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: /^Good (morning|afternoon|evening)/ }),
+    ).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/");
     expect(bodies[1]).toMatchObject({ workspace: "second" });
   });

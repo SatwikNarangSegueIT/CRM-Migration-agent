@@ -5,15 +5,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: "#eef4ff",
-          100: "#dae6ff",
-          500: "#3a6df0",
-          600: "#1f56e8",
-          700: "#1449e1",
-          800: "#173cb6",
-          900: "#19378f",
-        },
+        brand: Object.fromEntries(
+          [50, 100, 200, 300, 400, 500, 600, 700, 800, 900].map((s) => [
+            s,
+            `rgb(var(--brand-${s}) / <alpha-value>)`,
+          ]),
+        ),
       },
     },
   },

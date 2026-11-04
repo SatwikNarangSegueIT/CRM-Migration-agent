@@ -64,6 +64,7 @@ def domains() -> list[dict[str, Any]]:
             "profession": d.profession,
             "description": d.description,
             "includes": list(d.includes),
+            "color": d.color,
         }
         for d in DOMAINS.values()
     ]

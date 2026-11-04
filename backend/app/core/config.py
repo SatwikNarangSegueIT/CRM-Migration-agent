@@ -86,6 +86,8 @@ class Settings(BaseSettings):
     # Pre-built workspaces kept ready so sign-up is instant (topped up by the worker).
     signup_warm_pool_size: int = Field(default=2, ge=0, le=50)
     rate_limit_enabled: bool = True
+    # Reject passwords found in known breaches (Have I Been Pwned range API, k-anonymity; fails open).
+    password_breach_check: bool = True
 
     # ---- E-mail ----
     email_backend: Literal["console", "smtp"] = "console"

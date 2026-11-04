@@ -91,7 +91,39 @@ def password_policy_errors(password: str, *, email: str | None = None, name: str
             if len(part) >= 4 and part in lowered:
                 errors.append("Password must not contain your name.")
                 break
+    if not errors and is_breached_password(password):
+        errors.append("This password has appeared in a known data breach. Choose a different one.")
     return errors
+
+
+def is_breached_password(password: str) -> bool:
+    """Have I Been Pwned range API (k-anonymity: only the first 5 SHA-1 hex characters leave the server).
+
+    Off when PASSWORD_BREACH_CHECK=false. Fails open: a slow or unreachable service never blocks a sign-up.
+    """
+    if not get_settings().password_breach_check:
+        return False
+    import logging
+
+    import httpx
+
+    digest = hashlib.sha1(password.encode(), usedforsecurity=False).hexdigest().upper()
+    prefix, suffix = digest[:5], digest[5:]
+    try:
+        response = httpx.get(
+            f"https://api.pwnedpasswords.com/range/{prefix}",
+            headers={"Add-Padding": "true", "User-Agent": "practice-crm-password-check"},
+            timeout=2.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError:
+        logging.getLogger("app.auth").warning("Breached-password check unavailable; skipped")
+        return False
+    for line in response.text.splitlines():
+        candidate, _, count = line.partition(":")
+        if candidate.strip() == suffix and count.strip() not in ("", "0"):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------- opaque tokens

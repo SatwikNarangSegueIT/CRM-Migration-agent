@@ -5,12 +5,14 @@ Billing settings need Manage Billing Settings; everything else needs Customize A
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.core.errors import AppError, PermissionDeniedError
+from app.core.validators import digits, is_valid_abn
 from app.engine.deps import Records
 from app.security.catalog import SystemPermission
 from app.services import audit
@@ -20,6 +22,8 @@ from app.services.settings import EDITABLE_KEYS, all_settings, defaults, get_set
 router = APIRouter(prefix="/setup/settings", tags=["setup: settings"])
 
 BILLING_KEYS = {"billing", "company"}
+HEX_COLOUR = re.compile(r"#[0-9a-fA-F]{6}")
+EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 
 class SettingIn(BaseModel):
@@ -77,9 +81,31 @@ def write_setting(key: str, body: SettingIn, svc: Records) -> dict[str, Any]:
     if (
         key == "branding"
         and body.value.get("primary_color")
-        and not str(body.value["primary_color"]).startswith("#")
+        and not HEX_COLOUR.fullmatch(str(body.value["primary_color"]))
     ):
-        raise AppError("Colours are hex values such as #0176d3.", status_code=422, code="validation_error")
+        raise AppError(
+            "Colours are hex values such as #0176d3.",
+            status_code=422,
+            code="validation_error",
+            fields={"primary_color": "Use a hex colour such as #0176d3."},
+        )
+    if key == "company":
+        abn = str(body.value.get("abn") or "")
+        if digits(abn) and not is_valid_abn(abn):
+            raise AppError(
+                "That ABN isn't valid.",
+                status_code=422,
+                code="validation_error",
+                fields={"abn": "Not a valid ABN."},
+            )
+        email = str(body.value.get("email") or "").strip()
+        if email and not EMAIL.fullmatch(email):
+            raise AppError(
+                "Enter a valid e-mail address.",
+                status_code=422,
+                code="validation_error",
+                fields={"email": "Not a valid e-mail address."},
+            )
     before = get_setting(svc.db, key)
     merged = {**(before or {}), **body.value} if isinstance(before, dict) else body.value
     set_setting(svc.db, key, merged)

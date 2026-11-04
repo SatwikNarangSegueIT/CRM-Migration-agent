@@ -1,3 +1,17 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Brand palette (RGB channels); replaced at runtime by src/lib/theme.ts with the workspace colour. */
+:root {
+  --brand-50: 241 245 254;
+  --brand-100: 224 233 252;
+  --brand-200: 193 209 247;
+  --brand-300: 149 175 241;
+  --brand-400: 102 138 235;
+  --brand-500: 63 106 230;
+  --brand-600: 39 86 227;
+  --brand-700: 20 73 225;
+  --brand-800: 16 60 185;
+  --brand-900: 13 47 146;
+}
