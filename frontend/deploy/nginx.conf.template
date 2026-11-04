@@ -4,7 +4,7 @@ server {
     server_name _;
     root /usr/share/nginx/html;
     server_tokens off;
-    client_max_body_size 21m;
+    client_max_body_size 26m; # the API accepts files up to 25 MB
 
     # Compress text responses (JS, CSS, JSON from the API): typically 70-85% smaller over the wire.
     gzip on;
