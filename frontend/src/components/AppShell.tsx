@@ -26,6 +26,11 @@ import { iconFor, ObjectIcon } from "./record/ObjectIcon";
 import { cx } from "./ui/cx";
 import { UserMenu } from "./UserMenu";
 
+function railWord(label: string): string {
+  const words = label.split(" ");
+  return (words[words.length - 1] === "Practice" ? words[0] : words[words.length - 1]) ?? label;
+}
+
 type RailEntry = {
   id: string;
   label: string;
@@ -318,7 +323,8 @@ export function AppShell() {
     ...generic,
     ...list.map((a) => ({
       id: a.key,
-      label: domainWorkspace ? a.label.split(" ")[0]! : a.label,
+      // "Legal Practice" -> "Legal", "Loan Broking" -> "Broking": the word that names the profession.
+      label: domainWorkspace ? railWord(a.label) : a.label,
       href: appHref(a),
       icon: iconFor(a.icon),
       active: a.key === app?.key,

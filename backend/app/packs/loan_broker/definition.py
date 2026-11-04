@@ -35,6 +35,7 @@ STAGES: Final[list[dict[str, Any]]] = [
     P("Settlement", "#0ea5e9"), P("Settled", "#16a34a", closed=True), P("Declined", "#dc2626", closed=True),
 ]  # fmt: skip
 STAGE_ORDER: Final = [s["value"] for s in STAGES]
+FINAL_STAGES: Final = {"Settled", "Declined"}
 PURPOSES: Final = [
     "Purchase - Owner Occupied", "Purchase - Investment", "Refinance", "Construction", "Equity Release",
     "First Home Buyer", "Commercial", "Car / Asset Finance", "Personal",
@@ -241,7 +242,7 @@ PROFILES: Final[list[ProfileSpec]] = [
     ("lb_processor", "Loan Processor", "Prepares and tracks applications with lenders through to settlement.", "service_agent",
      {"loan_application": "RE VA", "lender": "R", "fact_find": "RCE VA"}, (), ()),
     ("lb_admin", "Commissions Administrator", "Reconciles lender commission statements.", "finance",
-     {"loan_application": "R VA", "lender": "RCE", "commission": "RCE VA"}, (), (COMMISSIONS,)),
+     {"loan_application": "R VA", "lender": "RCE", "commission": "RCE VA MA"}, (), (COMMISSIONS,)),
 ]  # fmt: skip
 
 REPORT_FOLDER: Final = "loan_broker_reports"
@@ -251,7 +252,7 @@ REPORTS: Final[list[tuple[str, str, str, dict[str, Any]]]] = [
                                                                                 "filters": {"logic": "and", "conditions": [{"field": "stage", "op": "equals", "value": "Settled"}]}, "chart": {"type": "bar"}}),
     ("lb_broker_volume", "Broker Volume (this year)", "loan_application", {"format": "summary", "group_by": ["broker"], "aggregates": [{"op": "sum", "field": "loan_amount"}, {"op": "count"}],
                                                                             "filters": {"logic": "and", "conditions": [{"field": "stage", "op": "equals", "value": "Settled"}, {"field": "settlement_date", "op": "equals", "value": "THIS_YEAR"}]}, "chart": {"type": "bar"}}),
-    ("lb_commission_by_type", "Commission by Type", "commission", {"format": "summary", "group_by": ["type"], "aggregates": [{"op": "sum", "field": "signed_amount"}, {"op": "count"}], "chart": {"type": "donut"}}),
+    ("lb_commission_by_type", "Commission by Type", "commission", {"format": "summary", "group_by": ["type"], "aggregates": [{"op": "count"}, {"op": "sum", "field": "signed_amount"}], "chart": {"type": "bar"}}),
     ("lb_commission_ledger", "Commission Ledger by Lender", "commission", {"format": "summary", "group_by": ["lender"], "aggregates": [{"op": "sum", "field": "signed_amount"}], "chart": {"type": "bar"}}),
     ("lb_upcoming_settlements", "Upcoming Settlements", "loan_application", {"format": "tabular", "columns": ["name", "primary_borrower", "loan_amount", "lender", "settlement_date", "broker"],
                                                                                "filters": {"logic": "and", "conditions": [{"field": "settlement_date", "op": "equals", "value": "NEXT_N_DAYS:30"}]}, "sort": [{"field": "settlement_date", "direction": "asc"}]}),
@@ -269,6 +270,19 @@ def install(conn: Connection) -> None:
         install_object_permission(conn, ro, obj, {"can_read": True, "view_all": True})
     portal = security_id("profile", "customer_portal")
     install_object_permission(conn, portal, "loan_application", {"can_read": True})
+    # Clients see which lender their loan is with, not the broker's commission rates or BDM.
+    install_object_permission(conn, portal, "lender", {"can_read": True})
+    for field in (
+        "upfront_rate",
+        "trail_rate",
+        "clawback_months",
+        "accreditation_number",
+        "bdm_name",
+        "bdm_email",
+        "bdm_phone",
+        "notes",
+    ):
+        install_field_security(conn, portal, "lender", field, "hidden")
     for field in (
         "broker",
         "processor",
@@ -288,7 +302,12 @@ def install(conn: Connection) -> None:
         "Broking Dashboard",
         [
             {"report": "lb_pipeline", "title": "Pipeline by stage", "chart": "funnel", "width": 2},
-            {"report": "lb_commission_by_type", "title": "Commission", "chart": "donut", "width": 1},
+            {
+                "report": "lb_commission_by_type",
+                "title": "Net commission by type",
+                "chart": "bar",
+                "width": 1,
+            },
             {"report": "lb_settled_by_lender", "title": "Settled by lender", "chart": "bar", "width": 2},
             {"report": "lb_broker_volume", "title": "Broker volume", "chart": "bar", "width": 1},
             {

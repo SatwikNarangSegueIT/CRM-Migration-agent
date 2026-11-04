@@ -81,6 +81,36 @@ def loan_rules(change: Change) -> None:
     _lvr(data)
     if any(change.is_changed(f) for f in BID_FIELDS) and old.get("bid_completed") and not svc.system:
         raise rule("The Best Interests Duty record is locked once the assessment is recorded.")
+    if (
+        old.get("stage") in d.FINAL_STAGES
+        and change.is_changed("stage")
+        and not svc.system
+        and not svc.policy.object("loan_application").modify_all  # a principal can correct a mistake
+    ):
+        raise rule(f"The application is {old.get('stage')}; open a new application instead.", "stage")
+    # Choosing the lender (or adding a co-borrower) completes the application; switching them changes it.
+    material = [
+        f
+        for f in ("loan_amount", "purpose", "primary_borrower", "lender", "co_borrower")
+        if change.is_changed(f) and (f not in ("lender", "co_borrower") or old.get(f))
+    ]
+    if (
+        material
+        and old.get("bid_completed")
+        and _index(old.get("stage")) < _index("Lodged")
+        and not svc.system
+    ):
+        # The assessment was for a different loan: it has to be made again before lodging (NCCP, BID).
+        data["bid_completed"] = False
+        audit.record(
+            svc.db,
+            action=AuditAction.UPDATE,
+            entity_type="record:loan_application",
+            entity_id=change.record.id if change.record else None,
+            summary=f"Preliminary assessment to be redone: {', '.join(material)} changed",
+            actor_id=svc.user_id,
+            meta=svc.request_meta,
+        )
     if not change.is_changed("stage") or svc.system:
         return
     new_stage = data.get("stage")
@@ -258,6 +288,25 @@ def commission_rules(change: Change) -> None:
     data["signed_amount"] = decimal_to_json(-amount if data.get("type") == "Clawback" else amount)
     if data.get("status") == "Received" and not data.get("received_date"):
         data["received_date"] = local_today().isoformat()
+
+
+@on("commission", Event.AFTER_CREATE, pack_key=K)
+def commission_visible_to_broker(change: Change) -> None:
+    """A broker reads the commission on their own loans (not to change it: that needs Manage Commissions)."""
+    record = change.record
+    uid = change.data.get("broker")
+    if record is None or not uid:
+        return
+    change.svc.db.add(
+        RecordShare(
+            record_id=record.id,
+            principal_type="user",
+            principal_id=uuid.UUID(str(uid)),
+            access="read",
+            created_by_id=None,
+        )
+    )
+    change.svc.db.flush()
 
 
 @on("commission", Event.BEFORE_UPDATE, pack_key=K)

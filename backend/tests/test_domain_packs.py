@@ -497,3 +497,45 @@ def test_accounting_safeguards(admin_client: TestClient, client: TestClient, db:
     patch(manager, "engagement", ret["id"], {"due_date": later})
     deadlines = related(c, "lodgement_deadline", "engagement", ret["id"])
     assert [d["fields"]["due_date"] for d in deadlines] == [later]
+
+
+def test_loan_broker_safeguards(admin_client: TestClient, client: TestClient, db: Session) -> None:
+    from tests.conftest import login, make_user
+
+    c = admin_client
+    install(c, "loan_broker")
+    broker_user = make_user(db, profile="lb_broker", email="bro@loans.example")
+    broker = TestClient(client.app)
+    login(broker, broker_user.email)
+    lender = create(c, "lender", {"upfront_rate": 0.6}, name="Harbour Bank")
+    other = create(c, "lender", {"upfront_rate": 0.5}, name="Two Bank")
+    person = create(broker, "contact", {"first_name": "Ana", "last_name": "Ruiz"})
+    today = local_today().isoformat()
+    loan = create(
+        broker,
+        "loan_application",
+        {"primary_borrower": person["id"], "purpose": "Refinance", "loan_amount": 500000, "lender": lender["id"],
+         "credit_guide_date": today, "privacy_consent_date": today, "customer_objectives": "Lower rate",
+         "products_considered": "Harbour, Two", "recommendation_reason": "Cheapest"},
+    )  # fmt: skip
+    ff = create(
+        broker,
+        "fact_find",
+        {"loan_application": loan["id"], "gross_annual_income": 1, "monthly_living_expenses": 1},
+    )
+    patch(broker, "fact_find", ff["id"], {"status": "Complete"})
+    action(broker, "loan_application", loan["id"], "record_assessment")
+    # Switching lender after the assessment means assessing again before lodging.
+    assert (
+        patch(broker, "loan_application", loan["id"], {"lender": other["id"]})["fields"]["bid_completed"]
+        is False
+    )
+    patch(broker, "loan_application", loan["id"], {"stage": "Lodged"}, expect=422)
+    action(broker, "loan_application", loan["id"], "record_assessment")
+    patch(broker, "loan_application", loan["id"], {"stage": "Lodged"})
+    patch(c, "loan_application", loan["id"], {"stage": "Settled"})
+    # Settled is final for a broker (a principal can correct a mistake).
+    patch(broker, "loan_application", loan["id"], {"stage": "Declined", "decline_reason": "x"}, expect=422)
+    # The broker reads the commission on their loan.
+    mine = broker.post(f"{API}/objects/commission/records/query", json={}).json()["items"]
+    assert [m["fields"]["type"] for m in mine] == ["Upfront"]

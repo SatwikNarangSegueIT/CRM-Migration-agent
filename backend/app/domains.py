@@ -298,7 +298,7 @@ def apply_related_lists(db: Session) -> int:
 # ------------------------------------------------------------------ forms
 
 # Bump when apply_forms changes: existing workspaces are brought up to date at start-up.
-FORMS_VERSION = 6
+FORMS_VERSION = 7
 
 # Sales-oriented fields that a profession workspace doesn't use. They're taken off the page layouts (so off
 # the forms and record pages), not deleted: an administrator can put them back in Object Manager.
@@ -604,6 +604,7 @@ ACCESS_FIXES: dict[str, list[tuple[str, str, str]]] = {
         ("ma_registered_agent", "invoice_line", "RCED"),
         ("ma_registered_agent", "client_account_transaction", "R VA"),
     ],
+    "lending": [("lb_admin", "commission", "RCE VA MA")],
     "accounting": [
         ("ap_practice_admin", "account", "RCE VA"),
         ("ap_practice_admin", "contact", "RCE VA"),
@@ -628,12 +629,25 @@ def _grant(db: Session, profile_id: uuid.UUID, obj: str, code: str) -> bool:
     return changed
 
 
-_PORTAL_HIDDEN_VISA_FIELDS = (
-    "default_professional_fee",
-    "default_government_fee",
-    "checklist_template",
-    "description",
-)
+PORTAL_REFERENCE: dict[str, tuple[str, tuple[str, ...]]] = {
+    "migration": (
+        "visa_type",
+        ("default_professional_fee", "default_government_fee", "checklist_template", "description"),
+    ),
+    "lending": (
+        "lender",
+        (
+            "upfront_rate",
+            "trail_rate",
+            "clawback_months",
+            "accreditation_number",
+            "bdm_name",
+            "bdm_email",
+            "bdm_phone",
+            "notes",
+        ),
+    ),
+}
 
 
 def apply_pack_grants(db: Session, domain: str) -> int:
@@ -650,17 +664,19 @@ def apply_pack_grants(db: Session, domain: str) -> int:
     definition = importlib.import_module(f"app.packs.{spec.pack_key}.definition")
     profiles = getattr(definition, "PROFILES", None) or []
     changed = 0
-    if domain == "migration":
-        # Portal clients read visa types (names only) so their matter shows its visa.
+    reference = PORTAL_REFERENCE.get(domain)
+    if reference is not None:
+        # Portal clients read this reference list (names only), so their record shows its visa / lender.
         from app.models import ProfileFieldPermission
 
+        obj, hidden = reference
         portal = db.scalar(select(Profile).where(Profile.key == "customer_portal"))
-        if portal is not None and db.get(ProfileObjectPermission, (portal.id, "visa_type")) is None:
-            db.add(ProfileObjectPermission(profile_id=portal.id, object_api_name="visa_type", can_read=True))
-            for f in _PORTAL_HIDDEN_VISA_FIELDS:
+        if portal is not None and db.get(ProfileObjectPermission, (portal.id, obj)) is None:
+            db.add(ProfileObjectPermission(profile_id=portal.id, object_api_name=obj, can_read=True))
+            for f in hidden:
                 db.merge(
                     ProfileFieldPermission(
-                        profile_id=portal.id, object_api_name="visa_type", field_api_name=f, access="hidden"
+                        profile_id=portal.id, object_api_name=obj, field_api_name=f, access="hidden"
                     )
                 )
             changed += 1
@@ -738,8 +754,60 @@ def _firm_name(db: Session) -> str | None:
     return str((get_setting(db, "company") or {}).get("legal_name") or "") or None
 
 
+def _commission_chart_in_dollars(db: Session) -> int:
+    """The broking dashboard's commission chart shows net dollars by type (it counted entries)."""
+    from app.models import Dashboard
+
+    changed = 0
+    report = db.scalar(select(Report).where(Report.key == "lb_commission_by_type"))
+    if report is not None:
+        aggs = list((report.definition or {}).get("aggregates", []))
+        if aggs and aggs[-1].get("op") == "count":
+            report.definition = {**report.definition, "aggregates": aggs[::-1], "chart": {"type": "bar"}}
+            changed += 1
+    dash = db.scalar(select(Dashboard).where(Dashboard.key == "lb_broker_dashboard"))
+    if dash is not None:
+        comps = [dict(c) for c in dash.components or []]
+        for c in comps:
+            if c.get("report") == "lb_commission_by_type" and c.get("chart") == "donut":
+                c.update(chart="bar", title="Net commission by type")
+                changed += 1
+        dash.components = comps
+    return changed
+
+
+def _share_commissions_with_brokers(db: Session) -> int:
+    """Brokers read the commission on their loans (commissions recorded before this was shared)."""
+    from app.models import Record, RecordShare
+
+    shared = set(
+        db.scalars(
+            select(RecordShare.record_id)
+            .join(Record, Record.id == RecordShare.record_id)
+            .where(Record.object_api_name == "commission", RecordShare.created_by_id.is_(None))
+        )
+    )
+    added = 0
+    for c in db.scalars(select(Record).where(Record.object_api_name == "commission")):
+        broker = (c.data or {}).get("broker")
+        if broker and c.id not in shared:
+            db.add(
+                RecordShare(
+                    record_id=c.id,
+                    principal_type="user",
+                    principal_id=uuid.UUID(str(broker)),
+                    access="read",
+                    created_by_id=None,
+                )
+            )
+            added += 1
+    return added
+
+
 def seed_starter_records(db: Session, domain: str, actor_id: uuid.UUID | None = None) -> int:
     """Reference data a profession can't start without (a migration agency's visa types)."""
+    if domain == "lending":
+        return _share_commissions_with_brokers(db) + _commission_chart_in_dollars(db)
     if domain != "migration":
         return 0
     from app.packs.migration_agency import seed_visa_types
