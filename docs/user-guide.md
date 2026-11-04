@@ -44,6 +44,9 @@ Australia.
 5. The link finishes setting up your workspace and signs you in. You're its first **System
    Administrator**.
 
+On a test installation without e-mail set up, there's no e-mail step: the workspace opens as soon as you
+choose **Create workspace**.
+
 Your workspace opens with the profession's app, records, stages, reports and dashboard ready, in the
 profession's colour, and with the profession's words (for example *Clients* and *Matters*).
 
@@ -235,8 +238,9 @@ Everything here is in **Setup** (left rail).
 invitation, set a password and enrol two-step verification.
 
 **E-mail sending**: confirmation links, password resets, invitations and reminders need outgoing e-mail.
-Your platform administrator configures it (Zoho Mail SMTP is supported). See the *Sign-up checklist* in
-[operations.md](operations.md) and the example settings in `backend/.env.production.example`.
+The platform administrator sets it up once for everyone, either in the server settings or through the
+platform e-mail API, which can also send a test e-mail. Zoho Mail (SMTP) and Zoho ZeptoMail are supported.
+See *E-mail delivery (Zoho)* in [operations.md](operations.md) and `backend/.env.production.example`.
 
 ---
 

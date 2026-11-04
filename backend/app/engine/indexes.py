@@ -74,16 +74,18 @@ def sync_indexes(conn: Connection, registry: Registry) -> None:
 
 
 def schedule_index_ddl(statements: list[str], tenant: str = "public") -> None:
-    """Hand index DDL to the worker. CREATE INDEX CONCURRENTLY waits for every open transaction, so it
-    must never run inside a web request. `app.cli sync-indexes` (run on deploy) creates anything missed."""
+    """Hand index DDL to the worker (or a background thread when none runs). CREATE INDEX CONCURRENTLY
+    waits for every open transaction, so it must never run inside a web request. `app.cli sync-indexes`
+    (run on deploy) creates anything missed."""
     if not statements:
         return
     try:
+        from app.worker.dispatch import dispatch
         from app.worker.tasks import apply_index_ddl
 
-        apply_index_ddl.delay(statements, tenant)
+        dispatch(apply_index_ddl, statements, tenant)
     except Exception:
-        logger.warning("Could not queue index DDL; run 'sync-indexes'", extra={"statements": statements})
+        logger.warning("Could not start index DDL; run 'sync-indexes'", extra={"statements": statements})
 
 
 def qualify(statement: str, schema: str) -> str:

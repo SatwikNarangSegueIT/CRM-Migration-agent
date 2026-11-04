@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+import socket
+import threading
+
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_ready
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -29,6 +34,12 @@ celery_app.conf.update(
     task_time_limit=300,
     task_soft_time_limit=240,
     result_expires=86_400,
+    # Nothing reads task results. Recording them made every .delay() wait on the result store: with Redis
+    # unreachable that is 20 one-second retries, then an error that leaves the process unable to queue.
+    task_ignore_result=True,
+    result_backend_transport_options={
+        "retry_policy": {"max_retries": 1, "interval_start": 0, "interval_step": 0.5, "interval_max": 0.5}
+    },
     broker_connection_retry_on_startup=True,
     # Publishing from a web request must fail fast when Redis is down; callers fall back (app.services.email).
     broker_connection_timeout=3,
@@ -44,3 +55,22 @@ celery_app.conf.update(
         "platform-maintenance": {"task": "platform.maintain", "schedule": 600.0},
     },
 )
+
+
+@worker_ready.connect
+def _start_heartbeat(**_: object) -> None:
+    """Tell the API a worker is running (app.worker.dispatch): refresh a Redis key every 30 seconds."""
+    from app.core.redis_client import get_redis
+    from app.worker.dispatch import HEARTBEAT_KEY, HEARTBEAT_SECONDS, HEARTBEAT_TTL
+
+    stop = threading.Event()
+
+    def beat() -> None:
+        while not stop.is_set():
+            try:
+                get_redis().set(HEARTBEAT_KEY, socket.gethostname(), ex=HEARTBEAT_TTL)
+            except Exception:
+                logging.getLogger("app.worker").warning("Worker heartbeat failed", exc_info=True)
+            stop.wait(HEARTBEAT_SECONDS)
+
+    threading.Thread(target=beat, name="worker-heartbeat", daemon=True).start()

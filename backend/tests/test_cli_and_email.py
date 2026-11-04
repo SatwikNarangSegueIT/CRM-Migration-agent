@@ -121,6 +121,7 @@ def test_queue_email_uses_worker(monkeypatch: pytest.MonkeyPatch) -> None:
 
     delivered: list[tuple[str, str, str]] = []
     monkeypatch.setattr("app.worker.tasks.deliver_email", lambda *a: delivered.append(a))
+    monkeypatch.setattr("app.worker.dispatch.worker_available", lambda: True)
     celery_app.conf.task_always_eager = True
     try:
         email.queue_email("a@example.com", "S", "B")

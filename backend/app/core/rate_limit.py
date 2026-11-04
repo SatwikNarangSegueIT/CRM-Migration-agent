@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 
 from app.core.config import get_settings
 from app.core.errors import AppError
@@ -26,6 +27,18 @@ def _key(bucket: str, identity: str) -> str:
     return f"rl:{bucket}:{digest}"
 
 
+_last_warning = 0.0
+
+
+def _warn_unavailable(exc: Exception) -> None:
+    """One line a minute while Redis is down, not a traceback per request."""
+    global _last_warning
+    now = time.monotonic()
+    if now - _last_warning >= 60:
+        _last_warning = now
+        logger.warning("Rate limiter unavailable (Redis: %s); allowing requests", exc)
+
+
 def check_rate_limit(bucket: str, identity: str, *, limit: int, window_seconds: int) -> None:
     """Count one hit for (bucket, identity); raise RateLimitedError when over the limit."""
     if not get_settings().rate_limit_enabled:
@@ -37,8 +50,8 @@ def check_rate_limit(bucket: str, identity: str, *, limit: int, window_seconds: 
         pipe.incr(key)
         pipe.expire(key, window_seconds, nx=True)
         count, _ = pipe.execute()
-    except Exception:
-        logger.warning("Rate limiter unavailable; allowing request", exc_info=True, extra={"bucket": bucket})
+    except Exception as exc:
+        _warn_unavailable(exc)
         return
     if int(count) > limit:
         raise RateLimitedError("Too many attempts. Please wait a few minutes and try again.")

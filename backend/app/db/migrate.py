@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import re
 import secrets
+import threading
 import uuid
 from pathlib import Path
 
@@ -37,14 +38,22 @@ def _url_args(url: str | None) -> list[str]:
     return [f"url={url}"] if url else []
 
 
+# Alembic's `op` and `context` are process-wide, so two migrations running in one process at once (a
+# sign-up building a workspace while the API refills the warm pool) would run each other's statements in the
+# wrong transaction. One migration at a time per process; separate processes are independent.
+_ALEMBIC_LOCK = threading.RLock()
+
+
 def migrate_platform(url: str | None = None) -> None:
-    command.upgrade(_config("alembic_platform", *_url_args(url)), "head")
+    with _ALEMBIC_LOCK:
+        command.upgrade(_config("alembic_platform", *_url_args(url)), "head")
 
 
 def migrate_tenant(schema: str, url: str | None = None, revision: str = "head") -> None:
     if not SCHEMA_NAME.match(schema):
         raise ValueError(f"Invalid schema name: {schema!r}")
-    command.upgrade(_config("alembic", f"schema={schema}", *_url_args(url)), revision)
+    with _ALEMBIC_LOCK:
+        command.upgrade(_config("alembic", f"schema={schema}", *_url_args(url)), revision)
 
 
 def _engine(url: str | None):  # type: ignore[no-untyped-def]
@@ -159,27 +168,26 @@ _WARM_POOL_LOCK = 72_410_001  # pg advisory lock id: one builder at a time acros
 def fill_warm_pool(size: int, url: str | None = None) -> int:
     """Keep ``size`` pre-built schemas ready so sign-up is instant. Returns how many were built.
 
-    Only one process builds at a time (advisory lock); others return 0 immediately.
+    Only one process builds at a time: a transaction-level advisory lock, held by an open transaction for
+    the whole build, so it also works through PgBouncer (a session-level lock could be released on another
+    server connection and never come free). Others return 0 straight away.
     """
     built = 0
     engine = _engine(url)
     try:
-        with engine.connect() as lock_conn:
-            got = lock_conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _WARM_POOL_LOCK}).scalar()
-            lock_conn.commit()
+        with engine.begin() as lock_conn:
+            got = lock_conn.execute(
+                text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": _WARM_POOL_LOCK}
+            ).scalar()
             if not got:
                 return 0
-            try:
-                while len(warm_schemas(url)) < size:
-                    schema = build_schema(url)
-                    with engine.begin() as conn:
-                        conn.execute(
-                            text("INSERT INTO platform.warm_schemas (schema_name) VALUES (:s)"), {"s": schema}
-                        )
-                    built += 1
-            finally:
-                lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _WARM_POOL_LOCK})
-                lock_conn.commit()
+            while len(warm_schemas(url)) < size:
+                schema = build_schema(url)
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("INSERT INTO platform.warm_schemas (schema_name) VALUES (:s)"), {"s": schema}
+                    )
+                built += 1
     finally:
         engine.dispose()
     return built
@@ -213,6 +221,17 @@ def _take_warm_schema(conn: Connection) -> str | None:
     ).scalar()
 
 
+def _claim_warm_schema(engine) -> str | None:  # type: ignore[no-untyped-def]
+    with engine.begin() as conn:
+        return _take_warm_schema(conn)
+
+
+def _drop_schema(engine, schema: str) -> None:  # type: ignore[no-untyped-def]
+    if SCHEMA_NAME.match(schema) and schema != DEFAULT_SCHEMA:
+        with engine.begin() as conn:
+            conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+
+
 def create_tenant(
     name: str,
     domain: str,
@@ -221,44 +240,39 @@ def create_tenant(
     url: str | None = None,
     use_warm_pool: bool = True,
 ) -> tuple[uuid.UUID, str, str]:
-    """Create a firm with its own schema (warm pool first). Returns (id, slug, schema)."""
+    """Create a firm with its own schema (warm pool first). Returns (id, slug, schema).
+
+    The schema is ready before the firm is registered, so a failure never leaves a half-built workspace in
+    the catalogue.
+    """
     tenant_id = uuid.uuid4()
     engine = _engine(url)
     try:
-        with engine.begin() as conn:
-            schema = _take_warm_schema(conn) if use_warm_pool else None
-            slug = _unique_slug(conn, slug or slugify(name))
-            conn.execute(
-                text(
-                    "INSERT INTO platform.tenants (id, slug, name, domain, schema_name, status) "
-                    "VALUES (:id, :slug, :name, :domain, :schema, :status)"
-                ),
-                {
-                    "id": tenant_id,
-                    "slug": slug,
-                    "name": name,
-                    "domain": domain,
-                    "schema": schema or _new_schema_name(),
-                    "status": "active" if schema else "provisioning",
-                },
-            )
-            if schema is None:
-                schema = conn.execute(
-                    text("SELECT schema_name FROM platform.tenants WHERE id = :id"), {"id": tenant_id}
-                ).scalar_one()
-                warm = False
-            else:
-                warm = True
-        if not warm:
-            try:
-                migrate_tenant(schema, url)
-            except Exception:
-                drop_tenant(schema, url)
-                raise
+        schema = _claim_warm_schema(engine) if use_warm_pool else None
+        if schema is None:
+            with _ALEMBIC_LOCK:
+                # While waiting, this process may have finished building a ready-made one.
+                schema = _claim_warm_schema(engine) if use_warm_pool else None
+                if schema is None:
+                    schema = _new_schema_name()
+                    try:
+                        migrate_tenant(schema, url)
+                    except Exception:
+                        _drop_schema(engine, schema)
+                        raise
+        try:
             with engine.begin() as conn:
+                slug = _unique_slug(conn, slug or slugify(name))
                 conn.execute(
-                    text("UPDATE platform.tenants SET status = 'active' WHERE id = :id"), {"id": tenant_id}
+                    text(
+                        "INSERT INTO platform.tenants (id, slug, name, domain, schema_name, status) "
+                        "VALUES (:id, :slug, :name, :domain, :schema, 'active')"
+                    ),
+                    {"id": tenant_id, "slug": slug, "name": name, "domain": domain, "schema": schema},
                 )
+        except Exception:
+            _drop_schema(engine, schema)
+            raise
     finally:
         engine.dispose()
     invalidate_catalogue()

@@ -118,9 +118,10 @@ def start_import(body: ImportIn, svc: Records) -> dict[str, Any]:
         imports.run_import(svc.db, job.id)
     else:
         from app.tenancy import tenant_schema
+        from app.worker.dispatch import dispatch
         from app.worker.tasks import run_import_task
 
-        run_import_task.delay(str(job.id), tenant_schema(svc.db))
+        dispatch(run_import_task, str(job.id), tenant_schema(svc.db))
     svc.db.refresh(job)
     return _job_out(job)
 

@@ -167,3 +167,36 @@ class _ImmediateThread:
 
     def start(self) -> None:
         self._target()
+
+
+def test_concurrent_workspace_builds_in_one_process_do_not_collide(db: Session) -> None:
+    """A sign-up building a workspace while the API refills the warm pool (same process, two threads)."""
+    import threading
+
+    from app.db.migrate import create_tenant, fill_warm_pool
+
+    errors: list[BaseException] = []
+
+    def run(job: Any) -> None:
+        try:
+            job()
+        except BaseException as exc:  # reported below
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=run, args=(lambda: fill_warm_pool(1),)),
+        threading.Thread(
+            target=run, args=(lambda: create_tenant("Concurrent Co", "legal", use_warm_pool=False),)
+        ),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(300)
+    assert errors == []
+    assert db.execute(text("SELECT count(*) FROM platform.warm_schemas")).scalar_one() == 1
+    schema = db.execute(
+        text("SELECT schema_name FROM platform.tenants WHERE slug = 'concurrent-co'")
+    ).scalar_one()
+    profiles = text(f'SELECT count(*) FROM "{schema}".profiles')  # noqa: S608 - schema name from the catalogue
+    assert db.execute(profiles).scalar_one() > 0

@@ -82,24 +82,39 @@ class Settings(BaseSettings):
     invitation_hours: int = Field(default=72, ge=1, le=24 * 14)
     # Public sign-up (plan v4, section 4).
     signup_enabled: bool = True
+    # "required": e-mail a confirmation link first. "off": create the workspace straight away.
+    # "auto" (default): required in production or whenever e-mail delivery is set up; otherwise off, so a
+    # development or staging install without a mail server can still create workspaces.
+    signup_email_verification: Literal["auto", "required", "off"] = "auto"
     signup_verification_hours: int = Field(default=24, ge=1, le=24 * 7)
-    # Pre-built workspaces kept ready so sign-up is instant (topped up by the worker).
+    # Pre-built workspaces kept ready so sign-up is instant (topped up by the API and the worker).
     signup_warm_pool_size: int = Field(default=2, ge=0, le=50)
+    # Workspace (slug) whose System Administrators run the platform: e-mail delivery and platform status
+    # in Setup. Default: the first workspace (the one created by `migrate`, slug "main").
+    platform_operator_workspace: str | None = None
     rate_limit_enabled: bool = True
     # Reject passwords found in known breaches (Have I Been Pwned range API, k-anonymity; fails open).
     password_breach_check: bool = True
 
     # ---- E-mail ----
-    email_backend: Literal["console", "smtp"] = "console"
-    # "queue": the Celery worker sends e-mail (falls back to direct sending when Redis is unreachable).
-    # "inline": the API sends e-mail itself in a background thread - use when no worker is deployed.
-    email_delivery: Literal["queue", "inline"] = "queue"
-    email_from: str = "MigrateCRM <no-reply@localhost>"
+    # Defaults for outgoing e-mail; a platform administrator can override them in Setup -> E-mail & Sign-up.
+    # "console" logs e-mails instead of sending them (development). "smtp": any SMTP server, e.g. Zoho Mail.
+    # "zeptomail": Zoho ZeptoMail's HTTP API (works where a host blocks outbound SMTP ports).
+    email_backend: Literal["console", "smtp", "zeptomail"] = "console"
+    # "auto": the Celery worker sends e-mail when one is running, otherwise the API sends it itself.
+    # "queue": always hand e-mail to the worker. "inline": always send from the API.
+    email_delivery: Literal["auto", "queue", "inline"] = "auto"
+    email_from: str = "Meridian CRM <no-reply@localhost>"
     smtp_host: str = "localhost"
     smtp_port: int = 587
+    # "starttls" (port 587), "ssl" (implicit TLS, port 465) or "none". Empty: from SMTP_STARTTLS and port.
+    smtp_security: Literal["starttls", "ssl", "none"] | None = None
     smtp_username: str | None = None
     smtp_password: SecretStr | None = None
     smtp_starttls: bool = True
+    # Zoho ZeptoMail: the API URL of your account's data centre and a "Send Mail" token.
+    zeptomail_api_url: str = "https://api.zeptomail.com/v1.1/email"
+    zeptomail_token: SecretStr | None = None
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -120,8 +135,11 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY of at least 32 characters is required in staging/production")
         if self.app_env == "production" and not self.mfa_required_for_staff:
             raise ValueError("MFA_REQUIRED_FOR_STAFF cannot be disabled in production")
-        if self.app_env == "production" and self.email_backend != "smtp":
-            raise ValueError("EMAIL_BACKEND must be 'smtp' in production")
+        if self.app_env == "production" and self.email_backend == "console":
+            raise ValueError(
+                "EMAIL_BACKEND must be 'smtp' or 'zeptomail' in production "
+                "(the settings can be changed later in Setup -> E-mail & Sign-up)"
+            )
         if self.app_env == "production" and self.cookie_secure is False:
             raise ValueError("COOKIE_SECURE cannot be disabled in production")
         return self
@@ -129,6 +147,14 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def effective_smtp_security(self) -> str:
+        if self.smtp_security:
+            return self.smtp_security
+        if self.smtp_port == 465:
+            return "ssl"
+        return "starttls" if self.smtp_starttls else "none"
 
     @property
     def secure_cookies(self) -> bool:

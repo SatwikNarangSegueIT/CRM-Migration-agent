@@ -26,11 +26,16 @@ export type SignupBody = {
 
 export type Workspace = { slug: string; name: string; domain?: string };
 
+export type SignupCreated = { state: LoginState; workspace: Workspace };
+
 export type OnboardingStep = { key: string; label: string; description: string; href: string; done: boolean };
 
 export const signupApi = {
   domains: (signal?: AbortSignal) => apiRequest<DomainOption[]>("/signup/domains", { signal }),
-  start: (body: SignupBody) => apiRequest<MessageResponse>("/signup", { method: "POST", body }),
+  /** A message when a confirmation e-mail was sent; the signed-in state when the workspace was created
+   * straight away (installs without e-mail set up). */
+  start: (body: SignupBody) =>
+    apiRequest<MessageResponse | SignupCreated>("/signup", { method: "POST", body }),
   verify: (token: string) =>
     apiRequest<{ state: LoginState; workspace: Workspace }>("/signup/verify", {
       method: "POST",

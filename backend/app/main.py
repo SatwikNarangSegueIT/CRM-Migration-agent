@@ -36,6 +36,7 @@ from app.routers import (
     workspace,
 )
 from app.routers import packs as packs_router
+from app.routers import platform as platform_router
 
 packs.available()  # registers industry packs and their hooks
 
@@ -114,6 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(onboarding.router)
     api.include_router(privacy.router)
     api.include_router(packs_router.router)
+    api.include_router(platform_router.router)
     app.include_router(api)
     return app
 

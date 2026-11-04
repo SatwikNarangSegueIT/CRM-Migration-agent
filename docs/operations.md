@@ -40,22 +40,94 @@ gives every profession workspace related lists that match its apps (Matters on a
 Opportunities and Cases); related lists an administrator already changed are left alone. The same is done by
 `python -m app.cli refresh-domain-layouts`.
 
+## Upgrading to v6 (e-mail settings)
+
+Run [`deploy/neon_upgrade_v6.sql`](../deploy/neon_upgrade_v6.sql) once (after v5), in the Neon SQL Editor or
+with `psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -1 -f deploy/neon_upgrade_v6.sql`. It adds
+`platform.settings`, where e-mail settings saved through the API are kept. Safe to run again;
+`python -m app.cli migrate` does the same.
+
 ## Sign-up checklist
 
-Sign-up creates a schema per firm, so it needs more than the rest of the app:
+Sign-up creates a schema per firm and e-mails a confirmation link, so it needs more than the rest of the app.
+`GET /api/v1/platform/status` (below) checks all of it and says what to fix.
 
-- **`DATABASE_URL_DIRECT`** set to the *direct* Neon endpoint (no `-pooler` in the host). New workspaces are
-  migrated through it. (Since v5 migrations also work through the pooler, but the direct endpoint is faster
-  and avoids PgBouncer limits on DDL.)
-- **E-mail that actually leaves**: `EMAIL_BACKEND=smtp` with SMTP settings. If no Celery worker is deployed,
-  set **`EMAIL_DELIVERY=inline`** so the API sends the confirmation link itself; otherwise links queue in
-  Redis and never arrive. Without Redis at all the API falls back to sending directly.
+- **E-mail that actually leaves.** With `EMAIL_BACKEND=console` (the default, and what `docker-compose.yml`
+  uses) e-mails are only written to the log. Set up Zoho (below). Outside production, with e-mail not set up,
+  `SIGNUP_EMAIL_VERIFICATION=auto` creates the workspace straight away instead, so sign-up still works for
+  testing; production always requires the confirmation e-mail.
+- **No worker needed.** `EMAIL_DELIVERY=auto` (default) hands e-mail to the Celery worker only when one is
+  running (it sends a heartbeat); otherwise the API sends it, and a failed confirmation e-mail is reported to
+  the person signing up instead of disappearing. Imports and index builds fall back the same way.
+- **`DATABASE_URL_DIRECT`** set to the *direct* Neon endpoint (no `-pooler` in the host): new workspaces build
+  faster on it. Through the pooler also works.
 - **`PUBLIC_APP_URL`** is the address people open (links in e-mails use it).
-- The **warm pool** (`SIGNUP_WARM_POOL_SIZE`, default 2) keeps pre-built workspaces ready so confirming the
-  e-mail takes about a second. The API refills it at start-up and after each sign-up; without it the first
-  confirmation builds a schema on the spot (seconds locally, longer over a slow link).
+- The **warm pool** (`SIGNUP_WARM_POOL_SIZE`, default 2) keeps ready-made workspaces so confirming takes about a
+  second. The API refills it at start-up and after each sign-up.
 - `PASSWORD_BREACH_CHECK=true` (default) rejects passwords found in known breaches via Have I Been Pwned
   (only 5 characters of the SHA-1 hash leave the server; fails open if the service can't be reached).
+
+## E-mail delivery (Zoho)
+
+**In the environment** (defaults), see [`backend/.env.production.example`](../backend/.env.production.example):
+`EMAIL_BACKEND=smtp`, `SMTP_HOST` (`smtp.zoho.com.au` for zoho.com.au accounts; `smtp.zoho.com` or, for paid
+organisation accounts, `smtppro.zoho.com` on zoho.com), `SMTP_PORT=465` + `SMTP_SECURITY=ssl` (or 587 +
+`starttls`), `SMTP_USERNAME` = the full mailbox, `SMTP_PASSWORD` = an application-specific password when the
+Zoho account uses two-factor sign-in, and `EMAIL_FROM` = that mailbox or one of its aliases. Zoho shows the
+exact host in Zoho Mail -> Settings -> Mail Accounts -> IMAP/SMTP.
+
+If your host blocks outbound SMTP ports, use **Zoho ZeptoMail** over HTTPS instead: `EMAIL_BACKEND=zeptomail`,
+`ZEPTOMAIL_TOKEN` (ZeptoMail -> Mail Agents -> SMTP/API -> Send Mail token) and, for an account outside the
+US data centre, the `ZEPTOMAIL_API_URL` ZeptoMail shows.
+
+**Through the API** (no redeploy; overrides the environment, takes effect within 20 seconds everywhere).
+Only System Administrators of the operator workspace (`PLATFORM_OPERATOR_WORKSPACE`, default the first
+workspace, `main`) can use it. Passwords and tokens are stored encrypted with `SECRET_KEY` and never returned.
+
+```bash
+APP=https://crm.yourfirm.com.au
+# 1. Sign in (add the two-step code with /auth/mfa/verify if it asks for one)
+curl -s -c jar.txt -H "Origin: $APP" -H 'Content-Type: application/json' \
+  "$APP/api/v1/auth/login" -d '{"email":"you@yourfirm.com.au","password":"YOUR_PASSWORD"}'
+CSRF=$(awk '$6=="crm_csrf"{print $7}' jar.txt)
+curl -s -b jar.txt -c jar.txt -H "Origin: $APP" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
+  "$APP/api/v1/auth/mfa/verify" -d '{"code":"123456"}'
+
+# 2. Save the Zoho settings
+curl -s -b jar.txt -X PUT -H "Origin: $APP" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
+  "$APP/api/v1/platform/email" -d '{
+    "provider": "smtp",
+    "from_name": "Meridian CRM",
+    "from_email": "no-reply@yourfirm.com.au",
+    "smtp_host": "smtp.zoho.com.au",
+    "smtp_port": 465,
+    "smtp_security": "ssl",
+    "smtp_username": "no-reply@yourfirm.com.au",
+    "smtp_password": "ZOHO_APP_PASSWORD"
+  }'
+
+# 3. Send a test e-mail (reports the server's reason in plain words if it fails)
+curl -s -b jar.txt -H "Origin: $APP" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
+  "$APP/api/v1/platform/email/test" -d '{"to":"you@yourfirm.com.au"}'
+
+# 4. Check everything sign-up depends on
+curl -s -b jar.txt "$APP/api/v1/platform/status"
+```
+
+| Endpoint | Does |
+|---|---|
+| `GET /api/v1/platform/email` | Current settings (secrets shown only as set / not set), the environment defaults and Zoho host suggestions. |
+| `PUT /api/v1/platform/email` | Save settings. `provider`: `smtp`, `zeptomail` or `console`. A blank `smtp_password` / `zeptomail_token` keeps the saved one. Audited. |
+| `DELETE /api/v1/platform/email` | Go back to the environment settings. |
+| `POST /api/v1/platform/email/test` | Send a test to `to`, with the saved settings or unsaved ones in `settings`. |
+| `GET /api/v1/platform/status` | Database versions, direct URL, e-mail, sign-up mode, worker, warm pool, link address: each ok / warn / error with what to do. |
+
+Outside production the interactive API docs at `/api/v1/docs` let you call these from the browser after
+signing in. A Setup screen for the same settings is planned.
+
+Common Zoho errors, as the test reports them: *rejected the username or password (535)*: use an
+application-specific password; *won't send from …*: `from_email` must be the mailbox or an alias;
+*timed out / couldn't connect*: wrong host or port, or the host blocks SMTP (use ZeptoMail).
 
 ## Deploying
 

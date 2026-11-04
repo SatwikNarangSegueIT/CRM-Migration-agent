@@ -24,7 +24,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import Connection, event, inspect, text
 from sqlalchemy.exc import DBAPIError
@@ -105,6 +105,10 @@ class _Catalogue:
                 self._load()
             return list(self._tenants) if self._platform else [IMPLICIT_PUBLIC]
 
+    def has_platform(self) -> bool:
+        self.tenants()  # loads when stale
+        return self._platform
+
     def invalidate(self) -> None:
         with self._lock:
             self._loaded_at = 0.0
@@ -125,12 +129,46 @@ def invalidate_catalogue() -> None:
     _catalogue.invalidate()
 
 
+_MISS_LOOKUPS_PER_SECOND = 20
+_SELECT_TENANT = "SELECT id, slug, name, domain, schema_name, status FROM platform.tenants "
+_MISS_QUERIES = {
+    "slug": text(_SELECT_TENANT + "WHERE slug = :v"),
+    "schema_name": text(_SELECT_TENANT + "WHERE schema_name = :v"),
+}
+_miss_lock = threading.Lock()
+_miss_times: list[float] = []
+
+
+def _lookup_missing(column: Literal["slug", "schema_name"], value: str) -> TenantInfo | None:
+    """A workspace this process doesn't know yet (another API process may have just created it): ask the
+    database directly - one indexed lookup - and reload the catalogue when it exists. Capped per process,
+    so requests for made-up names can't flood the database."""
+    if not _catalogue.has_platform():
+        return None
+    now = time.monotonic()
+    with _miss_lock:
+        _miss_times[:] = [t for t in _miss_times if now - t < 1.0]
+        if len(_miss_times) >= _MISS_LOOKUPS_PER_SECOND:
+            return None
+        _miss_times.append(now)
+    from app.db.session import get_engine
+
+    with get_engine().connect() as conn:
+        row = conn.execute(_MISS_QUERIES[column], {"v": value}).first()
+    if row is None:
+        return None
+    _catalogue.invalidate()
+    return TenantInfo(row[0], row[1], row[2], row[3], row[4], row[5])
+
+
 def by_slug(slug: str) -> TenantInfo | None:
-    return next((t for t in tenants() if t.slug == slug), None)
+    found = next((t for t in tenants() if t.slug == slug), None)
+    return found if found is not None else _lookup_missing("slug", slug)
 
 
 def by_schema(schema: str) -> TenantInfo | None:
-    return next((t for t in tenants() if t.schema == schema), None)
+    found = next((t for t in tenants() if t.schema == schema), None)
+    return found if found is not None else _lookup_missing("schema_name", schema)
 
 
 def resolve(slug: str | None) -> TenantInfo | None:
@@ -318,4 +356,8 @@ def directory_tenants(email: str) -> list[TenantInfo]:
                 text("SELECT tenant_id FROM platform.user_directory WHERE email = :e"), {"e": email.lower()}
             ).scalars()
         )
-    return [t for t in active_tenants() if t.id in ids]
+    found = [t for t in active_tenants() if t.id in ids]
+    if len(found) < len(ids):  # a workspace another API process just created: reload once
+        invalidate_catalogue()
+        found = [t for t in active_tenants() if t.id in ids]
+    return found

@@ -1,8 +1,9 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type ComponentType, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { errorMessage, fieldError } from "../../api/client";
 import { signupApi, type DomainKey, type DomainOption } from "../../api/signup";
+import { useAuth } from "../../auth/context";
 import { AuthLayout } from "../../components/AuthLayout";
 import {
   CalculatorIcon,
@@ -75,6 +76,8 @@ export function SignupPage() {
   const [honeypot, setHoneypot] = useState("");
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
+  const navigate = useNavigate();
+  const { refresh } = useAuth();
   const submit = useMutation({
     mutationFn: () =>
       signupApi.start({
@@ -87,7 +90,15 @@ export function SignupPage() {
         accept_terms: terms,
         website_url: honeypot || null,
       }),
+    onSuccess: async (result) => {
+      // Created straight away (no e-mail set up on this install): signed in, so go to the workspace.
+      if ("state" in result) {
+        await refresh();
+        navigate(result.state === "mfa_setup_required" ? "/mfa/setup?next=%2F" : "/", { replace: true });
+      }
+    },
   });
+  const created = submit.data !== undefined && "state" in submit.data;
   const chosen = domains.data?.find((d) => d.key === domain);
   // Preview the profession's colour while choosing; restore the remembered one on leaving.
   useEffect(() => {
@@ -111,6 +122,16 @@ export function SignupPage() {
     event.preventDefault();
     setTouched({ firm_name: true, name: true, email: true, abn: true });
     if (ready) submit.mutate();
+  }
+
+  if (created) {
+    return (
+      <AuthLayout title="Opening your workspace" aside={<DomainAside domain={chosen} />}>
+        <div className="flex justify-center py-8">
+          <Spinner label="Opening your workspace" />
+        </div>
+      </AuthLayout>
+    );
   }
 
   if (submit.isSuccess) {
@@ -298,11 +319,14 @@ export function SignupPage() {
           email={email}
           name={name}
         />
-        {/* Honeypot for bots: hidden from people and assistive technology. */}
+        {/* Honeypot for bots: hidden from people and assistive technology. Deliberately not named or
+            labelled like anything a browser or password manager autofills (a filled honeypot drops the
+            sign-up silently). */}
         <div aria-hidden="true" className="hidden">
           <label>
-            Website
+            Leave this field empty
             <input
+              name="contact_me_by_fax_only"
               tabIndex={-1}
               autoComplete="off"
               value={honeypot}

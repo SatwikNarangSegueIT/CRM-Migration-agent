@@ -83,12 +83,16 @@ def process_email_send_task(send_id: str, tenant: str | None = None) -> dict[str
 
 def enqueue_email_send(send_id: uuid.UUID, tenant: str | None = None) -> None:
     """Called after the scheduling transaction; the beat job also picks up anything missed."""
-    try:
-        process_email_send_task.apply_async((str(send_id), tenant), countdown=2)
-    except Exception:
-        logger.warning(
-            "Could not enqueue e-mail send; the scheduler will retry", extra={"send_id": str(send_id)}
-        )
+    from app.worker.dispatch import forget_worker_check, run_in_thread, worker_available
+
+    if worker_available():
+        try:
+            process_email_send_task.apply_async((str(send_id), tenant), countdown=2)
+            return
+        except Exception:
+            logger.warning("Task queue unavailable; sending from the API", extra={"send_id": str(send_id)})
+            forget_worker_check()
+    run_in_thread(process_email_send_task, str(send_id), tenant)
 
 
 @celery_app.task(name="marketing.dispatch_due")

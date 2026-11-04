@@ -81,6 +81,12 @@ def _clear_auth_cookies(response: Response) -> None:
         response.delete_cookie(name, path="/", secure=settings.secure_cookies, samesite="lax")
 
 
+def _is_operator(db: DbSession, auth: AuthContext) -> bool:
+    from app.routers.platform import is_platform_operator
+
+    return is_platform_operator(db, auth)
+
+
 def _me(db: DbSession, auth: AuthContext) -> MeResponse:
     user = auth.user
     verified = auth.session.mfa_verified
@@ -122,6 +128,7 @@ def _me(db: DbSession, auth: AuthContext) -> MeResponse:
         system_permissions=policy.system_permissions() if policy else [],
         object_permissions=objects,
         is_system_admin=policy.is_system_admin if policy else False,
+        is_platform_operator=_is_operator(db, auth) if policy else False,
     )
 
 

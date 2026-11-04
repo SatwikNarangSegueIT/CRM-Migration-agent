@@ -29,6 +29,8 @@ export type MeResponse = {
   system_permissions: string[];
   object_permissions: Record<string, ObjectAccess>;
   is_system_admin: boolean;
+  /** Can change platform-wide settings (e-mail delivery). */
+  is_platform_operator?: boolean;
 };
 
 export type MfaSetup = { secret: string; otpauth_uri: string; qr_svg_data_uri: string };

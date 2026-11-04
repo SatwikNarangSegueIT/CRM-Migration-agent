@@ -115,7 +115,13 @@ export function fieldError(error: unknown, field: string): string | undefined {
 
 /** User-facing message for any thrown value. */
 export function errorMessage(error: unknown, fallback = "Something went wrong. Please try again."): string {
-  if (error instanceof ApiError) return error.message;
+  if (error instanceof ApiError) {
+    // Unexpected server errors carry a reference that finds the details in the server log.
+    if (error.code === "internal_error" && error.requestId) {
+      return `${error.message} (reference ${error.requestId.slice(0, 8)})`;
+    }
+    return error.message;
+  }
   return fallback;
 }
 

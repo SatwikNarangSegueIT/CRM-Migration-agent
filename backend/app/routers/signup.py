@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Request, Response, status
@@ -16,10 +17,11 @@ from app.domains import DOMAINS
 from app.routers.auth import _set_auth_cookies
 from app.services import signup as svc
 from app.services.audit import RequestMeta
-from app.services.email import app_link, queue_email
+from app.services.email import MailDeliveryError, app_link, queue_email
 from app.tenancy import bind_tenant
 
 router = APIRouter(prefix="/signup", tags=["signup"])
+logger = logging.getLogger("app.signup")
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
@@ -71,9 +73,12 @@ def domains() -> list[dict[str, Any]]:
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
-def start(body: SignupIn, request: Request) -> dict[str, str]:
+def start(body: SignupIn, request: Request, response: Response) -> dict[str, Any]:
+    """Start a sign-up. Normally e-mails a confirmation link (202). When this install can't send e-mail and
+    verification isn't required (development, staging), the workspace is created at once (201) and the
+    person is signed in, exactly as after confirming."""
     check_rate_limit("signup-ip", _ip(request), limit=10, window_seconds=3600)
-    check_rate_limit("signup-email", str(body.email).lower(), limit=3, window_seconds=3600)
+    check_rate_limit("signup-email", str(body.email).lower(), limit=5, window_seconds=3600)
     if not body.accept_terms:
         raise AppError(
             "Accept the terms and privacy policy to continue.",
@@ -83,6 +88,7 @@ def start(body: SignupIn, request: Request) -> dict[str, str]:
         )
     message = {"message": "Check your e-mail for a link to finish setting up your workspace."}
     if not _verify_human(request, body.website_url):
+        logger.warning("Sign-up ignored: the hidden bot-check field was filled", extra={"ip": _ip(request)})
         return message
     with _platform_session() as db:
         token = svc.start_signup(
@@ -94,15 +100,31 @@ def start(body: SignupIn, request: Request) -> dict[str, str]:
             password=body.password,
             abn=body.abn,
         )
+    if not svc.verification_required():
+        with _platform_session() as platform, get_sessionmaker()() as tenant_db:
+            result = svc.verify_and_provision(platform, tenant_db, token, RequestMeta.from_request(request))
+            _set_auth_cookies(response, result.issued, tenant_db)
+        response.status_code = status.HTTP_201_CREATED
+        return {"state": result.state.value, "workspace": {"slug": result.slug, "name": result.name}}
     hours = get_settings().signup_verification_hours
-    queue_email(
-        str(body.email),
-        f"Confirm your e-mail to create {body.firm_name}'s workspace",
-        f"Hello {body.name},\n\nConfirm your e-mail address to create your Meridian CRM workspace for "
-        f"{body.firm_name}. The link works once and expires in {hours} hours:\n\n"
-        f"{app_link('/verify-signup#token=' + token)}\n\n"
-        "If you did not sign up, ignore this e-mail and nothing will be created.\n",
-    )
+    try:
+        # Sent before answering (unless a worker takes it), so a broken mail set-up is reported, not hidden.
+        queue_email(
+            str(body.email),
+            f"Confirm your e-mail to create {body.firm_name}'s workspace",
+            f"Hello {body.name},\n\nConfirm your e-mail address to create your Meridian CRM workspace for "
+            f"{body.firm_name}. The link works once and expires in {hours} hours:\n\n"
+            f"{app_link('/verify-signup#token=' + token)}\n\n"
+            "If you did not sign up, ignore this e-mail and nothing will be created.\n",
+            wait=True,
+        )
+    except MailDeliveryError as exc:
+        logger.error("Sign-up confirmation e-mail failed: %s", exc)
+        raise AppError(
+            "We couldn't send the confirmation e-mail just now. Please try again in a few minutes.",
+            status_code=503,
+            code="email_failed",
+        ) from exc
     return message
 
 

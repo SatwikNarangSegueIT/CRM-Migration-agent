@@ -44,6 +44,36 @@ describe("sign-up", () => {
   });
 });
 
+describe("sign-up without e-mail set up", () => {
+  it("signs straight in when the server creates the workspace at once", async () => {
+    let signedIn = false;
+    mockApi({
+      ...shellHandlers(),
+      "GET /auth/me": () => (signedIn ? jsonResponse(makeMe()) : errorResponse(401, "unauthenticated")),
+      "GET /signup/domains": DOMAINS,
+      "POST /signup": () => {
+        signedIn = true;
+        return jsonResponse({ state: "authenticated", workspace: { slug: "harbour", name: "Harbour" } }, 201);
+      },
+    });
+    renderRoute("/signup");
+    fireEvent.click(await screen.findByRole("radio", { name: /Law firm/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.change(await screen.findByLabelText(/Firm name/), { target: { value: "Harbour" } });
+    fireEvent.change(screen.getByLabelText(/Your name/), { target: { value: "Hana Harbour" } });
+    fireEvent.change(screen.getByLabelText(/Work e-mail/), { target: { value: "hana@example.com" } });
+    fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: "Fresh-Firm-Password-77" } });
+    fireEvent.change(screen.getByLabelText(/Confirm/), { target: { value: "Fresh-Firm-Password-77" } });
+    fireEvent.click(screen.getByLabelText(/I agree to the terms/));
+    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+
+    expect(
+      await screen.findByRole("heading", { name: /^Good (morning|afternoon|evening), Alex$/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Check your inbox" })).not.toBeInTheDocument();
+  });
+});
+
 describe("workspace picker", () => {
   it("asks which firm when the e-mail belongs to several, then signs in to the chosen one", async () => {
     const bodies: Record<string, unknown>[] = [];

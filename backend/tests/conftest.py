@@ -25,6 +25,9 @@ os.environ.update(
         "RATE_LIMIT_ENABLED": "false",
         "SIGNUP_WARM_POOL_SIZE": "0",
         "PASSWORD_BREACH_CHECK": "false",
+        # Existing tests exercise the e-mail confirmation flow; the instant mode has its own tests.
+        "SIGNUP_EMAIL_VERIFICATION": "required",
+        "EMAIL_DELIVERY": "auto",
         "EMAIL_BACKEND": "console",
         "LOG_JSON": "true",
         "LOG_LEVEL": "WARNING",
@@ -92,6 +95,7 @@ def _clean_state() -> None:
         db.execute(text("DELETE FROM platform.signup_requests"))
         db.execute(text("DELETE FROM platform.tenants WHERE schema_name <> 'public'"))
         db.execute(text("DELETE FROM platform.user_directory"))
+        db.execute(text("DELETE FROM platform.settings"))
         db.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
         apply_seeds(db.connection())
         db.commit()
@@ -100,6 +104,11 @@ def _clean_state() -> None:
     # TRUNCATE resets the revision counters, so revision-keyed caches must be emptied too.
     clear_all_caches()
     get_redis().flushdb()
+    from app.services.mail_settings import forget_cached
+    from app.worker.dispatch import forget_worker_check
+
+    forget_cached()
+    forget_worker_check()
 
 
 @pytest.fixture
@@ -112,7 +121,7 @@ def db() -> Iterator[Session]:
 class Outbox:
     messages: list[tuple[str, str, str]] = field(default_factory=list)
 
-    def send(self, to: str, subject: str, body: str) -> None:
+    def send(self, to: str, subject: str, body: str, **_options: object) -> None:
         self.messages.append((to, subject, body))
 
     def token_for(self, to: str) -> str:

@@ -116,3 +116,5 @@ class MeResponse(BaseModel):
     system_permissions: list[str]
     object_permissions: dict[str, ObjectAccessOut]
     is_system_admin: bool
+    # Can change platform-wide settings (e-mail delivery) in Setup.
+    is_platform_operator: bool = False

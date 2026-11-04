@@ -45,6 +45,22 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def verification_required() -> bool:
+    """Whether sign-up e-mails a confirmation link before creating the workspace (SIGNUP_EMAIL_VERIFICATION).
+
+    "auto": always in production; elsewhere only when e-mail is set up, so a development or staging install
+    without a mail server can still create workspaces.
+    """
+    settings = get_settings()
+    if settings.signup_email_verification != "auto":
+        return settings.signup_email_verification == "required"
+    if settings.is_production:
+        return True
+    from app.services.mail_settings import mail_config
+
+    return mail_config().configured
+
+
 def start_signup(
     db: Session, *, domain: str, firm_name: str, name: str, email: str, password: str, abn: str | None
 ) -> str:
