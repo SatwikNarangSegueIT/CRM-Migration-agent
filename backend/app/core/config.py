@@ -82,10 +82,10 @@ class Settings(BaseSettings):
     invitation_hours: int = Field(default=72, ge=1, le=24 * 14)
     # Public sign-up (plan v4, section 4).
     signup_enabled: bool = True
-    # "required": e-mail a confirmation link first. "off": create the workspace straight away.
-    # "auto" (default): required in production or whenever e-mail delivery is set up; otherwise off, so a
-    # development or staging install without a mail server can still create workspaces.
-    signup_email_verification: Literal["auto", "required", "off"] = "auto"
+    # "off" (default for now, while the mail service is unavailable): create the workspace straight away and
+    # sign the person in. "required": e-mail a confirmation link first. "auto": required in production or
+    # whenever e-mail delivery is set up, otherwise off. Set "auto" or "required" once e-mail works again.
+    signup_email_verification: Literal["auto", "required", "off"] = "off"
     signup_verification_hours: int = Field(default=24, ge=1, le=24 * 7)
     # Pre-built workspaces kept ready so sign-up is instant (topped up by the API and the worker).
     signup_warm_pool_size: int = Field(default=2, ge=0, le=50)
@@ -135,10 +135,15 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY of at least 32 characters is required in staging/production")
         if self.app_env == "production" and not self.mfa_required_for_staff:
             raise ValueError("MFA_REQUIRED_FOR_STAFF cannot be disabled in production")
-        if self.app_env == "production" and self.email_backend == "console":
+        # E-mail is only mandatory when sign-up depends on it (confirmation links).
+        if (
+            self.app_env == "production"
+            and self.email_backend == "console"
+            and self.signup_email_verification == "required"
+        ):
             raise ValueError(
-                "EMAIL_BACKEND must be 'smtp' or 'zeptomail' in production "
-                "(the settings can be changed later in Setup -> E-mail & Sign-up)"
+                "EMAIL_BACKEND must be 'smtp' or 'zeptomail' in production when "
+                "SIGNUP_EMAIL_VERIFICATION=required"
             )
         if self.app_env == "production" and self.cookie_secure is False:
             raise ValueError("COOKIE_SECURE cannot be disabled in production")

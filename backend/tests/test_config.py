@@ -65,7 +65,10 @@ def test_production_security_settings_enforced() -> None:
     with pytest.raises(ValidationError, match="COOKIE_SECURE"):
         _settings(**base, cookie_secure=False)
     with pytest.raises(ValidationError, match="EMAIL_BACKEND"):
-        _settings(**{**base, "email_backend": "console"})
+        _settings(**{**base, "email_backend": "console", "signup_email_verification": "required"})
+    # Without e-mail confirmation (the default for now), production runs without a mail server.
+    assert _settings(**{**base, "email_backend": "console", "signup_email_verification": "off"}).is_production
+    assert Settings.model_fields["signup_email_verification"].default == "off"
     assert _settings(**base).secure_cookies is True
 
 
