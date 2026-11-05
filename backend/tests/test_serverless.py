@@ -87,3 +87,8 @@ def test_email_links_use_the_vercel_address_when_none_is_set(monkeypatch: pytest
     assert (
         Settings(public_app_url="https://crm.example.com.au").public_app_url == "https://crm.example.com.au"
     )
+    # A local address copied from a development .env is replaced on Vercel; a real one is kept.
+    for local in ("http://localhost:5173", "http://127.0.0.1:5173/"):
+        assert Settings(public_app_url=local).public_app_url == "https://segue-crm.vercel.app"
+    monkeypatch.delenv("VERCEL_PROJECT_PRODUCTION_URL")
+    assert Settings(public_app_url="http://localhost:5173").public_app_url == "http://localhost:5173"

@@ -141,11 +141,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _public_url_on_vercel(self) -> Settings:
-        """Links in e-mails use PUBLIC_APP_URL; on Vercel without it, the project's production address
-        (never the localhost default)."""
-        production = os.environ.get("VERCEL_PROJECT_PRODUCTION_URL")
-        if "public_app_url" not in self.model_fields_set and production:
-            self.public_app_url = f"https://{production.strip().rstrip('/')}"
+        """Links in e-mails use PUBLIC_APP_URL. On Vercel, when it is unset or still a local address (e.g. a
+        copied .env's http://localhost:5173), the project's production address is used instead."""
+        production = (os.environ.get("VERCEL_PROJECT_PRODUCTION_URL") or "").strip().rstrip("/")
+        if not production:
+            return self
+        host = (urlsplit(self.public_app_url.strip()).hostname or "").lower()
+        local = host in ("", "localhost", "::1") or host.startswith(("127.", "0."))
+        if "public_app_url" not in self.model_fields_set or local:
+            self.public_app_url = production if "://" in production else f"https://{production}"
         return self
 
     @model_validator(mode="after")
