@@ -147,6 +147,34 @@ def _new_schema_name() -> str:
     return f"t_{secrets.token_hex(6)}"
 
 
+# Ready-made schemas in platform.warm_schemas: "t_<12 hex>" is a bare workspace; "t_<domain>_<hex>" is one
+# already set up for a profession, so sign-up only names it for the firm and adds the administrator.
+_BARE = "^t_[0-9a-f]{12}$"
+
+
+def _ready_pattern(domain: str) -> str:
+    return f"^t_{re.escape(domain)}_[0-9a-f]+$"
+
+
+def ready_schemas(domain: str, url: str | None = None) -> list[str]:
+    engine = _engine(url)
+    try:
+        with engine.connect() as conn:
+            return list(
+                conn.execute(
+                    text("SELECT schema_name FROM platform.warm_schemas WHERE schema_name ~ :p"),
+                    {"p": _ready_pattern(domain)},
+                ).scalars()
+            )
+    finally:
+        engine.dispose()
+
+
+def is_ready_made(schema: str, domain: str | None) -> bool:
+    """Whether ``schema`` came from the profession's ready-made pool (already set up for ``domain``)."""
+    return bool(domain) and re.match(_ready_pattern(str(domain)), schema) is not None
+
+
 def build_schema(url: str | None = None) -> str:
     """Create and migrate an unassigned tenant schema (shipped defaults included)."""
     schema = _new_schema_name()
@@ -161,6 +189,10 @@ def warm_schemas(url: str | None = None) -> list[str]:
             return list(conn.execute(text("SELECT schema_name FROM platform.warm_schemas")).scalars())
     finally:
         engine.dispose()
+
+
+def _bare_schemas(url: str | None = None) -> list[str]:
+    return [s for s in warm_schemas(url) if re.match(_BARE, s)]
 
 
 _WARM_POOL_LOCK = 72_410_001  # pg advisory lock id: one builder at a time across API and worker processes
@@ -182,7 +214,7 @@ def fill_warm_pool(size: int, url: str | None = None) -> int:
             ).scalar()
             if not got:
                 return 0
-            while len(warm_schemas(url)) < size:
+            while len(_bare_schemas(url)) < size:
                 schema = build_schema(url)
                 with engine.begin() as conn:
                     conn.execute(
@@ -194,37 +226,100 @@ def fill_warm_pool(size: int, url: str | None = None) -> int:
     return built
 
 
+_READY_POOL_LOCK = 72_410_002
+
+
+def build_ready_schema(domain: str, url: str | None = None) -> str:
+    """A schema migrated and set up for ``domain`` (pack, layouts, wording, starter records), not yet
+    anyone's workspace. Doing this ahead of time is what makes sign-up quick: it's hundreds of statements."""
+    from sqlalchemy.orm import Session
+
+    from app.domains import apply_domain
+    from app.tenancy import TenantInfo, bind_tenant
+
+    schema = f"t_{domain}_{secrets.token_hex(5)}"
+    migrate_tenant(schema, url)
+    engine = _engine(url)
+    try:
+        with Session(engine) as db:
+            bind_tenant(db, TenantInfo(id=uuid.uuid4(), slug=None, name="", domain=domain, schema=schema))
+            apply_domain(db, domain, None)
+            db.commit()
+    except Exception:
+        _drop_schema(engine, schema)
+        raise
+    finally:
+        engine.dispose()
+    return schema
+
+
+def fill_ready_pool(per_domain: int, url: str | None = None) -> int:
+    """Keep ``per_domain`` workspaces ready for each profession. One builder at a time (advisory lock)."""
+    from app.domains import DOMAINS
+
+    built = 0
+    engine = _engine(url)
+    try:
+        with engine.begin() as lock_conn:
+            got = lock_conn.execute(
+                text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": _READY_POOL_LOCK}
+            ).scalar()
+            if not got:
+                return 0
+            for key, spec in DOMAINS.items():
+                if spec.pack_key is None:
+                    continue
+                while len(ready_schemas(key, url)) < per_domain:
+                    schema = build_ready_schema(key, url)
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("INSERT INTO platform.warm_schemas (schema_name) VALUES (:s)"),
+                            {"s": schema},
+                        )
+                    built += 1
+    finally:
+        engine.dispose()
+    return built
+
+
 def refill_warm_pool_soon() -> None:
-    """Top up the warm pool in a background thread of this process (no worker needed)."""
+    """Top up the warm pools in a background thread of this process (no worker needed)."""
     import logging
     import threading
 
-    size = get_settings().signup_warm_pool_size
-    if size <= 0:
+    settings = get_settings()
+    size, per_domain = settings.signup_warm_pool_size, settings.signup_ready_per_domain
+    if size <= 0 and per_domain <= 0:
         return
 
     def run() -> None:
         try:
-            fill_warm_pool(size)
+            if per_domain > 0:
+                fill_ready_pool(per_domain)  # first: these are what make a sign-up quick
+            if size > 0:
+                fill_warm_pool(size)
         except Exception:
             logging.getLogger("app.signup").exception("Could not refill the warm pool")
 
     threading.Thread(target=run, name="warm-pool", daemon=True).start()
 
 
-def _take_warm_schema(conn: Connection) -> str | None:
+def _take_warm_schema(conn: Connection, pattern: str = _BARE) -> str | None:
     return conn.execute(
         text(
             "DELETE FROM platform.warm_schemas WHERE schema_name = ("
-            "SELECT schema_name FROM platform.warm_schemas ORDER BY created_at "
+            "SELECT schema_name FROM platform.warm_schemas WHERE schema_name ~ :p ORDER BY created_at "
             "LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING schema_name"
-        )
+        ),
+        {"p": pattern},
     ).scalar()
 
 
-def _claim_warm_schema(engine) -> str | None:  # type: ignore[no-untyped-def]
+def _claim_warm_schema(engine, domain: str | None = None) -> str | None:  # type: ignore[no-untyped-def]
+    """A ready-made workspace for the profession if there is one, else a bare pre-built one."""
     with engine.begin() as conn:
-        return _take_warm_schema(conn)
+        ready = _take_warm_schema(conn, _ready_pattern(domain)) if domain else None
+        return ready or _take_warm_schema(conn)
 
 
 def _drop_schema(engine, schema: str) -> None:  # type: ignore[no-untyped-def]
@@ -249,7 +344,7 @@ def create_tenant(
     tenant_id = uuid.uuid4()
     engine = _engine(url)
     try:
-        schema = _claim_warm_schema(engine) if use_warm_pool else None
+        schema = _claim_warm_schema(engine, domain) if use_warm_pool else None
         if schema is None:
             with _ALEMBIC_LOCK:
                 # While waiting, this process may have finished building a ready-made one.

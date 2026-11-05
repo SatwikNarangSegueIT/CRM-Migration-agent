@@ -202,3 +202,29 @@ def test_concurrent_workspace_builds_in_one_process_do_not_collide(db: Session) 
     ).scalar_one()
     profiles = text(f'SELECT count(*) FROM "{schema}".profiles')  # noqa: S608 - schema name from the catalogue
     assert db.execute(profiles).scalar_one() > 0
+
+
+def test_ready_made_workspace_for_the_profession(client: TestClient, outbox: Outbox, no_mfa: None) -> None:
+    """Workspaces set up ahead of time for each profession are used first: sign-up only adds the firm."""
+    from app.db.migrate import fill_ready_pool, ready_schemas
+    from app.tenancy import by_slug
+
+    assert fill_ready_pool(1, TEST_DATABASE_URL) == 4  # one per profession
+    (ready,) = ready_schemas("migration", TEST_DATABASE_URL)
+    _signup(client, domain="migration", firm_name="Ready Visas", email="rv@ready.example.com")
+    r = client.post(f"{API}/signup/verify", json={"token": _token(outbox, "rv@ready.example.com")})
+    assert r.status_code == 200, r.text
+    tenant = by_slug("ready-visas")
+    assert tenant is not None and tenant.schema == ready
+    assert ready_schemas("migration", TEST_DATABASE_URL) == []
+    assert len(ready_schemas("legal", TEST_DATABASE_URL)) == 1  # other professions' are untouched
+    set_csrf(client)
+    assert client.get(f"{API}/public/branding").json()["name"] == "Ready Visas"
+    packs = {p["key"]: p for p in client.get(f"{API}/setup/packs").json()}
+    assert packs["migration_agency"]["is_enabled"] is True
+    me = client.get(f"{API}/auth/me").json()
+    visas = client.post(f"{API}/objects/visa_type/records/query", json={}).json()["items"]
+    assert visas and all((v["owner"] or {}).get("id") == me["user"]["id"] for v in visas)
+    # A bare pre-built schema is never mistaken for a ready-made one, and vice versa.
+    assert fill_warm_pool(1, TEST_DATABASE_URL) == 1
+    assert len(warm_schemas(TEST_DATABASE_URL)) == 4

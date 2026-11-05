@@ -124,11 +124,14 @@ export function SignupPage() {
     if (ready) submit.mutate();
   }
 
-  if (created) {
+  // From the moment the form is sent: the workspace is being set up (usually about a second).
+  if (created || submit.isPending) {
+    const title = created ? "Opening your workspace" : `Setting up ${firm.trim() || "your workspace"}`;
     return (
-      <AuthLayout title="Opening your workspace" aside={<DomainAside domain={chosen} />}>
-        <div className="flex justify-center py-8">
-          <Spinner label="Opening your workspace" />
+      <AuthLayout title={title} aside={<DomainAside domain={chosen} />}>
+        <div className="flex flex-col items-center gap-3 py-8 text-sm text-slate-600">
+          <Spinner label={title} />
+          <p>{created ? "Signing you in…" : `Preparing your ${chosen?.label ?? "workspace"}…`}</p>
         </div>
       </AuthLayout>
     );
@@ -335,7 +338,7 @@ export function SignupPage() {
           </label>
         </div>
         <Checkbox
-          label={<>I agree to the terms of service and privacy policy. Client data is stored in Australia.</>}
+          label={<>I agree to the terms of service and privacy policy.</>}
           checked={terms}
           onChange={(e) => setTerms(e.target.checked)}
         />

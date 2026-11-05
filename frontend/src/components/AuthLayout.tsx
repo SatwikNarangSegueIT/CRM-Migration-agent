@@ -59,7 +59,6 @@ export function AuthLayout({
             </>
           )}
         </div>
-        <p className="relative text-xs text-white/60">Client data is held securely in Australia.</p>
       </aside>
 
       <div className="flex min-h-screen flex-col px-4 py-8 sm:px-8">
@@ -69,9 +68,6 @@ export function AuthLayout({
           {subtitle && <div className="mt-1.5 text-sm text-slate-600">{subtitle}</div>}
           <div className="mt-8">{children}</div>
         </main>
-        <p className="text-center text-xs text-slate-400 lg:hidden">
-          Client data is held securely in Australia.
-        </p>
       </div>
     </div>
   );

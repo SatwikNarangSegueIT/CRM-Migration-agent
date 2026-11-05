@@ -24,6 +24,7 @@ os.environ.update(
         "MFA_REQUIRED_FOR_STAFF": "true",
         "RATE_LIMIT_ENABLED": "false",
         "SIGNUP_WARM_POOL_SIZE": "0",
+        "SIGNUP_READY_PER_DOMAIN": "0",
         "PASSWORD_BREACH_CHECK": "false",
         # Existing tests exercise the e-mail confirmation flow; the instant mode has its own tests.
         "SIGNUP_EMAIL_VERIFICATION": "required",

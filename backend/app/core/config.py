@@ -89,6 +89,8 @@ class Settings(BaseSettings):
     signup_verification_hours: int = Field(default=24, ge=1, le=24 * 7)
     # Pre-built workspaces kept ready so sign-up is instant (topped up by the API and the worker).
     signup_warm_pool_size: int = Field(default=2, ge=0, le=50)
+    # Workspaces kept ready, already set up, for each profession: sign-up then takes about a second.
+    signup_ready_per_domain: int = Field(default=1, ge=0, le=10)
     # Workspace (slug) whose System Administrators run the platform: e-mail delivery and platform status
     # in Setup. Default: the first workspace (the one created by `migrate`, slug "main").
     platform_operator_workspace: str | None = None

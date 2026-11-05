@@ -15,7 +15,7 @@ from app.auth.deps import mfa_setup_required
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.validators import digits, is_valid_abn
-from app.domains import DOMAINS, apply_domain
+from app.domains import DOMAINS, apply_domain, finish_ready_workspace
 from app.models import User
 from app.models.platform import SignupRequest, Tenant
 from app.security.seed_v1 import stable_id
@@ -172,7 +172,12 @@ def _set_up_workspace(
     )
     tenant_db.add(user)
     tenant_db.flush()
-    apply_domain(tenant_db, req.domain, user.id)
+    from app.db.migrate import is_ready_made
+
+    if is_ready_made(schema, req.domain):
+        finish_ready_workspace(tenant_db, user.id)  # set up ahead of time: only the firm's details left
+    else:
+        apply_domain(tenant_db, req.domain, user.id)
     audit.record(
         tenant_db,
         action=AuditAction.CREATE,

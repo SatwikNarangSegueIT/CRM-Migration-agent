@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.domain_content import apply_content
 from app.engine.meta import bump_revision, invalidate_cache
-from app.models import App, FieldDefinition, ListView, ObjectDefinition, Report
+from app.models import App, FieldDefinition, ListView, ObjectDefinition, Record, Report
 from app.pack_upgrade import mark_forms_current, upgrade_pack
 from app.services import audit
 from app.services.audit import AuditAction
@@ -833,6 +833,10 @@ def _share_commissions_with_brokers(db: Session) -> int:
     return added
 
 
+# Records seed_starter_records creates for the firm (owned by its first administrator).
+STARTER_OBJECTS = ("visa_type",)
+
+
 def seed_starter_records(db: Session, domain: str, actor_id: uuid.UUID | None = None) -> int:
     """Reference data a profession can't start without (a migration agency's visa types)."""
     if domain == "lending":
@@ -873,6 +877,24 @@ def upgrade_domain_workspace(db: Session, *, force: bool = False) -> int:
     set_setting(db, "workspace", {**workspace, "forms_version": FORMS_VERSION})
     if changed:
         bump_revision(db)
+    return changed
+
+
+def finish_ready_workspace(db: Session, actor_id: uuid.UUID) -> int:
+    """Hand over a workspace set up for its profession ahead of time (app.db.migrate.fill_ready_pool):
+    bring it up to date if the code moved on since it was built, give its starter records to the
+    administrator and put the firm's name on the portal and client e-mails. A handful of statements."""
+    from sqlalchemy import update
+
+    changed = upgrade_domain_workspace(db)
+    db.execute(
+        update(Record)
+        .where(Record.object_api_name.in_(STARTER_OBJECTS), Record.owner_id.is_(None))
+        .values(owner_id=actor_id)
+    )
+    changed += apply_firm_name(db, _firm_name(db))
+    bump_revision(db)
+    invalidate_cache()
     return changed
 
 

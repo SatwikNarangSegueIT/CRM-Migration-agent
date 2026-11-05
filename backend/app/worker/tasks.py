@@ -179,5 +179,8 @@ def platform_maintenance() -> dict[str, int]:
     with get_sessionmaker()() as db:
         bind_tenant(db, None)
         purged = purge_unverified(db)
-    built = fill_warm_pool(get_settings().signup_warm_pool_size)
+    from app.db.migrate import fill_ready_pool
+
+    built = fill_ready_pool(get_settings().signup_ready_per_domain)
+    built += fill_warm_pool(get_settings().signup_warm_pool_size)
     return {"signups_purged": purged, "schemas_built": built}
