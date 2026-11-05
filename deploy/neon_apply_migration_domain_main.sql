@@ -1,4 +1,4 @@
--- Meridian CRM: set up the existing "main" workspace (public schema) as a Migration agency.
+-- Segue CRM: set up the existing "main" workspace (public schema) as a Migration agency.
 --
 -- Same result as provisioning a new Migration agency workspace (app.domains.apply_domain):
 --   * installs the Migration Agency pack (visa matters, checklists, service agreements, client account...);
@@ -486,7 +486,7 @@ UPDATE field_definitions SET label='Organisation'::VARCHAR, updated_at=now() WHE
 
 UPDATE field_definitions SET label='Parent Organisation'::VARCHAR, updated_at=now() WHERE field_definitions.id = 'f83787c9698453b0b13b0638cec257e0'::uuid::UUID;
 
-UPDATE org_settings SET value='{"name": "Meridian CRM", "primary_color": "#0f766e", "logo_url": null}'::jsonb::JSONB WHERE org_settings.key = 'branding'::VARCHAR;
+UPDATE org_settings SET value='{"name": "Segue CRM", "primary_color": "#0f766e", "logo_url": null}'::jsonb::JSONB WHERE org_settings.key = 'branding'::VARCHAR;
 
 INSERT INTO metadata_revision (id, revision, security) VALUES (1, 2, 1) ON CONFLICT (id) DO UPDATE SET revision = metadata_revision.revision + 1 RETURNING revision, security;
 

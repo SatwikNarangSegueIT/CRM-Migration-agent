@@ -529,7 +529,7 @@ def test_customer_portal(admin_client: TestClient, client: TestClient, db: Sessi
 
 def test_public_web_forms(client: TestClient, admin_client: TestClient) -> None:
     anon = TestClient(client.app)
-    assert anon.get(f"{API}/public/branding").json()["name"] == "Meridian CRM"
+    assert anon.get(f"{API}/public/branding").json()["name"] == "Segue CRM"
     r = anon.post(
         f"{API}/public/web-to-lead",
         json={"last_name": "Web", "company": "Web Co", "email": "web@lead.example", "email_opt_in": True},

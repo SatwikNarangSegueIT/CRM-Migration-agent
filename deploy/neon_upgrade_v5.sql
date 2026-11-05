@@ -1,4 +1,4 @@
--- Meridian CRM: database changes for this release (run once; safe to run again).
+-- Segue CRM: database changes for this release (run once; safe to run again).
 --
 -- Paste into the Neon SQL Editor (it runs as one transaction) or:
 --   psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -1 -f deploy/neon_upgrade_v5.sql

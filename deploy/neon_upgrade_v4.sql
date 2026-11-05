@@ -1,4 +1,4 @@
--- Meridian CRM: upgrade the existing Neon database to plan v4 (multi-tenant).
+-- Segue CRM: upgrade the existing Neon database to plan v4 (multi-tenant).
 --
 -- From: public schema at Alembic revision b51c2e7a9d40 (single firm).
 -- To:   public schema at 4a708a753f1b + the shared "platform" schema (p0002), with the existing data

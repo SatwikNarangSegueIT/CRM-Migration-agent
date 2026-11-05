@@ -122,7 +122,7 @@ describe("accessibility (axe-core, WCAG 2.1 AA)", () => {
   it("sign-in page", async () => {
     mockApi({
       "GET /auth/me": () => errorResponse(401, "unauthenticated"),
-      "GET /public/branding": { name: "Meridian CRM", primary_color: "#0176d3", logo_url: null },
+      "GET /public/branding": { name: "Segue CRM", primary_color: "#0176d3", logo_url: null },
     });
     renderRoute("/login");
     await screen.findByRole("button", { name: /sign in/i });

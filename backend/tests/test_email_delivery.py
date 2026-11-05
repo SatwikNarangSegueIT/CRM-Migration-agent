@@ -211,7 +211,7 @@ def test_operator_configures_zoho_and_sends_a_test(
 
     body = {
         "provider": "smtp",
-        "from_name": "Meridian CRM",
+        "from_name": "Segue CRM",
         "from_email": "no-reply@harbour.example.com",
         "smtp_host": "smtppro.zoho.com",
         "smtp_port": 465,

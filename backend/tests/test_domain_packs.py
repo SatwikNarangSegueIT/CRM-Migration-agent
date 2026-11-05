@@ -1021,3 +1021,16 @@ def test_preliminary_assessment_must_be_current(admin_client: TestClient, db: Se
     patch(c, "loan_application", purchase["id"], {"customer_objectives": "Changed"}, expect=422)
     done = patch(c, "loan_application", purchase["id"], {"credit_proposal_date": today, "stage": "Lodged"})
     assert done["fields"]["stage"] == "Lodged"
+
+
+def test_old_product_name_is_renamed(db: Session) -> None:
+    """Settings still holding the product's earlier name get the current one; a firm's own name is kept."""
+    from app.domains import PRODUCT_NAME, rename_product
+    from app.services.settings import get_setting, set_setting
+
+    set_setting(db, "branding", {**(get_setting(db, "branding") or {}), "name": "Meridian CRM"})
+    set_setting(db, "marketing", {**(get_setting(db, "marketing") or {}), "from_name": "Harbour Legal"})
+    assert rename_product(db) == 1
+    assert get_setting(db, "branding")["name"] == PRODUCT_NAME == "Segue CRM"
+    assert get_setting(db, "marketing")["from_name"] == "Harbour Legal"
+    assert rename_product(db) == 0

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { publicApi } from "../api/portal";
 
-export const DEFAULT_BRAND = "Meridian CRM";
+export const DEFAULT_BRAND = "Segue CRM";
 
 /** Organisation branding (name, colour, logo) - configurable in Setup, readable before sign-in. */
 export function useBranding() {

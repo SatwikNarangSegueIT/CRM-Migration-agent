@@ -13,7 +13,7 @@ export function RecoveryCodes({
 }) {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
-  const text = `Meridian CRM recovery codes\nEach code can be used once if you lose access to your authenticator app.\n\n${codes.join("\n")}\n`;
+  const text = `Segue CRM recovery codes\nEach code can be used once if you lose access to your authenticator app.\n\n${codes.join("\n")}\n`;
 
   async function copy() {
     try {

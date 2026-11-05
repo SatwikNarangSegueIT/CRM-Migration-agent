@@ -112,7 +112,7 @@ def start(body: SignupIn, request: Request, response: Response) -> dict[str, Any
         queue_email(
             str(body.email),
             f"Confirm your e-mail to create {body.firm_name}'s workspace",
-            f"Hello {body.name},\n\nConfirm your e-mail address to create your Meridian CRM workspace for "
+            f"Hello {body.name},\n\nConfirm your e-mail address to create your Segue CRM workspace for "
             f"{body.firm_name}. The link works once and expires in {hours} hours:\n\n"
             f"{app_link('/verify-signup#token=' + token)}\n\n"
             "If you did not sign up, ignore this e-mail and nothing will be created.\n",

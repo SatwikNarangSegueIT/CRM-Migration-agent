@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     # "auto": the Celery worker sends e-mail when one is running, otherwise the API sends it itself.
     # "queue": always hand e-mail to the worker. "inline": always send from the API.
     email_delivery: Literal["auto", "queue", "inline"] = "auto"
-    email_from: str = "Meridian CRM <no-reply@localhost>"
+    email_from: str = "Segue CRM <no-reply@localhost>"
     smtp_host: str = "localhost"
     smtp_port: int = 587
     # "starttls" (port 587), "ssl" (implicit TLS, port 465) or "none". Empty: from SMTP_STARTTLS and port.

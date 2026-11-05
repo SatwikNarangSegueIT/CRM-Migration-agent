@@ -27,19 +27,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t meridian-api:scan backend
-      - run: docker build -t meridian-web:scan frontend
+      - run: docker build -t segue-api:scan backend
+      - run: docker build -t segue-web:scan frontend
       - name: Scan API image
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: meridian-api:scan
+          image-ref: segue-api:scan
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
       - name: Scan web image
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: meridian-web:scan
+          image-ref: segue-web:scan
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"

@@ -26,7 +26,7 @@ Admin = Annotated[AuthContext, Depends(require(SystemPermission.MANAGE_USERS))]
 
 def _send_invitation(db: Session, user: User, token: str, inviter: str) -> None:
     hours = get_settings().invitation_hours
-    firm = str((get_setting(db, "branding") or {}).get("name") or "Meridian CRM")
+    firm = str((get_setting(db, "branding") or {}).get("name") or "Segue CRM")
     queue_email(
         user.email,
         f"You're invited to {firm}",

@@ -75,7 +75,7 @@ def branding(request: Request) -> dict[str, Any]:
     with _session(request) as db:
         b = (get_setting(db, "branding") or {}) if is_resolved(db) else {}
     return {
-        "name": b.get("name") or "Meridian CRM",
+        "name": b.get("name") or "Segue CRM",
         "primary_color": b.get("primary_color") or "#0176d3",
         "logo_url": b.get("logo_url"),
     }

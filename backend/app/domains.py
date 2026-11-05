@@ -722,7 +722,23 @@ def apply_pack_grants(db: Session, domain: str) -> int:
     return changed
 
 
-PRODUCT_NAME = "Meridian CRM"
+PRODUCT_NAME = "Segue CRM"
+# The product's earlier name: settings that still hold it were seeded, not chosen by the firm.
+LEGACY_PRODUCT_NAMES = ("Meridian CRM",)
+
+
+def rename_product(db: Session) -> int:
+    """Seeded settings that still carry the product's earlier name get the current one (idempotent)."""
+    from app.services.settings import get_setting, set_setting
+
+    changed = 0
+    for key, attr in (("branding", "name"), ("marketing", "from_name")):
+        value = dict(get_setting(db, key) or {})
+        if value.get(attr) in LEGACY_PRODUCT_NAMES:
+            value[attr] = PRODUCT_NAME
+            set_setting(db, key, value)
+            changed += 1
+    return changed
 
 
 def apply_firm_name(db: Session, firm: str | None) -> int:
@@ -734,7 +750,7 @@ def apply_firm_name(db: Session, firm: str | None) -> int:
     changed = 0
     for key, attr in (("branding", "name"), ("marketing", "from_name")):
         value = dict(get_setting(db, key) or {})
-        if value.get(attr) in (None, "", PRODUCT_NAME):
+        if value.get(attr) in (None, "", PRODUCT_NAME, *LEGACY_PRODUCT_NAMES):
             value[attr] = firm
             set_setting(db, key, value)
             changed += 1
@@ -832,10 +848,13 @@ def upgrade_domain_workspace(db: Session, *, force: bool = False) -> int:
     """Bring a profession workspace's related lists and forms up to date (idempotent). Caller commits."""
     from app.services.settings import get_setting, set_setting
 
+    renamed = rename_product(db)
     workspace = dict(get_setting(db, "workspace") or {})
     domain = workspace.get("domain")
     if not domain or (not force and int(workspace.get("forms_version") or 0) >= FORMS_VERSION):
-        return 0
+        if renamed:
+            bump_revision(db)
+        return renamed
     spec = DOMAINS.get(str(domain))
     changed = upgrade_pack(db, spec.pack_key if spec else None)
     changed += (

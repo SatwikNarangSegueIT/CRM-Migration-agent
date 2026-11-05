@@ -799,7 +799,7 @@ FIELD_SECURITY: Final = [
 ]
 
 DEFAULT_SETTINGS: Final[dict[str, Any]] = {
-    "branding": {"name": "Meridian CRM", "primary_color": "#0176d3", "logo_url": None},
+    "branding": {"name": "Segue CRM", "primary_color": "#0176d3", "logo_url": None},
     "company": {"legal_name": "", "abn": "", "address": "", "email": "", "phone": "", "website": ""},
     "billing": {
         "invoice_prefix": "INV-", "invoice_number_digits": 6, "payment_terms_days": 14,
@@ -815,7 +815,7 @@ DEFAULT_SETTINGS: Final[dict[str, Any]] = {
     "service": {"web_queue_id": None, "web_to_case_enabled": True, "web_to_lead_enabled": True},
     "locale": {"default_locale": "en-AU", "default_time_zone": "Australia/Sydney", "currency": "AUD"},
     "retention": {"recycle_bin_days": 30, "deleted_field_days": 15, "audit_years": 7, "object_years": {}},
-    "marketing": {"from_name": "Meridian CRM", "from_email": "", "postal_address": "", "batch_size": 200},
+    "marketing": {"from_name": "Segue CRM", "from_email": "", "postal_address": "", "batch_size": 200},
     "lead_conversion": {"field_map": {}},
 }  # fmt: skip
 

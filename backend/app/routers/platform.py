@@ -150,7 +150,7 @@ def test_email(body: TestEmailIn, auth: Operator) -> dict[str, str]:
     try:
         send(
             str(body.to),
-            "Test e-mail from Meridian CRM",
+            "Test e-mail from Segue CRM",
             "This is a test of your outgoing e-mail settings. If you can read it, sign-up confirmations, "
             "password resets and invitations will arrive too.\n",
             config=config,
