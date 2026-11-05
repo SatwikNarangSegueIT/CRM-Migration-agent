@@ -103,8 +103,23 @@ def user_counts_by_profile(db: Session) -> dict[uuid.UUID, int]:
     return {pid: int(n) for pid, n in rows}
 
 
+# Kept in every workspace: the administrator and the client portal profile.
+_ALWAYS_SHOWN = {"system_administrator", "customer_portal"}
+
+
 def list_profiles(db: Session) -> list[Profile]:
-    return list(db.scalars(select(Profile).order_by(Profile.is_portal, func.lower(Profile.name))))
+    """Every profile; in a profession workspace, the general CRM's own profiles (Sales Manager, Marketing
+    User, Finance...) are left out unless someone is assigned one. They aren't deleted: the profession's
+    profiles were copied from them."""
+    from app.security.seed_v1 import PROFILES
+    from app.services.settings import get_setting
+
+    profiles = list(db.scalars(select(Profile).order_by(Profile.is_portal, func.lower(Profile.name))))
+    if not (get_setting(db, "workspace") or {}).get("domain"):
+        return profiles
+    generic = {key for key, *_ in PROFILES} - _ALWAYS_SHOWN
+    in_use = user_counts_by_profile(db)
+    return [p for p in profiles if p.key not in generic or in_use.get(p.id)]
 
 
 def get_profile(db: Session, profile_id: uuid.UUID) -> Profile:

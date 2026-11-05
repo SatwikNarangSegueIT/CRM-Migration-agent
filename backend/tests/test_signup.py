@@ -228,3 +228,14 @@ def test_ready_made_workspace_for_the_profession(client: TestClient, outbox: Out
     # A bare pre-built schema is never mistaken for a ready-made one, and vice versa.
     assert fill_warm_pool(1, TEST_DATABASE_URL) == 1
     assert len(warm_schemas(TEST_DATABASE_URL)) == 4
+
+
+def test_profession_workspace_lists_only_its_profiles(
+    client: TestClient, outbox: Outbox, no_mfa: None
+) -> None:
+    _signup(client, firm_name="Profile Law", email="p@profile.example.com")
+    client.post(f"{API}/signup/verify", json={"token": _token(outbox, "p@profile.example.com")})
+    set_csrf(client)
+    names = {p["name"] for p in client.get(f"{API}/setup/profiles").json()}
+    assert {"Principal", "Solicitor", "Paralegal", "Trust Accountant", "System Administrator"} <= names
+    assert not names & {"Sales Manager", "Sales Representative", "Marketing User", "Finance", "Service Agent"}
