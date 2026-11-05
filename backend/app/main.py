@@ -97,7 +97,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     # Compress JSON (list views, metadata) when the client accepts it; small bodies are left as they are.
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
-    app.add_middleware(RequestContextMiddleware, hsts=settings.app_env in ("staging", "production"))
+    app.add_middleware(
+        RequestContextMiddleware,
+        hsts=settings.app_env in ("staging", "production"),
+        server_timing=not settings.is_production,  # query counts per response, for finding slow pages
+    )
     register_error_handlers(app)
 
     api = APIRouter(prefix=API_PREFIX, dependencies=[Depends(verify_origin)])

@@ -6,6 +6,7 @@ import { BrandTheme } from "./components/BrandTheme";
 import { ToastProvider } from "./components/ui";
 import "./index.css";
 import { persistMetadata } from "./persistMetadata";
+import { publicApi } from "./api/portal";
 import { createQueryClient } from "./queryClient";
 import { routes } from "./routes";
 import { applyStoredBrandColor } from "./lib/theme";
@@ -15,6 +16,12 @@ applyStoredBrandColor();
 const router = createBrowserRouter(routes);
 const queryClient = createQueryClient();
 persistMetadata(queryClient);
+// Once per page load, in parallel with /auth/me (restored branding shows meanwhile).
+void queryClient.prefetchQuery({
+  queryKey: ["branding"],
+  queryFn: publicApi.branding,
+  staleTime: 10 * 60_000,
+});
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element #root not found");

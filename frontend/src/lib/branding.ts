@@ -10,6 +10,8 @@ export function useBranding() {
     queryFn: publicApi.branding,
     staleTime: 10 * 60_000,
     retry: false,
+    // Fetched once at start-up (main.tsx): each component showing the brand mustn't refetch it again.
+    refetchOnMount: false,
   });
   return {
     name: q.data?.name || DEFAULT_BRAND,

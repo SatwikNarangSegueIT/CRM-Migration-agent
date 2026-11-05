@@ -98,8 +98,10 @@ def _bump(session: Session) -> None:
 
 @event.listens_for(Session, "after_commit")
 def _committed(session: Session) -> None:
-    # Revisions read in this session are now committed; caching is safe again.
+    # This session's changes are committed, so caching is safe again. Forget the revisions it knew: other
+    # sessions may have committed changes too, and a long-lived session (a job, a script) must see them.
     clear_pending(session)
+    forget_revisions(session)
 
 
 @event.listens_for(Session, "after_rollback")

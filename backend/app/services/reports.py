@@ -237,7 +237,8 @@ class Runner:
             return func.min(expr)
         return func.max(expr)
 
-    def run(self) -> dict[str, Any]:
+    def run(self, *, reset_timeout: bool = True) -> dict[str, Any]:
+        """``reset_timeout=False`` leaves the statement timeout set, for a session that ends after this."""
         fmt = self.d.get("format", "tabular")
         session = self.svc.db
         session.execute(select(func.set_config("statement_timeout", str(STATEMENT_TIMEOUT_MS), True)))
@@ -247,7 +248,8 @@ class Runner:
             result = self.grouped(matrix=fmt == "matrix")
         else:
             raise ReportError("Format is tabular, summary or matrix.")
-        session.execute(select(func.set_config("statement_timeout", "0", True)))
+        if reset_timeout:
+            session.execute(select(func.set_config("statement_timeout", "0", True)))
         return result
 
     def tabular(self) -> dict[str, Any]:
@@ -483,9 +485,15 @@ def validate_definition(svc: RecordService, object_api: str, definition: dict[st
         raise ReportError(f"This report can't be run: {exc.__class__.__name__}.") from exc
 
 
-def run_report(svc: RecordService, report: Report, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+def run_report(
+    svc: RecordService,
+    report: Report,
+    overrides: dict[str, Any] | None = None,
+    *,
+    reset_timeout: bool = True,
+) -> dict[str, Any]:
     definition = {**(report.definition or {}), **(overrides or {})}
-    result = Runner(svc, report.object_api_name, definition).run()
+    result = Runner(svc, report.object_api_name, definition).run(reset_timeout=reset_timeout)
     report.last_run_at = datetime.now(UTC)
     return {
         "report": {"id": str(report.id), "name": report.name, "object": report.object_api_name},

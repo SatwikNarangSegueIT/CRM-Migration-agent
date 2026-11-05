@@ -12,7 +12,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.errors import error_body
-from app.core.request_context import request_id_var
+from app.core.request_context import db_stats_var, request_id_var
 
 access_logger = logging.getLogger("app.access")
 error_logger = logging.getLogger("app.errors")
@@ -32,9 +32,10 @@ class RequestContextMiddleware:
     """Assigns a request id (honouring a well-formed inbound X-Request-ID), logs each request,
     and adds security headers to every response."""
 
-    def __init__(self, app: ASGIApp, *, hsts: bool = False) -> None:
+    def __init__(self, app: ASGIApp, *, hsts: bool = False, server_timing: bool = False) -> None:
         self.app = app
         self.hsts = hsts
+        self.server_timing = server_timing
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -48,6 +49,8 @@ class RequestContextMiddleware:
                 break
         request_id = inbound if inbound and _VALID_REQUEST_ID.match(inbound) else uuid.uuid4().hex
         token = request_id_var.set(request_id)
+        stats: list[float] = [0, 0.0]
+        stats_token = db_stats_var.set(stats) if self.server_timing else None
         start = time.perf_counter()
         status_code = 500
         response_started = False
@@ -65,6 +68,11 @@ class RequestContextMiddleware:
                     headers.setdefault("Cache-Control", "no-store")
                 if self.hsts:
                     headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+                if self.server_timing:
+                    total = (time.perf_counter() - start) * 1000
+                    headers["Server-Timing"] = (
+                        f'db;desc="{int(stats[0])} queries";dur={stats[1] * 1000:.1f}, app;dur={total:.1f}'
+                    )
             await send(message)
 
         try:
@@ -101,3 +109,5 @@ class RequestContextMiddleware:
                     },
                 )
             request_id_var.reset(token)
+            if stats_token is not None:
+                db_stats_var.reset(stats_token)

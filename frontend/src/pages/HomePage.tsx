@@ -214,19 +214,15 @@ function RecentCard() {
 
 function DashboardCharts({ dashboardKey, max = 2 }: { dashboardKey: string; max?: number }) {
   const { object } = useAuth();
-  const dashboards = useQuery({
-    queryKey: ["dashboards"],
-    queryFn: ({ signal }) => analyticsApi.dashboards(signal),
+  // By key, in one call: listing the dashboards first to find the id cost a second round trip.
+  const run = useQuery({
+    queryKey: ["dashboard-run-key", dashboardKey],
+    queryFn: ({ signal }) => analyticsApi.runDashboardByKey(dashboardKey, signal),
     enabled: object("dashboard").read,
     staleTime: 60_000,
+    retry: false,
   });
-  const dash = dashboards.data?.find((d) => d.key === dashboardKey);
-  const run = useQuery({
-    queryKey: ["dashboard-run", dash?.id],
-    queryFn: ({ signal }) => analyticsApi.runDashboard(dash!.id, signal),
-    enabled: Boolean(dash),
-    staleTime: 60_000,
-  });
+  const dash = run.data?.dashboard;
   if (!dash) return null;
   return (
     <>

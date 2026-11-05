@@ -139,4 +139,12 @@ export const analyticsApi = {
       run_at: string;
       components: (DashboardComponent & { result: ReportResult | null; error: string | null })[];
     }>(`/dashboards/${id}/run`, { method: "POST", body: {}, signal }),
+  /** Run a dashboard by its stable key: one round trip (no need to list dashboards for the id first). */
+  runDashboardByKey: (key: string, signal?: AbortSignal) =>
+    apiRequest<{
+      dashboard: Dashboard;
+      viewing_as: string | null;
+      run_at: string;
+      components: (DashboardComponent & { result: ReportResult | null; error: string | null })[];
+    }>(`/dashboards/key/${encodeURIComponent(key)}/run`, { method: "POST", body: {}, signal }),
 };

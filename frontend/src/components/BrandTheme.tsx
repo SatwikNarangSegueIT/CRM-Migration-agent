@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAuth } from "../auth/context";
 import { useBranding } from "../lib/branding";
 import { applyBrandColor } from "../lib/theme";
@@ -10,8 +10,12 @@ export function BrandTheme() {
   const { me } = useAuth();
   const { primaryColor } = useBranding();
   const userId = me?.user.id;
+  const previousUser = useRef(userId);
 
   useEffect(() => {
+    // Only when the user changes (sign-in, sign-out, switching workspace): start-up already fetched it.
+    if (previousUser.current === userId) return;
+    previousUser.current = userId;
     void queryClient.invalidateQueries({ queryKey: ["branding"] });
   }, [queryClient, userId]);
 

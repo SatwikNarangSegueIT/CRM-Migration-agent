@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError, errorMessage } from "../../api/client";
-import { fileUrl, recordsApi, uploadFile } from "../../api/records";
+import { fileUrl, metaApi, recordsApi, uploadFile } from "../../api/records";
 import { setupApi } from "../../api/setup";
 import type { ObjectDescribe, RecordData, RelatedList } from "../../api/types";
 import { useAuth } from "../../auth/context";
@@ -26,11 +26,13 @@ import { useDismiss } from "../../lib/useDismiss";
 export function RecordPage() {
   const { object = "", id = "" } = useParams();
   const meta = useObjectMeta(object);
+  // The record needs only the address, not the metadata: both load in parallel.
   const record = useQuery({
     queryKey: ["record", object, id],
     queryFn: ({ signal }) => recordsApi.get(object, id, signal),
-    enabled: meta.isSuccess,
+    enabled: Boolean(object && id),
   });
+  usePrefetchRecordParts(object, id, meta.data);
   if (meta.isPending || (meta.isSuccess && record.isPending)) return <Spinner label="Loading record" />;
   const error = meta.error ?? record.error;
   if (error) {
@@ -38,6 +40,36 @@ export function RecordPage() {
     return <Alert tone="error">{errorMessage(error)}</Alert>;
   }
   return <RecordView key={id} meta={meta.data!} record={record.data!} />;
+}
+
+/** Start the side panels' requests (related lists, activities and their metadata) as soon as the object's
+ * metadata is known, instead of after the record has loaded and rendered: one round trip saved. */
+function usePrefetchRecordParts(object: string, id: string, meta: ObjectDescribe | undefined) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!meta || !id) return;
+    const metaOf = (api: string) =>
+      void queryClient.prefetchQuery({
+        queryKey: ["meta", "object", api],
+        queryFn: ({ signal }) => metaApi.object(api, signal),
+        staleTime: 5 * 60_000,
+      });
+    for (const rl of meta.related_lists.slice(0, 3)) {
+      metaOf(rl.object);
+      void queryClient.prefetchQuery({
+        queryKey: ["related", id, rl.object, rl.field, 3],
+        queryFn: ({ signal }) => recordsApi.related(object, id, rl.object, rl.field, 3, null, signal),
+      });
+    }
+    if (meta.activity_objects.length) {
+      for (const { object: api } of meta.activity_objects)
+        if (["task", "event", "note"].includes(api)) metaOf(api);
+      void queryClient.prefetchQuery({
+        queryKey: ["activities", object, id],
+        queryFn: ({ signal }) => recordsApi.activities(object, id, signal),
+      });
+    }
+  }, [queryClient, object, id, meta]);
 }
 
 function MoreMenu({ children }: { children: (close: () => void) => React.ReactNode }) {

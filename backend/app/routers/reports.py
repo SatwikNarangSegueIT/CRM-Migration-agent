@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -23,7 +24,7 @@ from app.services import reports as svc_reports
 from app.services.audit import AuditAction
 
 # Components of one dashboard run concurrently (each holds one pooled connection while it runs).
-DASHBOARD_PARALLELISM = 4
+DASHBOARD_PARALLELISM = 6
 
 router = APIRouter(tags=["analytics"])
 
@@ -631,6 +632,48 @@ def get_dashboard(dashboard_id: uuid.UUID, svc: Records) -> dict[str, Any]:
     return _dash_out(svc_reports.get_dashboard(svc, dashboard_id), svc, _visible_folders(svc))
 
 
+def _dashboard_reports(runner: RecordService, parts: list[dict[str, Any]]) -> dict[str, Report]:
+    """The components' reports the running user may see, in two queries (reports, then their folders).
+
+    Detached from the session: running a report stamps ``last_run_at``, which a dashboard view does not save.
+    """
+    if not runner.policy.object("report").read:
+        return {}
+    ids: list[uuid.UUID] = []
+    for c in parts:
+        try:
+            ids.append(uuid.UUID(str(c.get("report_id"))))
+        except ValueError:
+            continue
+    if not ids:
+        return {}
+    found = list(runner.db.scalars(select(Report).where(Report.id.in_(ids))))
+    folder_ids = {r.folder_id for r in found if r.folder_id}
+    folders = (
+        {f.id: f for f in runner.db.scalars(select(ReportFolder).where(ReportFolder.id.in_(folder_ids)))}
+        if folder_ids
+        else {}
+    )
+    visible = {
+        str(r.id): r
+        for r in found
+        if svc_reports.folder_visible(runner, folders.get(r.folder_id) if r.folder_id else None, r.owner_id)
+    }
+    for r in found:
+        runner.db.expunge(r)
+    return visible
+
+
+@router.post("/dashboards/key/{key}/run")
+def run_dashboard_by_key(key: str, svc: Records, body: RunIn | None = None) -> dict[str, Any]:
+    """Run a dashboard by its stable key (e.g. a pack's home dashboard): one call instead of listing the
+    dashboards to find its id first."""
+    dashboard_id = svc.db.scalar(select(Dashboard.id).where(Dashboard.key == key))
+    if dashboard_id is None:
+        raise NotFoundError("Dashboard not found.")
+    return run_dashboard(dashboard_id, svc, body)
+
+
 @router.post("/dashboards/{dashboard_id}/run")
 def run_dashboard(dashboard_id: uuid.UUID, svc: Records, body: RunIn | None = None) -> dict[str, Any]:
     """Run every component, as the dashboard's running user when one is set ("view as")."""
@@ -642,26 +685,34 @@ def run_dashboard(dashboard_id: uuid.UUID, svc: Records, body: RunIn | None = No
         if user is not None and user.is_active:
             runner = RecordService.for_user(svc.db, user, load_policy(svc.db, user), svc.request_meta)
             viewing_as = user.name
-    run_as = runner.user_id or svc.user_id
     extra_filters = body.filters if body is not None else None
+    parts = list(dash.components)
+    reports = _dashboard_reports(runner, parts)
 
     def run_component(c: dict[str, Any]) -> dict[str, Any]:
         # Each component runs on its own read-only session so components run in parallel: the dashboard
-        # takes about as long as its slowest component instead of the sum of all of them.
+        # takes about as long as its slowest component instead of the sum of all of them. The reports and
+        # the running user's access were loaded up front, so a component only runs its own queries.
+        if not runner.policy.object("report").read:
+            return {**c, "result": None, "error": "You don't have access to reports."}
+        report = reports.get(str(c.get("report_id")))
+        if report is None:
+            return {**c, "result": None, "error": "Report not found."}
+        overrides: dict[str, Any] = {}
+        if extra_filters:
+            base = report.definition.get("filters")
+            overrides["filters"] = (
+                {"logic": "and", "conditions": [base, extra_filters]} if base else extra_filters
+            )
         with sibling_session(svc.db) as db:
             try:
-                user = db.get(User, run_as)
-                if user is None:
-                    raise NotFoundError("Running user not found.")
-                worker = RecordService.for_user(db, user, load_policy(db, user), svc.request_meta)
-                report = svc_reports.get_report(worker, uuid.UUID(c["report_id"]))
-                overrides: dict[str, Any] = {}
-                if extra_filters:
-                    base = report.definition.get("filters")
-                    overrides["filters"] = (
-                        {"logic": "and", "conditions": [base, extra_filters]} if base else extra_filters
-                    )
-                return {**c, "result": svc_reports.run_report(worker, report, overrides), "error": None}
+                worker = RecordService(db, runner.policy, meta=svc.request_meta)
+                worker.time_zone = runner.time_zone
+                return {
+                    **c,
+                    "result": svc_reports.run_report(worker, report, overrides, reset_timeout=False),
+                    "error": None,
+                }
             except Exception as exc:
                 db.rollback()
                 return {
@@ -670,12 +721,14 @@ def run_dashboard(dashboard_id: uuid.UUID, svc: Records, body: RunIn | None = No
                     "error": getattr(exc, "message", "This component can't be shown."),
                 }
 
-    parts = list(dash.components)
     if len(parts) <= 1:
         components = [run_component(c) for c in parts]
     else:
+        # Each worker gets a copy of this request's context (taken here, on the request's thread) so its
+        # queries count towards the request's Server-Timing.
+        contexts = [contextvars.copy_context() for _ in parts]
         with ThreadPoolExecutor(max_workers=min(DASHBOARD_PARALLELISM, len(parts))) as pool:
-            components = list(pool.map(run_component, parts))
+            components = list(pool.map(lambda ctx, c: ctx.run(run_component, c), contexts, parts))
     svc.db.commit()
     return {
         "dashboard": _dash_out(dash, svc, _visible_folders(svc)),
