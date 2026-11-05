@@ -113,7 +113,9 @@ def test_smtp_email(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None
     assert sent["login"] == ("mailer", "pw")
     assert sent["message"]["To"] == "a@example.com"
     assert sent["message"]["From"] == "CRM <crm@example.com>"
-    assert sent["message"].get_content().strip() == "Body text"
+    message = sent["message"]
+    assert message.get_body(("plain",)).get_content().strip() == "Body text"
+    assert "Body text" in message.get_body(("html",)).get_content()  # every e-mail also has an HTML part
 
 
 def test_queue_email_uses_worker(monkeypatch: pytest.MonkeyPatch) -> None:

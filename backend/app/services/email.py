@@ -8,12 +8,15 @@ Failures are raised as ``MailDeliveryError`` with a message an administrator can
 from __future__ import annotations
 
 import contextlib
+import html
 import logging
+import re
 import smtplib
 import ssl
 import threading
 from email.message import EmailMessage
 from email.utils import formataddr, parseaddr
+from urllib.parse import urlsplit
 
 from sqlalchemy import event
 from sqlalchemy.orm import Session
@@ -27,6 +30,64 @@ TIMEOUT_SECONDS = 20
 
 class MailDeliveryError(Exception):
     """The e-mail could not be sent; the message says why in plain language."""
+
+
+# ------------------------------------------------------------------ HTML version of plain-text e-mails
+
+# What a link's button says, by the start of its path. Anything else: "Open".
+_BUTTON_LABELS = (
+    ("/accept-invitation", "Accept invitation"),
+    ("/reset-password", "Reset password"),
+    ("/verify-signup", "Confirm e-mail address"),
+    ("/portal", "Open client portal"),
+)
+_URL_LINE = re.compile(r"^\s*(https?://\S+)\s*$")
+_INLINE_URL = re.compile(r"https?://[^\s<>\"]+")
+
+
+def _button_label(url: str) -> str:
+    path = urlsplit(url).path
+    return next((label for prefix, label in _BUTTON_LABELS if path.startswith(prefix)), "Open")
+
+
+def render_html(text_body: str, brand: str | None = None) -> str:
+    """A clean HTML version of a plain-text e-mail: paragraphs, and each link on a line of its own as a
+    button (with the address underneath, for mail apps that block buttons). Inline styles only."""
+    blocks: list[str] = []
+    for chunk in re.split(r"\n\s*\n", text_body.strip()):
+        lines = chunk.split("\n")
+        if len(lines) == 1 and (m := _URL_LINE.match(lines[0])):
+            url = html.escape(m.group(1), quote=True)
+            label = html.escape(_button_label(m.group(1)))
+            blocks.append(
+                '<p style="margin:24px 0"><a href="' + url + '" style="display:inline-block;'
+                "background:#1449e1;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;"
+                'border-radius:8px">' + label + "</a></p>"
+                '<p style="margin:0 0 16px;font-size:12px;color:#64748b;word-break:break-all">'
+                "If the button doesn't work, copy this address into your browser:<br>"
+                '<a href="' + url + '" style="color:#64748b">' + url + "</a></p>"
+            )
+            continue
+        escaped = "<br>".join(html.escape(line) for line in lines)
+        escaped = _INLINE_URL.sub(
+            lambda m: f'<a href="{m.group(0)}" style="color:#1449e1">{m.group(0)}</a>', escaped
+        )
+        blocks.append(f'<p style="margin:0 0 16px">{escaped}</p>')
+    heading = (
+        f'<p style="margin:0 0 24px;font-size:18px;font-weight:600;color:#0f172a">{html.escape(brand)}</p>'
+        if brand
+        else ""
+    )
+    return (
+        '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f1f5f9">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9">'
+        '<tr><td align="center" style="padding:32px 16px">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;'
+        'background:#ffffff;border-radius:12px;border:1px solid #e2e8f0">'
+        '<tr><td style="padding:32px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;'
+        'font-size:15px;line-height:1.6;color:#334155">' + heading + "".join(blocks) + "</td></tr></table>"
+        "</td></tr></table></body></html>"
+    )
 
 
 # ------------------------------------------------------------------ sending
@@ -181,6 +242,8 @@ def send(
     for key, value in (headers or {}).items():
         message[key] = value
     message.set_content(text_body)
+    if html_body is None:
+        html_body = render_html(text_body, sender_name)
     if html_body:
         message.add_alternative(html_body, subtype="html")
     if config.provider == "zeptomail":

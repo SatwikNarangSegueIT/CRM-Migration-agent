@@ -371,3 +371,16 @@ def test_a_workspace_made_by_another_process_is_found_at_once(db: Session) -> No
     db.commit()
     found = by_slug("elsewhere")  # not in this process's catalogue yet: looked up in the database
     assert found is not None and found.id == tenant_id
+
+
+def test_plain_text_emails_get_an_html_version() -> None:
+    page = email.render_html(
+        "Hello Jo,\n\nSet your password with this link:\n\n"
+        "https://crm.example.com/accept-invitation#token=abc&x=1\n\nSee https://example.com <b>",
+        "Harbour Legal",
+    )
+    assert "Harbour Legal" in page
+    assert ">Accept invitation</a>" in page
+    assert 'href="https://crm.example.com/accept-invitation#token=abc&amp;x=1"' in page
+    assert "&lt;b&gt;" in page and "<b>" not in page  # text is escaped
+    assert '<a href="https://example.com"' in page

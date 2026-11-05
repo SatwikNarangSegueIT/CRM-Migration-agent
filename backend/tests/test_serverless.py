@@ -78,3 +78,12 @@ def test_cron_jobs_need_the_secret(client: TestClient, monkeypatch: pytest.Monke
     assert r.json()["job"] == "purge" and set(r.json()["result"]) == {"records", "fields", "retention"}
     r = client.get(f"{API}/cron/activity-reminders", headers={"Authorization": "Bearer s3cret-value"})
     assert r.status_code == 200, r.text
+
+
+def test_email_links_use_the_vercel_address_when_none_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PUBLIC_APP_URL", raising=False)
+    monkeypatch.setenv("VERCEL_PROJECT_PRODUCTION_URL", "segue-crm.vercel.app")
+    assert Settings(_env_file=None).public_app_url == "https://segue-crm.vercel.app"  # type: ignore[call-arg]
+    assert (
+        Settings(public_app_url="https://crm.example.com.au").public_app_url == "https://crm.example.com.au"
+    )

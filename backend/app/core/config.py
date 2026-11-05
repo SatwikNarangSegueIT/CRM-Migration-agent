@@ -140,6 +140,15 @@ class Settings(BaseSettings):
         return normalize_database_url(v)
 
     @model_validator(mode="after")
+    def _public_url_on_vercel(self) -> Settings:
+        """Links in e-mails use PUBLIC_APP_URL; on Vercel without it, the project's production address
+        (never the localhost default)."""
+        production = os.environ.get("VERCEL_PROJECT_PRODUCTION_URL")
+        if "public_app_url" not in self.model_fields_set and production:
+            self.public_app_url = f"https://{production.strip().rstrip('/')}"
+        return self
+
+    @model_validator(mode="after")
     def _check_production_requirements(self) -> Settings:
         weak_key = self.secret_key is None or len(self.secret_key.get_secret_value()) < 32
         if self.app_env in ("staging", "production") and weak_key:
