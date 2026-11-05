@@ -123,6 +123,18 @@ def first_of(*fields: str) -> Callable[[Record], str | None]:
     return pick
 
 
+def unless(
+    pick: Callable[[Record], str | None], finished: Callable[[Record], bool]
+) -> Callable[[Record], str | None]:
+    """Recipient only while the work is still open: no reminder for a lodged deadline, a closed matter or a
+    declined or discharged loan."""
+
+    def inner(record: Record) -> str | None:
+        return None if finished(record) else pick(record)
+
+    return inner
+
+
 def date_reminders(
     db: Session, targets: Iterable[ReminderTarget], days: Iterable[int], today: date | None = None
 ) -> int:
@@ -218,7 +230,7 @@ def tell_client(
             svc.user_id,
             f"The client can't see {record.name} yet",
             "Nobody at the client can sign in to the portal. Invite them from their client record "
-            "(Invite to portal) so they can open it.",
+            "(⌄ More actions → Invite to Client Portal) so they can open it.",
             f"/o/{record.object_api_name}/{record.id}",
             record.id,
         )

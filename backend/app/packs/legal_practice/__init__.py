@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import false, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.apps.billing import billing_account_for, refresh_invoice_payments
 from app.apps.sales import BusinessRuleError, rule
@@ -27,7 +27,7 @@ from app.engine.records import RecordService
 from app.engine.types import decimal_to_json, format_datetime, money, to_decimal
 from app.models import Record, RecordShare
 from app.packs import Pack, permission_key, register
-from app.packs.common import date_reminders, first_of, ledger_balance, live
+from app.packs.common import date_reminders, first_of, ledger_balance, live, unless
 from app.packs.legal_practice import definition as d
 from app.services import audit
 from app.services.audit import AuditAction
@@ -158,9 +158,10 @@ def matter_rules(change: Change) -> None:
             if not data.get("conflict_cleared"):
                 raise rule("Clear the conflict check before engaging on this matter.", "stage")
             if _needs_disclosure(svc.db, data) and not data.get("costs_disclosure_provided"):
+                threshold = Decimal(str(_cfg(svc.db, "disclosure_threshold")))
                 raise rule(
                     "Give the client costs disclosure (Legal Profession Uniform Law s 174) before work "
-                    "starts, or record an estimate of $750 or less.",
+                    f"starts, or record an estimate of ${threshold:,.0f} or less.",
                     "costs_disclosure_provided",
                 )
             _engagement_checks(svc, data)
@@ -946,7 +947,8 @@ def court_date_changed(change: Change) -> None:
 
 def daily_reminders(db: Session, today: date | None = None) -> int:
     s = _settings(db)
-    limitation = [("legal_matter", "limitation_date", "Limitation date", first_of("responsible_solicitor"))]
+    open_matter = unless(first_of("responsible_solicitor"), lambda r: r.data.get("status") == "Closed")
+    limitation = [("legal_matter", "limitation_date", "Limitation date", open_matter)]
     court = [("court_date", "date_time", "Court date", first_of("appearing"))]
     count = date_reminders(db, limitation, s.get("limitation_reminder_days", [90, 30, 7]), today)
     count += reconciliation_reminders(db, today)
@@ -955,19 +957,24 @@ def daily_reminders(db: Session, today: date | None = None) -> int:
 
 locked_when("legal_time_entry", lambda r: r.data.get("status") in ("Billed", "Written Off"))
 locked_when("trust_reconciliation", lambda r: r.data.get("status") == "Reconciled")
+
+
+def _austrac_reference_due(r: Record) -> bool:
+    """A cash receipt at or above the practice's significant cash threshold, still without its AUSTRAC
+    report reference: the one change the trust ledger accepts after posting."""
+    if r.data.get("type") != "Receipt" or r.data.get("method") != "Cash" or r.data.get("austrac_reference"):
+        return False
+    db = object_session(r)
+    threshold = (
+        _cfg(db, "significant_cash_threshold")
+        if db is not None
+        else d.SETTINGS_DEFAULTS["significant_cash_threshold"]
+    )
+    return (to_decimal(r.data.get("amount")) or Decimal(0)) >= Decimal(str(threshold))
+
+
 # Trust records are append-only; a large cash receipt stays open until its AUSTRAC reference is recorded.
-locked_when(
-    "trust_transaction",
-    lambda r: (
-        not (
-            r.data.get("type") == "Receipt"
-            and r.data.get("method") == "Cash"
-            and not r.data.get("austrac_reference")
-            and (to_decimal(r.data.get("amount")) or Decimal(0))
-            >= Decimal(d.SETTINGS_DEFAULTS["significant_cash_threshold"])
-        )
-    ),
-)
+locked_when("trust_transaction", lambda r: not _austrac_reference_due(r))
 
 PACK = register(
     Pack(

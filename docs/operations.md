@@ -57,6 +57,29 @@ the system fills in, and related lists that match the apps. It runs once per wor
 `python -m app.cli refresh-domain-layouts` re-applies it on demand. Fields taken off a layout aren't
 deleted; an administrator can put them back in Setup → Object Manager.
 
+## Profession pack upgrades (automatic, add-only)
+
+A new version of a profession pack (Legal, Migration, Accounting, Loan Broker: currently 1.1.0, workspace
+`forms_version` 8) reaches existing workspaces the same way, at API start-up, with no SQL:
+
+* **New objects and fields** are installed with `ON CONFLICT DO NOTHING`, so nothing that exists is changed
+  (for example the Trust Reconciliation object; matter fields such as Client Type, Lodge By, Information
+  Due; engagement Notice of Assessment fields; loan Credit Quote and Credit Proposal dates).
+* **New fields go onto the forms** next to the field they follow, **new picklist values** (such as the
+  checklist status *Uploaded*) and **new app tabs** (Trust Reconciliations, the migration Dashboards tab) are
+  added once; each addition is recorded in the `pack_form_additions` setting so an administrator who removes
+  one doesn't see it come back.
+* **Access for new objects** is granted only to profiles that have no permission on them yet, and
+  portal-hidden fields are hidden for the client portal profile.
+* **Profession wording** (sources, statuses, organisation types, *Client Requests*, role names) is applied
+  to values and roles that still have the shipped names; anything renamed by an administrator is left alone.
+* **Practice settings** keep their saved values; settings added in a version fall back to the shipped
+  default until someone saves them (Setup → Settings → Practice Settings).
+
+The upgrade runs under the same advisory lock as the forms refresh, so several API processes starting at
+once apply it once. If it fails for a workspace, the API logs the error and keeps serving; the next start
+retries.
+
 ## Sign-up checklist
 
 Sign-up creates a schema per firm and e-mails a confirmation link, so it needs more than the rest of the app.
@@ -190,7 +213,7 @@ Reports additionally run with a 15-second limit and a row cap.
 | `service.escalate_cases` | every 5 minutes | Flags cases past their resolution SLA and notifies owners/queues. |
 | `reports.scheduled` | every 15 minutes | E-mails subscribed reports. |
 | `maintenance.purge` | daily 03:00 | Purges the recycle bin (30 days), deleted fields (15 days) and applies per-object retention policies. |
-| `packs.daily` | daily 06:00 | Industry-pack jobs (e.g. visa / passport / sponsorship expiry reminders). |
+| `packs.daily` | daily 06:00 | Industry-pack jobs: limitation and court date reminders and the monthly trust reconciliation reminder (legal); visa, passport and sponsorship expiry, further information and lodge-by reminders (migration); overdue lodgement deadlines and their reminders (accounting); settlement, approval expiry, fixed-rate and rate review reminders (lending). Lead times come from Practice Settings. |
 
 Check the worker logs for `Task ... succeeded`; a job that has not run in 2 × its interval should alert.
 
@@ -203,8 +226,8 @@ Check the worker logs for `Task ... succeeded`; a job that has not run in 2 × i
   Downloads a JSON file with the record, its history, linked records, consents and e-mail history.
 * **Erasure request:** *Erase Personal Data* anonymises the person's personal fields, removes notes, files and
   change history, deactivates any portal account and keeps business records without the personal details.
-  Erasure is blocked while a legal retention obligation applies (client-account ledger). Both actions are
-  written to the audit log.
+  Erasure is blocked while a legal retention obligation applies (client-account or trust ledger). Both
+  actions are written to the audit log.
 * The audit log is append-only (database trigger) and is not purged automatically.
 
 ## Monitoring

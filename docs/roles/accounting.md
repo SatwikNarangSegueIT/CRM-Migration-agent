@@ -5,7 +5,17 @@ Administrators change everything here in **Setup**; nothing needs a developer.
 
 **Contents**
 
-1. x
+1. How access works
+2. Profiles: what someone can do
+3. The Accounting Practice profiles
+4. Profession permissions
+5. Roles: whose engagements someone can see
+6. Sharing: who can see a engagement
+7. Field-level security
+8. Client portal
+9. System permissions and Practice Settings
+10. Common set-ups
+11. Security controls you don't configure
 
 ---
 
@@ -77,14 +87,17 @@ Each profile starts as a copy of a general profile (*based on*) and adds the pro
 | **Bookkeeper** | - |
 | **Practice Administrator** | Portal Users, Import, Export, Billing Settings, Public Reports |
 
-Reviewer sign-off is enforced separately: only the engagement's assigned reviewer (or someone with Lodge
-Returns) can move it past Review, and the reviewer can't be the preparer.
+Reviewer sign-off is enforced separately: only the engagement's assigned reviewer (or a partner) can move it
+past Review, and the reviewer can't be the preparer.
 
 **Good to know**
 
-- The review is signed off by the engagement's **Reviewer** (or a partner). Lodging rights don't let the preparer sign off their own work.
+- Lodging rights don't let the preparer sign off their own work; the reviewer (or a partner) does.
+- Lodging for a client needs its identity verified and, for a business, the practice nominated as its agent in ATO Online services (ticked on the client).
+- An engagement letter can only be sent once the practitioner (or the practice) has a tax agent number; the letter records both.
 - Only the client can sign an engagement letter, from the client portal. For a letter signed on paper, a partner uses **Record Paper Signature** (who signed and where the copy is kept; audited).
 - The **Client Manager** on a client can work that client's file (for example generate BAS deadlines) without owning it.
+- An SMSF audit can't be given to someone who prepared the fund's return or bookkeeping for the same year.
 - Tax File Numbers and ABNs are checked against the ATO check digits when saved.
 - An engagement's lodgement deadline follows its due date and responsible accountant.
 
@@ -94,7 +107,7 @@ Regulated steps are guarded by their own permission, so only the right people ca
 
 | Permission | Held by default | Guards |
 |---|---|---|
-| Lodge Returns (registered tax agent) | Partner, Accountant | Moving returns, BAS, IAS and FBT to Lodged; signing off review in place of the reviewer. |
+| Lodge Returns (registered tax agent) | Partner, Accountant | Moving returns, BAS, IAS and FBT to Lodged, once the client's identity is verified and, for a business, the practice is its nominated agent. |
 
 Grant or remove them in **Setup → Profiles → (profile)**.
 
@@ -102,16 +115,24 @@ Grant or remove them in **Setup → Profiles → (profile)**.
 
 Roles form a tree that mirrors your reporting lines. With *Grant access using hierarchies* switched on (the
 default), a person sees every record owned by people below them. Roles never give access to a type of record
-the profile doesn't allow. The person who signs up is placed at the top (CEO). Rename and arrange the roles in
-**Setup → Roles** to match your firm, for example:
+the profile doesn't allow. The workspace starts with roles named for the profession, and the person who signs
+up is placed at the top (**Managing Partner**):
 
 ```
 Managing Partner
-└── Client Manager
-    └── Accountant
-        └── Bookkeeper
-Practice Administrator (under Managing Partner)
+├── Partner
+│   └── Client Manager
+│       └── Accountant
+├── Bookkeeping Manager
+│   └── Bookkeeper
+├── Client Services Manager
+│   └── Client Services Coordinator
+└── Practice Manager
+    └── Practice Administrator
 ```
+
+Rename, add or rearrange roles in **Setup → Roles** to match your firm; a role you've renamed is never
+renamed back.
 
 **Profile vs role.** The profile is *what kind of work* someone does; the role is *where they sit*. Two people
 can share a profile and sit in different roles.
@@ -126,14 +147,15 @@ Default access for this module's records (Setup → Sharing Settings):
 | Lodgement Deadline | Private |
 | Time Entry | Private |
 | Engagement Letter, Document Request | Controlled by parent (the engagement) |
-| Clients, Contact People | Public Read Only |
+| Clients, Contact People | Public Read Only (the Client Manager can edit their clients) |
 | Invoices | Private |
 
 *Private* means only the owner, people above them in the role tree, profiles with View All, and anyone it's
 shared with. *Public Read Only* means everyone whose profile can read the record type sees all of them.
 
 **Team fields share automatically.** On a engagement, the **Responsible Accountant** and **Reviewer** get read/write access as soon as
-they're set, and lose it when they're changed.
+they're set, and lose it when they're changed. *My Engagements* and the home page list the engagements you own or
+are named on.
 
 - **Sharing rules** (Setup → Sharing Settings → Sharing rules) share records automatically, for example
   "matters owned by the Family team are shared read/write with the Family group".
@@ -142,8 +164,6 @@ they're set, and lose it when they're changed.
 - **Queues** hold unassigned work (for example new cases) for a group to pick up.
 - **Manual sharing**: on any record, open the **⌄ More actions** menu → **Sharing** → add a person or group
   with Read or Read/Write.
-- **Team fields share automatically.** In a migration agency, the *Case Officer* and *Responsible RMA* on a
-  matter get read/write access to it as soon as they're set, and lose it when they're changed.
 
 **Owner.** Each record has an owner (the person who created it, unless changed). **Change Owner** (record menu) or **Change owner** (select
 records in a list) moves them to someone else; it needs edit access, and *Transfer Records*
@@ -158,28 +178,35 @@ access). A hidden field disappears from pages, lists, reports, search, exports a
 | Field | Default access |
 |---|---|
 | Client: Tax File Number (encrypted) | Edit: Partner, Accountant, Practice Administrator. Hidden from everyone else. |
+| Engagement: Reviewer, Time Cost, Unbilled Time, Recoverability, Scope Notes | Hidden from clients in the portal |
 | Engagement letter: Signed From IP | Hidden from clients in the portal |
 
-Fields the system fills in (numbers, balances, dates, signatures) are read-only for everyone.
+Fields the system fills in (numbers, balances, dates, signatures) are read-only for everyone. Records that are
+final (signed agreements and letters, billed time, ledger entries) show without Edit or Delete for every
+profile.
 
 ## 8. Client portal
 
 Clients sign in to a simplified portal with the **Customer Portal User** profile and only see records linked
-to themselves. In Accounting Practice they see: Their engagements, engagement letters to sign, document requests to mark uploaded, their invoices, and requests/messages.
+to themselves. In Accounting Practice they see their engagements (not the reviewer, time cost, WIP, recoverability or scope notes), engagement letters with the practitioner and tax agent number to sign, document requests to upload against and mark uploaded, their invoices, and Client Requests with messages and files.
 
-Invite a client from their record (**⌄ More actions → Invite to Customer Portal**) or in **Setup → Portal Users
+Signing is the client's own act: the *Sign* actions appear only in the portal, never to staff. Clients are
+e-mailed, from the firm's name, when something is waiting for them; if nobody at the client can sign in yet,
+the person who sent it is notified instead.
+
+Invite a client from their record (**⌄ More actions → Invite to Client Portal**) or in **Setup → Portal Users
 → Invite contact**; it needs *Manage Portal Users*.
 
-## 9. System permissions reference
+## 9. System permissions and Practice Settings
 
 | Permission | Allows |
 |---|---|
 | Manage Users | Invite, deactivate and unlock users; reset sign-in and two-step verification; assign profiles and roles. |
-| Customize Application | Object Manager (fields, layouts, validation), App Manager, company and branding settings. |
+| Customize Application | Object Manager (fields, layouts, validation), App Manager, company and branding settings, and changing Practice Settings. |
 | Manage Profiles & Sharing | Profiles, roles, sharing defaults and rules, groups and queues. |
 | Manage Billing Settings | Invoice numbering, payment terms and tax rates. |
 | Manage Industry Packs | Install another practice area into the workspace. |
-| View Setup | Read-only access to Setup (useful for auditors and examiners). |
+| View Setup | Read-only access to Setup, including Practice Settings (useful for auditors and examiners). |
 | View Audit Log | The log of sign-ins, changes, exports and permission changes. |
 | Import Data | CSV import into any record type the profile can create. |
 | Export Data | CSV export from lists and reports. |
@@ -189,15 +216,24 @@ Invite a client from their record (**⌄ More actions → Invite to Customer Por
 | Manage Portal Users | Invite clients to the client portal and remove their access. |
 | API Access | Use the REST API with their own credentials. |
 
+**Practice Settings** (Setup → Settings → Practice Settings) hold the profession's thresholds, rates, due dates
+and reminder lead times. Anyone with *View Setup* can read them; changing them needs *Customize Application*
+(System Administrators by default). Changes are recorded in the audit log.
+
+**Professional registration.** Each user record holds the person's **Tax agent number (8 digits)** (Setup → Users),
+checked when it's saved.
+
 ## 10. Common set-ups
+
+**A new accountant joins.** Setup → Users → New user. Profile *Accountant*, role under their partner, and their tax agent number (8 digits) if they're registered. Letters they send show it; otherwise the practice's number (Practice Settings) is used.
 
 **A graduate accountant who isn't a registered agent yet.** Copy the *Accountant* profile (New Profile → Copy permissions from Accountant) and remove *Lodge Returns*. They can prepare and review but not lodge.
 
-**Independent review.** Set a Reviewer on each engagement. The system refuses a reviewer who is the preparer, and only the reviewer (or a Lodge Returns holder) can move it to Ready to Lodge.
+**Independent review.** Set a Reviewer on each engagement. The system refuses a reviewer who is the preparer, and only the reviewer (or a Partner) can move it to Ready to Lodge.
 
 **A bookkeeper works on a few clients only.** Use *Bookkeeper* (no View All) and set them as Responsible Accountant on those engagements, or share the engagements with them.
 
-**Reception onboards clients and sends letters.** Use *Practice Administrator*: engagement letters, document requests, deadlines and invoices across the practice.
+**Reception onboards clients and sends letters.** Use *Practice Administrator*: clients, engagement letters, document requests, deadlines and invoices across the practice.
 
 **Someone has left.** Deactivate them (Setup → Users → Deactivate) so their records and audit trail stay,
 then reassign their open engagements with **Change owner**.

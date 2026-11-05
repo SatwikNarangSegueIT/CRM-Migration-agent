@@ -114,18 +114,22 @@ def erase_person(svc: RecordService, obj: str, record_id: uuid.UUID, reason: str
     if not svc.can_edit(person):
         raise AppError("You need edit access to this record.", code="forbidden", status_code=403)
     db = svc.db
+    # Trust and client-account records name the client and are kept for 7 years (Legal Profession Uniform
+    # General Rules; the migration agents' Code of Conduct).
+    kept_since = datetime.now(UTC) - timedelta(days=round(365.25 * 7))
     held = db.scalar(
         select(Record.id)
         .where(
-            Record.object_api_name == "client_account_transaction",
+            Record.object_api_name.in_(("client_account_transaction", "trust_transaction")),
             Record.data["client"].astext == str(person.id),
+            Record.created_at >= kept_since,
         )
         .limit(1)
     )
     if held is not None:
         raise ConflictError(
-            "This person has client-account (trust) transactions that must be kept for 7 years; "
-            "erasure is blocked until the retention period ends.",
+            "This person has trust or client-account transactions from the last 7 years, which must be "
+            "kept; erasure is blocked until the retention period ends.",
             code="retention_hold",
         )
     meta = svc.registry.get(obj)

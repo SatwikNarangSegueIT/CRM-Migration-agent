@@ -304,8 +304,10 @@ def test_financial_year_helpers() -> None:
     ]  # fmt: skip
     monthly = bas_periods("Monthly", 2026)
     assert (
-        len(monthly) == 12 and monthly[0][1] == date(2026, 8, 21) and monthly[5][1] == date(2027, 2, 21)
-    )  # December: 21 February
+        len(monthly) == 12 and monthly[0][1] == date(2026, 8, 21) and monthly[5][1] == date(2027, 1, 21)
+    )  # December: 21 January, or 21 February under the registered agent lodgment program
+    assert dict(bas_periods("Monthly", 2026, tax_agent=True))["Dec 2026"] == date(2027, 2, 21)
+    assert bas_periods("Annually", 2026) == [("FY 2026-27", date(2027, 10, 31))]  # annual GST return
 
 
 # ------------------------------------------------------------------ loan broking
@@ -466,7 +468,7 @@ def test_accounting_safeguards(admin_client: TestClient, client: TestClient, db:
     install(c, "accounting_practice")
     practice_tan(db)
     assert is_valid_tfn("123 456 782") and not is_valid_tfn("123456789")
-    assert dict(bas_periods("Monthly", 2026))["Dec 2026"].isoformat() == "2027-02-21"
+    assert dict(bas_periods("Monthly", 2026))["Dec 2026"].isoformat() == "2027-01-21"
     bad = c.post(
         f"{API}/objects/account/records", json={"name": "Typo Pty Ltd", "fields": {"tfn": "123456789"}}
     )
@@ -659,6 +661,16 @@ def test_legal_uniform_law_rules(admin_client: TestClient, client: TestClient, d
     patch(c, "trust_transaction", receipt["id"], {"austrac_reference": "SCTR-1234"})
     patch(c, "trust_transaction", receipt["id"], {"amount": 1}, expect=422)  # still append-only
     assert get(c, "trust_transaction", receipt["id"])["access"]["edit"] is False
+    # A practice that reports from a lower amount can record the reference on those receipts too.
+    r = c.put(
+        f"{API}/setup/practice-settings/legal_practice", json={"values": {"significant_cash_threshold": 5000}}
+    )
+    assert r.status_code == 200, r.text
+    smaller = create(c, "trust_transaction", {**t, "type": "Receipt", "amount": 6000, "method": "Cash"})
+    assert get(c, "trust_transaction", smaller["id"])["access"]["edit"] is True
+    patch(c, "trust_transaction", smaller["id"], {"austrac_reference": "SCTR-5678"})
+    small = create(c, "trust_transaction", {**t, "type": "Receipt", "amount": 900, "method": "Cash"})
+    assert get(c, "trust_transaction", small["id"])["access"]["edit"] is False
     r = c.post(
         f"{API}/objects/trust_transaction/records",
         json={"fields": {**t, "type": "Payment", "amount": 100, "method": "Cash"}},
@@ -870,3 +882,142 @@ def test_loan_broker_nccp_disclosures_serviceability_and_clawback(
     assert claw["fields"]["type"] == "Clawback" and float(claw["fields"]["signed_amount"]) == -2700
     assert get(c, "loan_application", loan["id"])["fields"]["discharged_date"] == "2027-03-20"
     action(c, "loan_application", loan["id"], "record_discharge", expect=422)  # recorded once
+
+
+def test_trust_records_hold_erasure(admin_client: TestClient, db: Session) -> None:
+    """A law firm client with trust records from the last 7 years can't be erased (they must be kept)."""
+    from sqlalchemy import update
+
+    from app.models import Record
+
+    c = admin_client
+    install(c, "legal_practice")
+    person = create(c, "contact", {"last_name": "Kept Client"})
+    matter = create(c, "legal_matter", {"title": "Purchase", "client": person["id"], "estimated_costs": 500})
+    receipt = create(
+        c,
+        "trust_transaction",
+        {"legal_matter": matter["id"], "type": "Receipt", "amount": 2000, "method": "EFT",
+         "payer_payee": "Kept Client", "description": "Deposit"},
+    )  # fmt: skip
+    url = f"{API}/privacy/contact/{person['id']}/erase"
+    r = c.post(url, json={"reason": "Request SAR-9", "confirm": "ERASE"})
+    assert r.status_code == 409 and "7 years" in r.text
+    # Once the records are older than the retention period, the erasure goes ahead.
+    db.execute(
+        update(Record)
+        .where(Record.id == receipt["id"])
+        .values(created_at=local_today() - timedelta(days=round(365.25 * 7) + 2))
+    )
+    db.commit()
+    r = c.post(url, json={"reason": "Request SAR-9", "confirm": "ERASE"})
+    assert r.status_code == 200, r.text
+
+
+def test_reminders_skip_finished_work(admin_client: TestClient, db: Session) -> None:
+    """No reminders for a deadline lodged early, a closed matter's limitation date or a declined loan."""
+    from datetime import UTC, datetime
+
+    from app.packs.accounting_practice import daily_job as accounting_daily
+    from app.packs.legal_practice import daily_reminders as legal_daily
+    from app.packs.loan_broker import daily_reminders as lending_daily
+
+    def titles() -> set[str]:
+        return set(db.scalars(select(Notification.title)))
+
+    c = admin_client
+    in3 = (local_today() + timedelta(days=3)).isoformat()
+    in30 = (local_today() + timedelta(days=30)).isoformat()
+
+    install(c, "accounting_practice")
+    entity = create(c, "account", {"name": "Early Lodger Pty Ltd"})
+    deadline = {"client": entity["id"], "lodgement_type": "BAS", "due_date": in3}
+    due = create(c, "lodgement_deadline", {**deadline, "period": "Q1"})
+    lodged = create(c, "lodgement_deadline", {**deadline, "period": "Q2", "status": "Lodged"})
+    accounting_daily(db)
+    assert f"Lodgement due in 3 days: {due['name']}" in titles()
+    assert f"Lodgement due in 3 days: {lodged['name']}" not in titles()
+
+    install(c, "legal_practice")
+    person = create(c, "contact", {"last_name": "Limitation Client"})
+    claim = {"client": person["id"], "limitation_date": in30, "estimated_costs": 500}
+    running = create(c, "legal_matter", {**claim, "title": "Claim A"})
+    closed = create(c, "legal_matter", {**claim, "title": "Claim B"})
+    patch(c, "legal_matter", closed["id"], {"stage": "Closed"})
+    legal_daily(db)
+    assert f"Limitation date in 30 days: {running['name']}" in titles()
+    assert f"Limitation date in 30 days: {closed['name']}" not in titles()
+
+    install(c, "loan_broker")
+    borrower = create(c, "contact", {"last_name": "Rate Client"})
+    in7 = (local_today() + timedelta(days=7)).isoformat()
+    loan = {"primary_borrower": borrower["id"], "purpose": "Refinance", "loan_amount": 400000,
+            "fixed_rate_expiry": in30, "settlement_date": in7}  # fmt: skip
+    active = create(c, "loan_application", loan)
+    declined = create(c, "loan_application", loan)
+    patch(c, "loan_application", declined["id"], {"stage": "Declined", "decline_reason": "Client withdrew"})
+    lending_daily(db)
+    assert f"Fixed rate expires in 30 days: {active['name']}" in titles()
+    assert f"Settlement in 7 days: {active['name']}" in titles()
+    assert f"Fixed rate expires in 30 days: {declined['name']}" not in titles()
+    assert f"Settlement in 7 days: {declined['name']}" not in titles()
+    start = datetime.now(UTC) - timedelta(days=1)
+    cal = c.get(
+        f"{API}/calendar",
+        params={"start": start.isoformat(), "end": (start + timedelta(days=40)).isoformat(), "mine": False},
+    ).json()
+    on_calendar = {k["id"] for k in cal["dates"]}
+    assert active["id"] in on_calendar and declined["id"] not in on_calendar
+
+
+def test_preliminary_assessment_must_be_current(admin_client: TestClient, db: Session) -> None:
+    """NCCP s 115: lodging needs an assessment made within 90 days (120 for a residential purchase)."""
+    import uuid as _uuid
+
+    from app.models import Record
+
+    c = admin_client
+    install(c, "loan_broker")
+    lender = create(c, "lender", {"upfront_rate": 0.6}, name="Coastal Bank")
+    person = create(c, "contact", {"first_name": "Ari", "last_name": "Stale"})
+    today = local_today().isoformat()
+
+    def assessed_loan(purpose: str, days_ago: int) -> dict[str, Any]:
+        loan = create(
+            c,
+            "loan_application",
+            {"primary_borrower": person["id"], "purpose": purpose, "loan_amount": 300000, "security_value": 600000,
+             "interest_rate": 6.0, "term_years": 30, "credit_guide_date": today, "privacy_consent_date": today,
+             "customer_objectives": "Lower repayments", "products_considered": "Coastal", "recommendation_reason": "Rate",
+             "lender": lender["id"]},
+        )  # fmt: skip
+        ff = create(c, "fact_find", {"loan_application": loan["id"], "gross_annual_income": 180000,
+                                     "monthly_living_expenses": 3000, "expenses_verified": True})  # fmt: skip
+        patch(c, "fact_find", ff["id"], {"status": "Complete"})
+        action(c, "loan_application", loan["id"], "record_assessment")
+        rec = db.get(Record, _uuid.UUID(loan["id"]))
+        assert rec is not None
+        made = (local_today() - timedelta(days=days_ago)).isoformat()
+        rec.data = {**rec.data, "preliminary_assessment_date": made}
+        db.commit()
+        return loan
+
+    refinance = assessed_loan("Refinance", 91)
+    r = c.patch(
+        f"{API}/objects/loan_application/records/{refinance['id']}",
+        json={"version": get(c, "loan_application", refinance["id"])["version"],
+              "fields": {"credit_proposal_date": today, "stage": "Lodged"}},
+    )  # fmt: skip
+    assert r.status_code == 422 and "more than 90 days ago" in r.text
+    # The expired assessment is made again (the BID record can be brought up to date first), then it lodges.
+    patch(c, "loan_application", refinance["id"], {"customer_objectives": "Lower repayments, offset account"})
+    action(c, "loan_application", refinance["id"], "record_assessment")
+    lodged = patch(c, "loan_application", refinance["id"], {"credit_proposal_date": today, "stage": "Lodged"})
+    assert lodged["fields"]["stage"] == "Lodged" and lodged["fields"]["preliminary_assessment_date"] == today
+
+    # A home purchase has 120 days; a current assessment can't be re-recorded or its BID record changed.
+    purchase = assessed_loan("Purchase - Owner Occupied", 100)
+    action(c, "loan_application", purchase["id"], "record_assessment", expect=422)
+    patch(c, "loan_application", purchase["id"], {"customer_objectives": "Changed"}, expect=422)
+    done = patch(c, "loan_application", purchase["id"], {"credit_proposal_date": today, "stage": "Lodged"})
+    assert done["fields"]["stage"] == "Lodged"

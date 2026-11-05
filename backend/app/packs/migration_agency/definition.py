@@ -1,4 +1,4 @@
-"""Migration Agency (Australia) pack, version 1.0.0: objects, fields, app, profiles, reports (plan v3, section 11).
+"""Migration Agency (Australia) pack (version: VERSION below): objects, fields, app, profiles, reports (plan v3, section 11).
 
 Supports compliance with the Code of Conduct for registered migration agents; the principal confirms
 against current OMARA guidance.

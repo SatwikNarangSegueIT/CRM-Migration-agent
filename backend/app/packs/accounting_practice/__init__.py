@@ -28,7 +28,7 @@ from app.engine.types import decimal_to_json, format_datetime, money, to_decimal
 from app.models import Record, RecordShare
 from app.packs import Pack, permission_key, register
 from app.packs.accounting_practice import definition as d
-from app.packs.common import date_reminders, first_of, live, tell_client
+from app.packs.common import date_reminders, first_of, live, tell_client, unless
 from app.services import audit
 from app.services.audit import AuditAction
 from app.services.settings import get_setting
@@ -764,8 +764,9 @@ def deadline_rules(change: Change) -> None:
 def bas_periods(frequency: str, fy_start: int, *, tax_agent: bool = False) -> list[tuple[str, date]]:
     """Activity statement periods for the financial year starting 1 July fy_start and their due dates.
 
-    tax_agent: the lodgment program concession for quarterly BAS lodged electronically through a tax or
-    BAS agent (Q1 25 November, Q2 28 February, Q3 26 May, Q4 25 August)."""
+    tax_agent: the registered agent lodgment program dates for activity statements lodged electronically
+    through a tax or BAS agent: quarterly Q1 25 November, Q2 28 February (no extension), Q3 26 May,
+    Q4 25 August; a December monthly BAS 21 February (business clients with turnover up to $10 million)."""
     if frequency == "Quarterly" and tax_agent:
         return [
             ("Q1 Jul-Sep", date(fy_start, 11, 25)),
@@ -785,12 +786,18 @@ def bas_periods(frequency: str, fy_start: int, *, tax_agent: bool = False) -> li
         for i in range(12):
             month = (7 + i - 1) % 12 + 1
             year = fy_start if month >= 7 else fy_start + 1
-            # Due the 21st of the next month; December's is due 21 February (ATO).
-            due_m, due_y = (2, year + 1) if month == 12 else (month + 1, year)
+            # Due the 21st of the next month. December's moves to 21 February only under the lodgment
+            # program (electronic lodgment by a registered agent); otherwise it is due 21 January.
+            if month == 12:
+                due_m, due_y = (2 if tax_agent else 1), year + 1
+            else:
+                due_m, due_y = month + 1, year
             out.append((date(year, month, 1).strftime("%b %Y"), date(due_y, due_m, 21)))
         return out
     if frequency == "Annually":
-        return [(f"FY {fy_start}-{str(fy_start + 1)[-2:]}", date(fy_start + 1, 2, 28))]
+        # The annual GST return is due 31 October (with the income tax return; a client lodged later under
+        # the lodgment program lodges it with that return, and one with no income tax return by 28 February).
+        return [(f"FY {fy_start}-{str(fy_start + 1)[-2:]}", date(fy_start + 1, 10, 31))]
     return []
 
 
@@ -836,7 +843,9 @@ def daily_job(db: Session, today: date | None = None) -> int:
             overdue += 1
     db.flush()
     days = _settings(db).get("deadline_reminder_days", [14, 3, 0])
-    targets = [("lodgement_deadline", "due_date", "Lodgement due", first_of("responsible"))]
+    # A deadline lodged early gets no more "due" reminders.
+    responsible = unless(first_of("responsible"), lambda r: r.data.get("status") == "Lodged")
+    targets = [("lodgement_deadline", "due_date", "Lodgement due", responsible)]
     return overdue + date_reminders(db, targets, days, today)
 
 

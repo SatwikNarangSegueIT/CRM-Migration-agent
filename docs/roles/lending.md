@@ -5,7 +5,17 @@ Administrators change everything here in **Setup**; nothing needs a developer.
 
 **Contents**
 
-1. x
+1. How access works
+2. Profiles: what someone can do
+3. The Loan Broking profiles
+4. Profession permissions
+5. Roles: whose loan applications someone can see
+6. Sharing: who can see a loan application
+7. Field-level security
+8. Client portal
+9. System permissions and Practice Settings
+10. Common set-ups
+11. Security controls you don't configure
 
 ---
 
@@ -77,7 +87,7 @@ Each profile starts as a copy of a general profile (*based on*) and adds the pro
 | **Loan Processor** | - |
 | **Commissions Administrator** | Manage Commissions, Import, Export, Billing Settings, Public Reports |
 
-The commission ledger can't be edited: clawbacks and corrections are new entries.
+Commission amounts can't be edited: clawbacks and corrections are new entries.
 
 **Good to know**
 
@@ -85,6 +95,7 @@ The commission ledger can't be edited: clawbacks and corrections are new entries
 - The Loan Processor sees every application and works the ones they're assigned to as processor.
 - Settled and declined applications are final for brokers and processors; a principal can correct a mistake.
 - Changing the amount, purpose, borrower or lender after the preliminary assessment means recording the assessment again before lodging.
+- Recording a discharge on a settled loan creates the expected clawback for the Commissions Administrator to reconcile.
 - Clients see their application and their lender's name in the portal, not commission, rates or the products comparison.
 
 ## 4. Profession permissions
@@ -94,7 +105,7 @@ Regulated steps are guarded by their own permission, so only the right people ca
 | Permission | Held by default | Guards |
 |---|---|---|
 | Submit to Lender | Principal Broker, Broker | Moving an application to Lodged with a lender. |
-| Manage Commissions | Principal Broker, Commissions Administrator | Recording and changing entries in the commission ledger. |
+| Manage Commissions | Principal Broker, Commissions Administrator | Recording and changing entries in the commission ledger, including the expected commissions and clawbacks the system creates. |
 
 Grant or remove them in **Setup → Profiles → (profile)**.
 
@@ -102,16 +113,24 @@ Grant or remove them in **Setup → Profiles → (profile)**.
 
 Roles form a tree that mirrors your reporting lines. With *Grant access using hierarchies* switched on (the
 default), a person sees every record owned by people below them. Roles never give access to a type of record
-the profile doesn't allow. The person who signs up is placed at the top (CEO). Rename and arrange the roles in
-**Setup → Roles** to match your firm, for example:
+the profile doesn't allow. The workspace starts with roles named for the profession, and the person who signs
+up is placed at the top (**Principal Broker**):
 
 ```
 Principal Broker
-└── Senior Broker
-    └── Broker
-        └── Loan Processor
-Commissions Administrator (under Principal Broker)
+├── Broking Manager
+│   └── Senior Broker
+│       └── Broker
+├── Processing Manager
+│   └── Loan Processor
+├── Marketing Manager
+│   └── Marketing Coordinator
+└── Finance Manager
+    └── Commissions Administrator
 ```
+
+Rename, add or rearrange roles in **Setup → Roles** to match your firm; a role you've renamed is never
+renamed back.
 
 **Profile vs role.** The profile is *what kind of work* someone does; the role is *where they sit*. Two people
 can share a profile and sit in different roles.
@@ -123,7 +142,7 @@ Default access for this module's records (Setup → Sharing Settings):
 | Record | Default |
 |---|---|
 | Loan Application | Private |
-| Commission | Private |
+| Commission | Private (a broker reads the commission on their own loans) |
 | Fact Find | Controlled by parent (the application) |
 | Lenders | Public Read Only |
 | Clients, Organisations | Public Read Only |
@@ -132,7 +151,8 @@ Default access for this module's records (Setup → Sharing Settings):
 shared with. *Public Read Only* means everyone whose profile can read the record type sees all of them.
 
 **Team fields share automatically.** On a loan application, the **Broker** and **Loan Processor** get read/write access as soon as
-they're set, and lose it when they're changed.
+they're set, and lose it when they're changed. *My Pipeline* and the home page list the loan applications you own or
+are named on.
 
 - **Sharing rules** (Setup → Sharing Settings → Sharing rules) share records automatically, for example
   "matters owned by the Family team are shared read/write with the Family group".
@@ -141,8 +161,6 @@ they're set, and lose it when they're changed.
 - **Queues** hold unassigned work (for example new cases) for a group to pick up.
 - **Manual sharing**: on any record, open the **⌄ More actions** menu → **Sharing** → add a person or group
   with Read or Read/Write.
-- **Team fields share automatically.** In a migration agency, the *Case Officer* and *Responsible RMA* on a
-  matter get read/write access to it as soon as they're set, and lose it when they're changed.
 
 **Owner.** Each record has an owner (the person who created it, unless changed). **Change Owner** (record menu) or **Change owner** (select
 records in a list) moves them to someone else; it needs edit access, and *Transfer Records*
@@ -157,27 +175,35 @@ access). A hidden field disappears from pages, lists, reports, search, exports a
 | Field | Default access |
 |---|---|
 | Client: Driver Licence Number (encrypted) | Edit: Principal Broker, Broker, Loan Processor. Hidden from everyone else. |
+| Loan application: Broker, Loan Processor, Products Considered, Expected Upfront Commission, Lender Reference, Decline Reason | Hidden from clients in the portal |
+| Lender: commission rates, clawback terms, accreditation, BDM details, notes | Hidden from clients in the portal |
 
-Fields the system fills in (numbers, balances, dates, signatures) are read-only for everyone.
+Fields the system fills in (numbers, balances, dates, signatures) are read-only for everyone. Records that are
+final (signed agreements and letters, billed time, ledger entries) show without Edit or Delete for every
+profile.
 
 ## 8. Client portal
 
 Clients sign in to a simplified portal with the **Customer Portal User** profile and only see records linked
-to themselves. In Loan Broking they see: Their loan applications and progress, their invoices, and requests/messages.
+to themselves. In Loan Broking they see their loan applications and progress, with the lender's name (not commission, rates, the products comparison or the lender reference), their invoices, and Client Requests with messages and files.
 
-Invite a client from their record (**⌄ More actions → Invite to Customer Portal**) or in **Setup → Portal Users
+Signing is the client's own act: the *Sign* actions appear only in the portal, never to staff. Clients are
+e-mailed, from the firm's name, when something is waiting for them; if nobody at the client can sign in yet,
+the person who sent it is notified instead.
+
+Invite a client from their record (**⌄ More actions → Invite to Client Portal**) or in **Setup → Portal Users
 → Invite contact**; it needs *Manage Portal Users*.
 
-## 9. System permissions reference
+## 9. System permissions and Practice Settings
 
 | Permission | Allows |
 |---|---|
 | Manage Users | Invite, deactivate and unlock users; reset sign-in and two-step verification; assign profiles and roles. |
-| Customize Application | Object Manager (fields, layouts, validation), App Manager, company and branding settings. |
+| Customize Application | Object Manager (fields, layouts, validation), App Manager, company and branding settings, and changing Practice Settings. |
 | Manage Profiles & Sharing | Profiles, roles, sharing defaults and rules, groups and queues. |
 | Manage Billing Settings | Invoice numbering, payment terms and tax rates. |
 | Manage Industry Packs | Install another practice area into the workspace. |
-| View Setup | Read-only access to Setup (useful for auditors and examiners). |
+| View Setup | Read-only access to Setup, including Practice Settings (useful for auditors and examiners). |
 | View Audit Log | The log of sign-ins, changes, exports and permission changes. |
 | Import Data | CSV import into any record type the profile can create. |
 | Export Data | CSV export from lists and reports. |
@@ -187,15 +213,22 @@ Invite a client from their record (**⌄ More actions → Invite to Customer Por
 | Manage Portal Users | Invite clients to the client portal and remove their access. |
 | API Access | Use the REST API with their own credentials. |
 
+**Practice Settings** (Setup → Settings → Practice Settings) hold the profession's thresholds, rates, due dates
+and reminder lead times. Anyone with *View Setup* can read them; changing them needs *Customize Application*
+(System Administrators by default). Changes are recorded in the audit log.
+
+**Professional registration.** Each user record holds the person's **Credit representative number (6 or 7 digits)** (Setup → Users),
+checked when it's saved.
+
 ## 10. Common set-ups
 
-**A new credit representative joins.** Setup → Users → New user. Profile *Broker*, role under the principal broker. They see their own clients and applications and can submit to lenders.
+**A new credit representative joins.** Setup → Users → New user. Profile *Broker*, role under the principal broker, and their ASIC credit representative number. They see their own clients and applications and can submit to lenders.
 
 **A processor supports several brokers.** Use *Loan Processor*: they see every application (View All) and fact find, and get read/write access where they're set as Loan Processor.
 
-**Reconciling lender statements.** Use *Commissions Administrator*: manage the commission ledger and lender panel; read every application.
+**Reconciling lender statements.** Use *Commissions Administrator*: manage the commission ledger (including expected commissions and clawbacks) and lender panel; read every application.
 
-**A broker shouldn't change commission.** Default: Brokers can read commissions but not record or change them (Manage Commissions).
+**A broker shouldn't change commission.** Default: Brokers can read the commission on their own loans but not record or change it (Manage Commissions).
 
 **Someone has left.** Deactivate them (Setup → Users → Deactivate) so their records and audit trail stay,
 then reassign their open loan applications with **Change owner**.

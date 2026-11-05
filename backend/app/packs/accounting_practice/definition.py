@@ -1,4 +1,4 @@
-"""Accounting Practice (Australia) pack, version 1.0.0 (plan v4, section 6).
+"""Accounting Practice (Australia) pack (plan v4, section 6; the version is VERSION below).
 
 Engagements (tax returns, BAS/IAS, SMSF audits, bookkeeping, advisory), APES 305 engagement letters with
 client e-signature, ATO lodgement deadlines, document requests through the portal, time recording, WIP
@@ -320,8 +320,9 @@ SETTINGS_FIELDS: Final[list[dict[str, Any]]] = [
     {"key": "letter_required", "label": "Engagement letter before work starts (APES 305)", "kind": "checkbox"},
     {"key": "bas_due_dates", "label": "BAS due dates", "kind": "select",
      "options": [{"value": "standard", "label": "Standard ATO dates"},
-                 {"value": "tax_agent", "label": "Tax agent lodgment program (quarterly concession)"}],
-     "hint": "The concession gives quarterly BAS lodged electronically through an agent more time (e.g. Q1 on 25 November)."},
+                 {"value": "tax_agent", "label": "Registered agent lodgment program"}],
+     "hint": "For BAS lodged electronically through the practice: quarterly Q1 25 November, Q3 26 May, Q4 25 August; "
+             "a December monthly BAS 21 February (turnover up to $10 million)."},
     {"key": "deadline_reminder_days", "label": "Lodgement deadline reminders (days before)", "kind": "days"},
     *[{"key": f"return_due.{kind}", "label": f"{kind} due (DD-MM)", "kind": "text",
        "hint": "After the year ends (30 June; 31 March for FBT)."} for kind in RETURN_DUE],

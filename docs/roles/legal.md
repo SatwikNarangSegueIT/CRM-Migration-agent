@@ -5,7 +5,17 @@ Administrators change everything here in **Setup**; nothing needs a developer.
 
 **Contents**
 
-1. x
+1. How access works
+2. Profiles: what someone can do
+3. The Legal Practice profiles
+4. Profession permissions
+5. Roles: whose matters someone can see
+6. Sharing: who can see a matter
+7. Field-level security
+8. Client portal
+9. System permissions and Practice Settings
+10. Common set-ups
+11. Security controls you don't configure
 
 ---
 
@@ -61,13 +71,13 @@ sign out.
 
 Each profile starts as a copy of a general profile (*based on*) and adds the profession's records.
 
-| Profile | Based on | Matters | Parties, Court dates | Conflict checks | Time entries | Trust ledger | Invoices | Clients & Organisations |
-|---|---|---|---|---|---|---|---|---|
-| **Principal** | Sales Manager | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | RC VA | RCE VA MA | RCED VA MA |
-| **Solicitor** | Sales Representative | RCE | RCED | RCE | RCE | R | RCE | RCE |
-| **Paralegal** | Service Agent | RE | RCED | RC | RCE | - | R | RCE / RE |
-| **Trust Accountant** | Finance | R VA | - | - | R VA | RC VA | RCE VA MA | R |
-| **External Examiner** | Read Only | R VA | R VA | R VA | R VA | R VA | R VA | R VA |
+| Profile | Based on | Matters | Parties, Court dates | Conflict checks | Time entries | Trust ledger | Trust reconciliations | Invoices | Clients & Organisations |
+|---|---|---|---|---|---|---|---|---|---|
+| **Principal** | Sales Manager | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | RC VA | RCE VA MA | RCE VA MA | RCED VA MA |
+| **Solicitor** | Sales Representative | RCE | RCED | RCE | RCE | R | - | RCE | RCE |
+| **Paralegal** | Service Agent | RE | RCED | RC | RCE | - | - | R | RCE / RE |
+| **Trust Accountant** | Finance | R VA | - | - | R VA | RC VA | RCE VA | RCE VA MA | R |
+| **External Examiner** | Read Only | R VA | R VA | R VA | R VA | R VA | R VA | R VA | R VA |
 
 **Extra permissions by profile**
 
@@ -85,7 +95,8 @@ The trust ledger is append-only for everyone: there is no edit or delete, correc
 
 - A principal can update any solicitor's matters, time and invoices (Modify All), for example to take over a file.
 - "My Matters" and the home page list the matters you're the responsible solicitor or supervising principal on, not only the ones you created.
-- Records that can no longer change (billed or written-off time, trust ledger entries) show without Edit or Delete.
+- The monthly trust reconciliation is prepared by a Trust Accountant (or Principal) and signed off by a Principal; a signed-off month can't be changed.
+- Records that can no longer change (billed or written-off time, trust ledger entries, signed-off reconciliations) show without Edit or Delete.
 - Billing an individual client creates one billing organisation in their name, linked to them and reused on their later matters.
 
 ## 4. Profession permissions
@@ -94,8 +105,8 @@ Regulated steps are guarded by their own permission, so only the right people ca
 
 | Permission | Held by default | Guards |
 |---|---|---|
-| Clear Conflicts | Principal | Clearing a conflict check that found matches (with notes; audited). Also writing off time. |
-| Manage Trust Account | Principal, Trust Accountant | Recording receipts, payments and transfers to office in the trust ledger. |
+| Clear Conflicts | Principal | Clearing a conflict check that found matches (with notes; audited); writing off time; signing off the monthly trust reconciliation. |
+| Manage Trust Account | Principal, Trust Accountant | Recording receipts, payments and transfers to office in the trust ledger; preparing the monthly trust reconciliation. |
 
 Grant or remove them in **Setup → Profiles → (profile)**.
 
@@ -103,16 +114,24 @@ Grant or remove them in **Setup → Profiles → (profile)**.
 
 Roles form a tree that mirrors your reporting lines. With *Grant access using hierarchies* switched on (the
 default), a person sees every record owned by people below them. Roles never give access to a type of record
-the profile doesn't allow. The person who signs up is placed at the top (CEO). Rename and arrange the roles in
-**Setup → Roles** to match your firm, for example:
+the profile doesn't allow. The workspace starts with roles named for the profession, and the person who signs
+up is placed at the top (**Managing Principal**):
 
 ```
-Managing Partner
-└── Senior Associate
-    └── Solicitor
-        └── Paralegal
-Trust Accountant (under Managing Partner)
+Managing Principal
+├── Principal
+│   └── Senior Associate
+│       └── Solicitor
+├── Practice Manager
+│   └── Paralegal
+├── Business Development Manager
+│   └── Business Development Coordinator
+└── Finance Manager
+    └── Trust Accountant
 ```
+
+Rename, add or rearrange roles in **Setup → Roles** to match your firm; a role you've renamed is never
+renamed back.
 
 **Profile vs role.** The profile is *what kind of work* someone does; the role is *where they sit*. Two people
 can share a profile and sit in different roles.
@@ -126,6 +145,7 @@ Default access for this module's records (Setup → Sharing Settings):
 | Matter | Private |
 | Time Entry | Private |
 | Trust Transaction | Private |
+| Trust Reconciliation | Public Read Only (for profiles that can read it) |
 | Party, Conflict Check, Court Date | Controlled by parent (the matter) |
 | Clients, Organisations | Public Read Only |
 | Invoices | Private |
@@ -134,7 +154,8 @@ Default access for this module's records (Setup → Sharing Settings):
 shared with. *Public Read Only* means everyone whose profile can read the record type sees all of them.
 
 **Team fields share automatically.** On a matter, the **Responsible Solicitor** and **Supervising Principal** get read/write access as soon as
-they're set, and lose it when they're changed.
+they're set, and lose it when they're changed. *My Matters* and the home page list the matters you own or
+are named on.
 
 - **Sharing rules** (Setup → Sharing Settings → Sharing rules) share records automatically, for example
   "matters owned by the Family team are shared read/write with the Family group".
@@ -143,8 +164,6 @@ they're set, and lose it when they're changed.
 - **Queues** hold unassigned work (for example new cases) for a group to pick up.
 - **Manual sharing**: on any record, open the **⌄ More actions** menu → **Sharing** → add a person or group
   with Read or Read/Write.
-- **Team fields share automatically.** In a migration agency, the *Case Officer* and *Responsible RMA* on a
-  matter get read/write access to it as soon as they're set, and lose it when they're changed.
 
 **Owner.** Each record has an owner (the person who created it, unless changed). **Change Owner** (record menu) or **Change owner** (select
 records in a list) moves them to someone else; it needs edit access, and *Transfer Records*
@@ -158,28 +177,34 @@ access). A hidden field disappears from pages, lists, reports, search, exports a
 
 | Field | Default access |
 |---|---|
-| Matter: Hourly Rate, Unbilled Time, Conflict Cleared, Supervising Principal, Description | Hidden from clients in the portal |
+| Matter: Hourly Rate, Unbilled Time (WIP), Billed to Date, Conflict Cleared, Updated Disclosure Due, Supervising Principal, Billing Organisation, Matter Description | Hidden from clients in the portal |
 
-Fields the system fills in (numbers, balances, dates, signatures) are read-only for everyone.
+Fields the system fills in (numbers, balances, dates, signatures) are read-only for everyone. Records that are
+final (signed agreements and letters, billed time, ledger entries) show without Edit or Delete for every
+profile.
 
 ## 8. Client portal
 
 Clients sign in to a simplified portal with the **Customer Portal User** profile and only see records linked
-to themselves. In Legal Practice they see: Their matters (stage and key dates; not rates, WIP, conflict status, the supervising principal or the internal description), court dates marked *Visible to Client*, their invoices, and requests/messages.
+to themselves. In Legal Practice they see their matters (stage, key dates, the estimate and trust balance; not the rate, WIP, billed to date, conflict status, the supervising principal or the internal description), court dates marked *Visible to Client*, their invoices, and Client Requests with messages and files.
 
-Invite a client from their record (**⌄ More actions → Invite to Customer Portal**) or in **Setup → Portal Users
+Signing is the client's own act: the *Sign* actions appear only in the portal, never to staff. Clients are
+e-mailed, from the firm's name, when something is waiting for them; if nobody at the client can sign in yet,
+the person who sent it is notified instead.
+
+Invite a client from their record (**⌄ More actions → Invite to Client Portal**) or in **Setup → Portal Users
 → Invite contact**; it needs *Manage Portal Users*.
 
-## 9. System permissions reference
+## 9. System permissions and Practice Settings
 
 | Permission | Allows |
 |---|---|
 | Manage Users | Invite, deactivate and unlock users; reset sign-in and two-step verification; assign profiles and roles. |
-| Customize Application | Object Manager (fields, layouts, validation), App Manager, company and branding settings. |
+| Customize Application | Object Manager (fields, layouts, validation), App Manager, company and branding settings, and changing Practice Settings. |
 | Manage Profiles & Sharing | Profiles, roles, sharing defaults and rules, groups and queues. |
 | Manage Billing Settings | Invoice numbering, payment terms and tax rates. |
 | Manage Industry Packs | Install another practice area into the workspace. |
-| View Setup | Read-only access to Setup (useful for auditors and examiners). |
+| View Setup | Read-only access to Setup, including Practice Settings (useful for auditors and examiners). |
 | View Audit Log | The log of sign-ins, changes, exports and permission changes. |
 | Import Data | CSV import into any record type the profile can create. |
 | Export Data | CSV export from lists and reports. |
@@ -189,13 +214,22 @@ Invite a client from their record (**⌄ More actions → Invite to Customer Por
 | Manage Portal Users | Invite clients to the client portal and remove their access. |
 | API Access | Use the REST API with their own credentials. |
 
+**Practice Settings** (Setup → Settings → Practice Settings) hold the profession's thresholds, rates, due dates
+and reminder lead times. Anyone with *View Setup* can read them; changing them needs *Customize Application*
+(System Administrators by default). Changes are recorded in the audit log.
+
+**Professional registration.** Each user record holds the person's **Practising certificate number** (Setup → Users),
+checked when it's saved.
+
 ## 10. Common set-ups
 
-**A new solicitor joins.** Setup → Users → New user. Profile *Solicitor*, role under their supervising partner. They see matters where they are the Responsible Solicitor or owner.
+**A new solicitor joins.** Setup → Users → New user. Profile *Solicitor*, role under their supervising principal, and their practising certificate number. They see matters where they are the Responsible Solicitor or owner.
 
 **A paralegal should only see the Family team's matters.** Create a public group *Family team*, add a sharing rule "Matters where Practice Area = Family → share read/write with Family team", and keep the Paralegal profile without View All.
 
-**The annual trust examination.** Create a user with the *External Examiner* profile for the examiner. They can read matters and the trust ledger, see Setup and the audit log, export, and change nothing. Deactivate them afterwards.
+**The monthly trust reconciliation.** The Trust Accountant creates it after month end from the bank statement (Trust Reconciliations → New); a Principal checks it and sets it to Reconciled. Both hold *Manage Trust Account*; only a Principal (*Clear Conflicts*) signs off.
+
+**The annual trust examination.** Create a user with the *External Examiner* profile for the examiner. They can read matters, the trust ledger and the reconciliations, see Setup and the audit log, export, and change nothing. Deactivate them afterwards.
 
 **A solicitor needs to pay money out of trust.** They can't: only Principals and Trust Accountants hold *Manage Trust Account*. Ask one of them to post it, or give a senior solicitor a copy of the Solicitor profile with that permission added.
 

@@ -1,11 +1,14 @@
 """Loan Broker (Australia) industry pack: definition plus the rules that need code (plan v4, section 6).
 
-Rules (NCCP / Best Interests Duty): no credit assistance past fact find until the credit guide and privacy
-consent are recorded; an application is lodged with a lender only after the preliminary assessment and
-the BID record (requirements, products considered, why the recommendation is in the client's interests);
-lodging needs the Submit to Lender permission; assessment records are kept 7 years. LVR is calculated;
-settlement creates the expected upfront commission from the lender's rate; the commission ledger
-records clawbacks as negative amounts; settlement, approval-expiry, fixed-rate and review reminders.
+Rules (NCCP / Best Interests Duty): no credit assistance past fact find until the credit guide, privacy
+consent and (when the client pays a fee) the credit quote are recorded; the preliminary assessment needs a
+verified fact find, the BID record and repayments at the assessment rate (product rate plus the buffer)
+within the client's surplus; an application is lodged with a lender only with a current assessment (made
+within 90 days, 120 for a residential purchase), the credit proposal disclosure and the Submit to Lender
+permission; assessment records are kept 7 years. LVR and the LMI flag are calculated; settlement creates
+the expected upfront commission, and a discharge within the clawback period the expected clawback; the
+commission ledger records clawbacks as negative amounts; settlement, approval-expiry, fixed-rate and
+review reminders while the loan is live.
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ from app.engine.records import RecordService
 from app.engine.types import decimal_to_json, money, to_decimal
 from app.models import Record, RecordShare
 from app.packs import Pack, permission_key, register
-from app.packs.common import date_reminders, first_of, live
+from app.packs.common import date_reminders, first_of, live, unless
 from app.packs.loan_broker import definition as d
 from app.services import audit
 from app.services.audit import AuditAction
@@ -54,6 +57,24 @@ def _set(svc: RecordService, record: Record, values: dict[str, Any]) -> None:
 
 def _index(stage: Any) -> int:
     return d.STAGE_ORDER.index(stage) if stage in d.STAGE_ORDER else 0
+
+
+def assessment_valid_days(data: dict[str, Any]) -> int:
+    """How long a preliminary assessment supports credit assistance (NCCP s 115 and the regulations)."""
+    residential = data.get("purpose") in d.RESIDENTIAL_PURCHASES
+    return d.RESIDENTIAL_PURCHASE_DAYS if residential else d.ASSESSMENT_DAYS
+
+
+def _assessment_expired(data: dict[str, Any]) -> bool:
+    """A recorded assessment too old to apply to a lender on: it has to be made again first."""
+    assessed = data.get("preliminary_assessment_date")
+    if not data.get("bid_completed") or not assessed or _index(data.get("stage")) >= _index("Lodged"):
+        return False
+    try:
+        made = date.fromisoformat(str(assessed)[:10])
+    except ValueError:
+        return False
+    return made < local_today() - timedelta(days=assessment_valid_days(data))
 
 
 def _lvr(data: dict[str, Any]) -> None:
@@ -110,7 +131,12 @@ def loan_rules(change: Change) -> None:
     svc, data, old = change.svc, change.data, change.old
     _lvr(data)
     _serviceability(svc.db, data)
-    if any(change.is_changed(f) for f in BID_FIELDS) and old.get("bid_completed") and not svc.system:
+    if (
+        any(change.is_changed(f) for f in BID_FIELDS)
+        and old.get("bid_completed")
+        and not svc.system
+        and not _assessment_expired(old)  # an expired assessment is made again, BID record included
+    ):
         raise rule("The Best Interests Duty record is locked once the assessment is recorded.")
     if (
         old.get("stage") in d.FINAL_STAGES
@@ -167,6 +193,13 @@ def loan_rules(change: Change) -> None:
     if new_i >= _index("Lodged") and old_i < _index("Lodged"):
         if not data.get("bid_completed"):
             raise rule("Record the preliminary assessment and Best Interests Duty before lodging.", "stage")
+        if _assessment_expired(old):
+            made = data.get("preliminary_assessment_date")
+            raise rule(
+                f"The preliminary assessment was made on {made}, more than {assessment_valid_days(data)} "
+                "days ago: record it again before applying to the lender (NCCP s 115).",
+                "stage",
+            )
         if not data.get("lender"):
             raise rule("Choose the lender.", "lender")
         if not data.get("credit_proposal_date"):
@@ -255,7 +288,7 @@ def _expected_upfront(svc: RecordService, loan: Record) -> None:
     "record_assessment",
     "Record Preliminary Assessment",
     pack_key=K,
-    visible=lambda r: not r.data.get("bid_completed"),
+    visible=lambda r: not r.data.get("bid_completed") or _assessment_expired(r.data),
 )
 def record_assessment(svc: RecordService, loan: Record, payload: dict[str, Any]) -> dict[str, Any]:
     """Responsible lending: the assessment that the loan is not unsuitable, plus the BID record."""
@@ -447,17 +480,27 @@ def commission_locked(change: Change) -> None:
 # ------------------------------------------------------------------ reminders
 
 
+def _finished(r: Record) -> bool:
+    return r.data.get("stage") in d.FINAL_STAGES
+
+
+def _no_loan(r: Record) -> bool:
+    """Declined, or repaid or refinanced away: no fixed rate or rate review to talk to the client about."""
+    return r.data.get("stage") == "Declined" or bool(r.data.get("discharged_date"))
+
+
 def daily_reminders(db: Session, today: date | None = None) -> int:
     s = _settings(db)
     broker = first_of("broker")
     count = 0
-    for field, label, key, default in (
-        ("settlement_date", "Settlement", "settlement_reminder_days", [7, 1]),
-        ("approval_expiry", "Approval expires", "approval_expiry_reminder_days", [14]),
-        ("fixed_rate_expiry", "Fixed rate expires", "fixed_rate_reminder_days", [90, 30]),
-        ("rate_review_date", "Rate review", "rate_review_reminder_days", [7]),
+    for field, label, key, default, finished in (
+        ("settlement_date", "Settlement", "settlement_reminder_days", [7, 1], _finished),
+        ("approval_expiry", "Approval expires", "approval_expiry_reminder_days", [14], _finished),
+        ("fixed_rate_expiry", "Fixed rate expires", "fixed_rate_reminder_days", [90, 30], _no_loan),
+        ("rate_review_date", "Rate review", "rate_review_reminder_days", [7], _no_loan),
     ):
-        count += date_reminders(db, [("loan_application", field, label, broker)], s.get(key, default), today)
+        who = unless(broker, finished)
+        count += date_reminders(db, [("loan_application", field, label, who)], s.get(key, default), today)
     return count
 
 
@@ -475,7 +518,13 @@ PACK = register(
         custom_permissions={d.SUBMIT: "Submit to Lender", d.COMMISSIONS: "Manage Commissions"},
         daily_job=daily_reminders,
         key_dates=(
-            ("loan_application", "settlement_date", "Settlement", ("broker", "processor"), []),
+            (
+                "loan_application",
+                "settlement_date",
+                "Settlement",
+                ("broker", "processor"),
+                [{"field": "stage", "op": "not_equals", "value": "Declined"}],
+            ),
             (
                 "loan_application",
                 "approval_expiry",
@@ -483,7 +532,16 @@ PACK = register(
                 ("broker", "processor"),
                 [{"field": "stage", "op": "not_in", "value": ["Settled", "Declined"]}],
             ),
-            ("loan_application", "fixed_rate_expiry", "Fixed rate expires", ("broker",), []),
+            (
+                "loan_application",
+                "fixed_rate_expiry",
+                "Fixed rate expires",
+                ("broker",),
+                [
+                    {"field": "stage", "op": "not_equals", "value": "Declined"},
+                    {"field": "discharged_date", "op": "is_null"},
+                ],
+            ),
         ),
     )
 )

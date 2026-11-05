@@ -30,7 +30,7 @@ Tick each item and note the tester and date. Raise a defect for anything that fa
 - [ ] Create a custom object with an auto-number, a picklist and a lookup; add it to an app.
 - [ ] Rearrange the page layout; the record page follows it.
 - [ ] Delete a custom field and restore it within 15 days.
-- [ ] Install the Migration Agency pack; the Migration Practice app appears.
+- [ ] Install an industry pack from Setup → Industry Packs; its app appears.
 
 ## Sales
 - [ ] Create a lead, log a call, convert it (account, contact, opportunity); the call moves to the contact.
@@ -67,11 +67,71 @@ Tick each item and note the tester and date. Raise a defect for anything that fa
 - [ ] Set a retention policy for Leads; old leads move to the recycle bin after the nightly job.
 - [ ] Restore a deleted record from the recycle bin.
 
-## Migration Agency pack
-- [ ] Create a matter from a visa type; the checklist is generated.
-- [ ] The matter can't pass Service Agreement until the client signs the agreement in the portal.
-- [ ] Only users with Lodge Applications can lodge.
-- [ ] Client account: a withdrawal larger than the balance is refused; a transfer to office pays an issued invoice.
+## Profession workspaces (sign up one firm per profession)
+- [ ] The profession's app opens first, with its words (Clients, Matters / Engagements / Loan Applications),
+      enquiry question, role names and colour; the general Sales, Service, Marketing and Billing apps are hidden.
+- [ ] Setup → Settings → Practice Settings shows the profession's settings; a change is saved, validated
+      (e.g. a 7-digit tax agent number is refused) and recorded in the audit log.
+- [ ] Setup → Users asks for the profession's registration number (MARN, tax agent number, credit
+      representative number, practising certificate number) and refuses a badly formed one.
+- [ ] Issuing a tax invoice without the firm's ABN is refused with a message naming Company & Branding.
+- [ ] The calendar shows the profession's key dates in amber; **Only mine** narrows them.
+- [ ] A client e-mail (agreement or letter to sign, document reminder) arrives from the firm's name; with
+      no portal user, the sender gets a notification instead.
+- [ ] Staff never see a *Sign* action; the client signs in the portal.
+
+## Law firm
+- [ ] A matter with a matching party shows Potential Conflict; only a principal clears it, with notes.
+- [ ] Engaging needs the conflict cleared and costs disclosure (not for ≤ $750, pro bono or a commercial
+      client); the standard disclosure form is refused above $3,000.
+- [ ] A conveyancing matter can't be engaged until the client's identity is verified; a litigation matter
+      needs a limitation date.
+- [ ] Raising the estimate by 10% after disclosure sets Updated Disclosure Due and blocks billing until the
+      new disclosure date is recorded.
+- [ ] Invoice Unbilled Time and Invoice Fixed Fee create the right invoice; time becomes Billed and locked.
+- [ ] Trust: a cash payment out is refused; an overdraw is refused; a $10,000 cash receipt creates an
+      AUSTRAC task and accepts its report reference; other edits are refused.
+- [ ] Trust Statement prints with running balances.
+- [ ] Monthly reconciliation: the difference is calculated; a non-principal can't sign off; a principal
+      signs off at $0 and the record locks.
+- [ ] Closing is refused with unbilled time or money in trust.
+
+## Migration agency
+- [ ] A new agency has the starter visa types; a matter from a visa type gets its checklist and fees.
+- [ ] Sending an agreement needs the Consumer Guide ticked and the RMA's MARN; the agreement shows the agent
+      and MARN; the client is e-mailed.
+- [ ] The matter can't pass Service Agreement until the client signs (or a Practice Manager overrides
+      with a reason).
+- [ ] The client presses I've Uploaded This; the case officer is notified; Send Document Reminder lists
+      what's outstanding.
+- [ ] Lodging needs Lodge Applications and the TRN; it's refused after the lodge-by date, and for an
+      employer sponsored visa without the nomination TRN.
+- [ ] Further Information needs the information due date; a decision can't be recorded before lodging and
+      closes the matter.
+- [ ] Client account: a withdrawal larger than the balance is refused; a transfer to office pays only the
+      same client's issued invoice; the Client Account Statement prints.
+
+## Accounting practice
+- [ ] A typo in a TFN or ABN is refused.
+- [ ] A new FBT engagement gets the last FBT year and a 21 May due date; an individual return 31 October.
+- [ ] Sending a letter needs a tax agent number (the accountant's or the practice's); the letter shows it.
+- [ ] Work can't start before the letter is signed; a partner can record a paper signature.
+- [ ] The preparer can't sign off their own review; the reviewer (or a partner) can.
+- [ ] Lodging needs Lodge Returns, Identity Verified and (for a company) Agent Nominated.
+- [ ] An SMSF audit can't go to the person who prepared the fund's return that year.
+- [ ] Generate BAS Deadlines gives the standard dates, and the lodgment program dates once that's chosen in
+      Practice Settings (Q1 25 November; December monthly 21 February).
+
+## Loan broking
+- [ ] Past Fact Find needs the credit guide and consent, and a credit quote when there's a broker fee.
+- [ ] Record Preliminary Assessment needs a verified fact find, the BID fields, rate and term, and refuses a
+      loan whose repayments at the assessment rate exceed the surplus.
+- [ ] Changing the loan amount after the assessment means recording it again before lodging.
+- [ ] Lodging needs the credit proposal disclosure date and Submit to Lender, and an assessment made in the
+      last 90 days (120 for a home purchase); an expired one can be recorded again.
+- [ ] Settling creates the expected upfront commission; Record Discharge within the clawback period creates
+      the expected clawback.
+- [ ] A broker reads, but can't change, the commission on their own loans.
 
 ## Non-functional
 - [ ] Keyboard only: sign in, open a list, open a record, edit and save.

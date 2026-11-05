@@ -5,9 +5,9 @@ It follows a matter from first enquiry to closed file. For general features (lis
 reports) see the [general user guide](user-guide.md); for who can do what, see
 [Roles and permissions](roles-and-permissions.md).
 
-> The Legal Practice workspace supports your compliance obligations (conflicts, costs disclosure, trust
-> accounting). It doesn't replace professional judgement: confirm thresholds and procedures against your
-> law society's current guidance.
+> The Legal Practice workspace supports your obligations under the Legal Profession Uniform Law and the
+> Uniform General Rules (conflicts, costs disclosure, trust accounting). It doesn't replace professional
+> judgement: confirm thresholds and procedures against your law society's current guidance.
 
 **Contents**
 
@@ -22,30 +22,34 @@ reports) see the [general user guide](user-guide.md); for who can do what, see
 9. [Recording time](#9-recording-time)
 10. [Billing](#10-billing)
 11. [Trust accounting](#11-trust-accounting)
-12. [Court dates and limitation dates](#12-court-dates-and-limitation-dates)
-13. [Closing a matter](#13-closing-a-matter)
-14. [Clients in the portal](#14-clients-in-the-portal)
-15. [Reports and dashboard](#15-reports-and-dashboard)
-16. [Messages you may see and what to do](#16-messages-you-may-see-and-what-to-do)
-17. [Quick reference](#17-quick-reference)
+12. [Monthly trust reconciliation](#12-monthly-trust-reconciliation)
+13. [Court dates and limitation dates](#13-court-dates-and-limitation-dates)
+14. [Closing a matter](#14-closing-a-matter)
+15. [Clients in the portal](#15-clients-in-the-portal)
+16. [Reports and dashboard](#16-reports-and-dashboard)
+17. [Messages you may see and what to do](#17-messages-you-may-see-and-what-to-do)
+18. [Quick reference](#18-quick-reference)
 
 ---
 
 ## 1. Your workspace at a glance
 
-The **Legal Practice** app opens as your home page. Its tabs:
+The **Legal Practice** app opens as your home page. Its tabs (tabs that don't fit the screen are under
+**More**):
 
 | Tab | What's there |
 |---|---|
-| **Home** | Shortcuts (Open a matter, Record time, Trust ledger), your open matters, tasks, recent records and the practice dashboard's key charts. |
-| **Enquiries** | Prospective clients not yet engaged. |
+| **Home** | Shortcuts (Open a matter, Record time, Trust ledger), your matters, tasks, recent records and the practice dashboard's key charts. |
+| **Enquiries** | Prospective clients not yet engaged, with the area of law they need. |
 | **Clients** | People you act for (with date of birth and identity verification). |
 | **Organisations** | Companies and other entities (with ACN). |
 | **Matters** | Every file, numbered `LM-2026-0001`, `LM-2026-0002`… |
 | **Time Entries** | Time recorded in 6-minute units. |
 | **Trust Ledger** | Receipts, payments and transfers to office. |
+| **Trust Reconciliations** | The monthly reconciliation of the trust account (section 12). |
 | **Invoices** | Bills to clients. |
-| **Calendar**, **Reports**, **Dashboards** | Diary, the practice's reports and the Practice Dashboard. |
+| **Calendar** | Your events and tasks, plus **court dates** and **limitation dates** (amber). |
+| **Reports**, **Dashboards** | The practice's reports and the Practice Dashboard. |
 
 **A matter moves through six stages**, shown as a path across the top of the matter:
 
@@ -53,8 +57,12 @@ The **Legal Practice** app opens as your home page. Its tabs:
 Intake → Conflict Check → Engaged → Active → Settlement/Hearing → Closed
 ```
 
-The system won't let a matter reach **Engaged** until the conflict check is clear and costs disclosure is
-recorded, and won't let it **close** while money is held in trust.
+The system won't let a matter reach **Engaged** until the conflict check is clear, costs disclosure is
+recorded (where it's required), the client's identity is verified for conveyancing, and a limitation date
+is recorded for claims. It won't let a matter **close** while there is unbilled time or money in trust.
+
+"**My Matters**" (the list view and the home card) means matters you own **or** are the Responsible
+Solicitor or Supervising Principal on.
 
 ---
 
@@ -62,16 +70,36 @@ recorded, and won't let it **close** while money is held in trust.
 
 | Profile | Typical person | Can |
 |---|---|---|
-| **Principal** | Legal practitioner director, partner | Everything on every matter; **clear conflicts**; **write off time**; **trust ledger**; import/export; reassign files. |
+| **Principal** | Legal practitioner director, partner | Everything on every matter (including solicitors' matters); **clear conflicts**; **write off time**; **trust ledger**; **sign off trust reconciliations**; import/export; reassign files. |
 | **Solicitor** | Employed solicitor | Open and run their own matters; record time; add parties and court dates; raise invoices; read the trust ledger. |
 | **Paralegal** | Paralegal, law clerk | Work on matters shared with them; add parties and court dates; record time. |
-| **Trust Accountant** | Accounts / trust officer | **Trust ledger** (receipts, payments, transfers), invoices and payments; read every matter. |
-| **External Examiner** | Annual trust examiner | Read matters and the trust ledger; change nothing. |
+| **Trust Accountant** | Accounts / trust officer | **Trust ledger** (receipts, payments, transfers), **prepares trust reconciliations**, invoices and payments; reads every matter. |
+| **External Examiner** | Annual trust examiner | Reads matters, the trust ledger and reconciliations; changes nothing. |
+
+**Roles** (where someone sits, and so whose records they see) come named for a law firm:
+
+```
+Managing Principal
+├── Principal
+│   └── Senior Associate
+│       └── Solicitor
+├── Practice Manager
+│   └── Paralegal
+├── Business Development Manager
+│   └── Business Development Coordinator
+└── Finance Manager
+    └── Trust Accountant
+```
+
+Rename or rearrange them in **Setup → Roles**. A role you rename keeps your name.
 
 **Who sees a matter.** Matters are private. A matter is visible to its owner, the **Responsible Solicitor**
 and the **Supervising Principal** (they get read/write access automatically), anyone above them in the
 role hierarchy, and Principals, Trust Accountants and Examiners (who see all matters). Share a matter with
 anyone else from **⌄ More actions → Sharing**.
+
+**Practising certificate numbers.** Record each solicitor's practising certificate number on their user
+record (**Setup → Users**).
 
 ---
 
@@ -79,27 +107,41 @@ anyone else from **⌄ More actions → Sharing**.
 
 An administrator (Setup, left rail) should:
 
-1. **Company & Branding**: firm name, ABN, address and logo. They appear on invoices.
-2. **Users**: add each person with the right **profile** (table above) and a **role** under their
-   supervisor. Trust Accountants and Principals need their profiles for trust work.
-3. **Billing**: invoice numbering, payment terms and GST.
-4. **Import your clients** (Setup → Data → Import Data), so conflict searches cover your existing client
+1. **Company & Branding**: firm name, **ABN**, address and logo. They appear on invoices, and **an invoice
+   can't be issued until the ABN is entered** (a tax invoice must show it).
+2. **Users**: add each person with the right **profile** (table above), a **role** under their supervisor,
+   and their practising certificate number.
+3. **Practice Settings** (Setup → Settings → Practice Settings):
+
+   | Setting | Shipped value | What it does |
+   |---|---|---|
+   | Default hourly rate | $380 | Used when a matter has no rate of its own. |
+   | Costs disclosure threshold | $750 | Uniform Law s 174: no disclosure needed when costs are not likely to exceed this. |
+   | Uniform standard disclosure form limit | $3,000 | Above this, full written disclosure is required (s 174(5)). |
+   | Significant change in costs | 10% | An estimate rise, or billing past the estimate, by this much needs updated disclosure. |
+   | Significant cash transaction | $10,000 | Cash receipts of this or more create a task to report to AUSTRAC. |
+   | Identity verification required for | Property & Conveyancing | The client's identity must be verified before engaging. |
+   | Limitation date required for | Personal Injury, Litigation | The limitation date must be recorded before engaging. |
+   | Limitation / court date reminders | 90, 30, 7 / 7, 1 days | When reminders arrive. |
+
+4. **Billing**: invoice numbering, payment terms and GST.
+5. **Import your clients** (Setup → Data → Import Data), so conflict searches cover your existing client
    base from day one. Import past matters' parties too if you can: the conflict search looks at them.
-5. **Default hourly rate**: the practice default is **$380/hour**, used when a matter has no rate of its
-   own. Set each matter's rate on the matter. (Changing the practice default needs an administrator with
-   database access for now.)
 
 ---
 
 ## 4. From enquiry to client
 
-1. **Enquiries → New**: name, contact details, what it's about, source.
-2. Follow up from the enquiry's **Activity** panel (**Log a Call**, **New Task**, **New Event**).
+1. **Enquiries → New**: name, contact details, **Area of Law** (Family, Property & Conveyancing, Wills &
+   Estates…), **Source** (Web, Phone Enquiry, Client Referral, Professional Referral, Search Engine,
+   Walk-in…) and a description.
+2. Follow up from the enquiry's **Activity** panel (**Log a Call**, **New Task**, **New Event**). Status
+   moves New → Contacted → Follow-up → Qualified, or **Not Proceeding**.
 3. When you're taking them on, open the enquiry and choose **Convert**. The system checks for an existing
-   client with the same details, then creates the **Client** (and **Organisation** if they're a
-   business). The enquiry becomes read-only.
+   client with the same details, then creates the **Client** (and an **Organisation** only if they gave a
+   company). The enquiry becomes read-only.
 4. On the client, record **Date of Birth** and, once you've sighted ID, tick **Identity Verified** (the date
-   goes in **Identity Verified On**).
+   goes in **Identity Verified On**). Conveyancing matters can't be engaged without it.
 
 ---
 
@@ -116,10 +158,12 @@ From the client's **Related** tab (Matters → **New**) or **Matters → New**:
 | **Responsible Solicitor** | Defaults to you. Gets reminders and conflict alerts. |
 | **Supervising Principal** | Gets access to the matter automatically. |
 | **Court / Tribunal, Jurisdiction, Court File Number** | For litigation. |
-| **Limitation Date** | Triggers reminders 90, 30 and 7 days before. |
+| **Limitation Date** | Required before engaging on Personal Injury and Litigation matters (unless a court file number is recorded). Triggers reminders. |
 | **Billing Method** | Hourly (default), Fixed Fee, Conditional, Pro Bono. |
+| **Client Type** | Individual (default), or **Commercial or Government**: costs disclosure isn't required for those (s 170). |
 | **Hourly Rate** | Filled with the practice default for hourly matters; change it if needed. |
-| **Estimated Legal Costs** | Decides whether costs disclosure is required (section 7). |
+| **Agreed Fixed Fee** | For fixed-fee matters: what the client is invoiced. |
+| **Estimated Legal Costs** | Decides whether, and how, costs disclosure is required (section 7). |
 
 **When you save:**
 - the matter gets its number (`LM-YYYY-0000`);
@@ -170,22 +214,38 @@ matter is marked not cleared again until a Principal clears it.
 
 ## 7. Engaging: costs disclosure
 
-To move a matter to **Engaged** (or any later stage), two things must be true:
+To move a matter to **Engaged** (or any later stage):
 
 1. **The conflict check is clear.** Otherwise: *"Clear the conflict check before engaging on this
    matter."*
-2. **Costs disclosure has been given** (Legal Profession Uniform Law s 174), unless:
-   - the **Estimated Legal Costs** are **$750 or less**; or
-   - the **Billing Method** is **Pro Bono**.
+2. **Costs disclosure has been given** where the Uniform Law requires it:
 
-   Otherwise: *"Give the client costs disclosure (Legal Profession Uniform Law s 174) before work starts,
-   or record an estimate of $750 or less."*
+   | Situation | Disclosure |
+   |---|---|
+   | Pro bono, or a **Commercial or Government** client (s 170) | Not required. |
+   | Estimated legal costs **$750 or less** | Not required. |
+   | Estimated costs up to **$3,000** | The **Uniform Standard Disclosure Form** may be used (s 174(5)). |
+   | Estimated costs **over $3,000**, or no estimate | **Full Written Disclosure** (s 174). |
 
-   Tick **Costs Disclosure Provided** on the matter. **Costs Disclosure Date** fills in with today if you
-   leave it blank. If there's no estimate, disclosure is required.
+   Tick **Costs Disclosure Provided** and choose **Disclosure Given As**. If you leave the method blank it
+   is recorded as Full Written Disclosure. **Costs Disclosure Date** fills in with today if you leave it
+   blank. Choosing the standard form above $3,000 is refused: *"The uniform standard disclosure form is
+   only for costs up to $3,000; give full written disclosure (Uniform Law s 174)."*
+3. **Conveyancing** (or another area set in Practice Settings): the client's identity is verified.
+   Otherwise: *"Verify [client]'s identity (VOI) before acting on a Property & Conveyancing matter: tick
+   Identity Verified on the client."*
+4. **Personal Injury and Litigation** (or other areas set): a **Limitation Date** is recorded, or a court
+   file number once proceedings are filed. Otherwise: *"Record the limitation date before engaging on a
+   Litigation matter (or the court file number once proceedings are filed)."*
 
 Then select **Engaged** on the stage path and choose **Mark as Current Stage**. Continue to **Active**
 when work is under way and **Settlement/Hearing** as the matter nears its end.
+
+**When the estimate changes (s 174(1)(b)).** If you raise the **Estimated Legal Costs** by 10% or more
+after disclosure, the matter is flagged **Updated Disclosure Due** and the Responsible Solicitor is
+notified. Give the client the revised estimate in writing, then change the **Costs Disclosure Date** to the
+date you did: the flag clears. Until then the matter can't be billed. The list **Costs Disclosure Updates
+Due** shows every flagged matter.
 
 ---
 
@@ -212,7 +272,7 @@ shortcut on Home.
 | Field | Notes |
 |---|---|
 | **Matter** | Required. You can't record time on a closed matter. |
-| **Date** | Defaults to today. |
+| **Date** | Defaults to today (the firm's local date). |
 | **Units (6 min)** | 1 unit = 6 minutes (1–240). 1.5 hours = 15 units. |
 | **Activity** | Attendance, Correspondence, Drafting, Research, Court Appearance, Travel, Review, Other. |
 | **Narrative** | Required: what was done. It appears on the invoice. |
@@ -228,22 +288,30 @@ defaults to you. Unbilled billable time is totalled on the matter as **Unbilled 
 The entry becomes *Written Off*, drops out of WIP, and the write-off is audited. Others see *"Only a
 principal can write off time."*
 
-Once an entry is **Billed** or **Written Off** it can't be changed.
+Once an entry is **Billed** or **Written Off** it can't be changed, and it shows without an Edit button.
 
 ---
 
 ## 10. Billing
 
-**From time.** On the matter, choose **Invoice Unbilled Time** (shown when there's WIP). It:
-- creates a **draft invoice** to the billing organisation (or the client; if the client has no
-  organisation, one is created in their name);
+**Hourly matters: Invoice Unbilled Time** (on the matter when there's WIP). It:
+- creates a **draft invoice** to the billing organisation (or the client: an individual is billed through
+  one billing record in their name, created once and reused on their later matters);
 - adds **one line per unbilled billable entry**, in date order: the date and narrative, hours × rate;
 - marks those entries **Billed** and links them to the invoice.
 
-Check the draft, add any disbursements or fixed-fee lines, then **Issue Invoice**. Use **PDF** on the
-invoice to download it. **Void Invoice** cancels an issued invoice.
+**Fixed-fee matters: Invoice Fixed Fee.** Enter the **Agreed Fixed Fee** on the matter, then choose
+**Invoice Fixed Fee**: one line for the fee, and any time recorded is marked billed (absorbed). It can be
+used once: *"The fixed fee has already been invoiced on this matter."*
 
-**Fixed-fee matters**: create the invoice yourself under **Invoices → New** and link the matter.
+**Billing stays within the disclosed estimate.** If a bill would take the matter's invoices more than 10%
+past the **Estimated Legal Costs**, it's refused: *"This bill takes the matter to $…, past the $…
+estimate disclosed to the client. Disclose the revised estimate (Uniform Law s 174(1)(b)) and update it on
+the matter first."* Raise the estimate, disclose it, record the new disclosure date, then bill.
+
+Check the draft, add any disbursements, then **Issue Invoice** (the practice's ABN must be set up). Use
+**PDF** on the invoice for the tax invoice. **Void Invoice** cancels an issued invoice. **Billed to Date**
+on the matter totals the issued invoices (ex GST).
 
 **Payments** are recorded on the invoice. A transfer from trust records the payment for you (section 11).
 Invoice status moves Draft → Issued → Partially Paid → Paid.
@@ -260,77 +328,122 @@ trust money; others see *"Recording trust money needs the Manage Trust Account p
 | Type | Use for | Rules |
 |---|---|---|
 | **Receipt** | Money received into trust for the matter. | Positive amount. |
-| **Payment** | Money paid out of trust for the matter (settlement monies, disbursements). | Can't take the matter's trust balance below zero. |
-| **Transfer to Office** | Paying your own invoice from trust. | Needs an **issued, unpaid invoice on the same matter**; can't exceed the invoice's balance due. Records the payment on the invoice. |
+| **Payment** | Money paid out of trust for the matter (settlement monies, disbursements). | Can't take the matter's trust balance below zero; **EFT, BPAY or cheque only**. |
+| **Transfer to Office** | Paying your own invoice from trust. | Needs an **issued, unpaid invoice on the same matter**; can't exceed the invoice's balance due; **EFT, BPAY or cheque only**. Records the payment on the invoice. |
 
 Also enter: **Date**, **Paid By / Paid To**, **Method** (EFT, Cheque, BPAY, Cash, Card), **Reference** and
-**Purpose** (required).
+**Purpose** (required). Paying out of trust in cash or by card is refused: *"Trust money is paid out only by
+EFT, BPAY or cheque, never in cash (Legal Profession Uniform General Rules)."*
 
 The system fills in the **Client**, a receipt/payment number (`TR-000000`), the **Matter Trust Balance
 After** each entry, and the matter's **Trust Balance**. It locks the matter while posting, so two people
 paying out at once can't overdraw it.
 
+**Significant cash transactions.** A **cash receipt of $10,000 or more** (the threshold in Practice
+Settings) creates a high-priority task for the person who receipted it: *"Report significant cash transaction TR-… to AUSTRAC"*, due in three weeks
+(the report is due within 15 business days). When it's lodged, open the receipt and enter the **AUSTRAC
+Report Reference**: that is the only change allowed on a trust record. The list **Cash Receipts
+(AUSTRAC)** shows them all.
+
 **The ledger can't be edited or deleted**, by anyone. To correct a mistake, record a correcting entry
 (for example a receipt reversing a wrong payment) and explain it in **Purpose**: *"Trust records can't be
 changed or deleted; record a correcting transaction."*
 
-**Statements and examination.** The **Trust Ledger** list, filtered by matter, shows every entry with the
-running balance. The report *Trust Balances by Matter* totals them. A formal per-matter statement is
-available through the API for the trust accountant or examiner (ask your administrator); there's no
-on-screen statement yet. Give your external examiner the **External Examiner** profile: read-only access
-to matters and the ledger.
+**Trust statement.** On a matter, **⌄ More actions → Trust Statement** shows every receipt and payment
+with the running balance and the balance held. Use **Print or save as PDF** to give it to the client (at
+the end of the matter, or when they ask). Give your external examiner the **External Examiner** profile:
+read-only access to matters, the ledger and reconciliations.
 
 ---
 
-## 12. Court dates and limitation dates
+## 12. Monthly trust reconciliation
+
+The trust account is reconciled every month, within 15 working days after the month ends (Uniform General
+Rules). **Trust Reconciliations → New**:
+
+| Field | Notes |
+|---|---|
+| **Month Ending** | The last day of the month (e.g. 31 October 2026). Any other date is refused: *"Choose the last day of the month being reconciled."* |
+| **Trust Bank Statement Balance** | From the bank statement at month end. |
+| **Unpresented / Uncleared Items** | Unpresented cheques (negative) and deposits not yet credited (positive). Explain them in **Notes and Explanations**. |
+
+The system works out the **Total of Matter Ledgers** (every trust entry up to the month end) and the
+**Difference** (bank balance + uncleared items − ledgers). It's named *"Trust reconciliation October
+2026"*; each month can be reconciled once.
+
+**Signing off.** When the difference is $0, a **Principal** sets **Status** to **Reconciled**. Signed Off
+By and Signed Off are recorded and the reconciliation is locked. Typically the Trust Accountant prepares it
+and a Principal signs it off.
+
+| Message | Meaning |
+|---|---|
+| *The trust account doesn't reconcile (difference $…)…* | Find the error (a missing receipt, a wrong amount) and correct the ledger, or record the uncleared item. |
+| *A principal signs off the trust reconciliation.* | Ask a Principal to set Reconciled. |
+| *A signed-off reconciliation can't be changed…* | Correct the ledger and reconcile the next month. |
+
+**Reminders.** From the 10th of each month, if last month isn't reconciled yet, Principals and Trust
+Accountants get one notification (*"Trust reconciliation due: October 2026"*).
+
+---
+
+## 13. Court dates and limitation dates
 
 **Court dates**: on the matter, **Related → Court Dates → New**: **Type** (Mention, Directions, Hearing,
 Trial, Mediation, Conciliation, Judgment, Filing Deadline), **Date and Time**, **Court**, **Courtroom /
-Registry**, **Appearing**, **Outcome**. The matter's **Next Court Date** updates itself. Tick **Visible to
-Client** to show the date in the client portal (on by default).
+Registry**, **Appearing**, **Outcome**. The court date is named from its type and local date ("Hearing
+2026-03-12"). The matter's **Next Court Date** updates itself. Tick **Visible to Client** to show the date
+in the client portal (on by default).
+
+**The calendar** shows court dates and open matters' limitation dates in amber alongside your events and
+tasks. With **Only mine** ticked you see those where you're appearing, responsible or supervising.
 
 **Reminders** arrive in the bell menu:
 
 | What | When | To |
 |---|---|---|
-| Limitation date | 90, 30 and 7 days before | Responsible Solicitor (else the matter's owner) |
+| Limitation date | 90, 30 and 7 days before (until the matter is closed) | Responsible Solicitor (else the matter's owner) |
 | Court date | 7 days and 1 day before | The person **Appearing** (else the court date's owner) |
 
-The **Limitation Dates (90 days)** list view and report show what's coming up across the practice.
-Reminders are a safety net, not a substitute for your diary system.
+Change the lead times in Practice Settings. The **Limitation Dates (90 days)** list view and report show
+what's coming up across the practice. Reminders are a safety net, not a substitute for your diary system.
 
 ---
 
-## 13. Closing a matter
+## 14. Closing a matter
 
-1. Bill any remaining WIP or write it off.
-2. **Bring the trust balance to $0**: pay out or transfer the remaining funds. Otherwise: *"Account for
-   the $… held in trust before closing the matter."*
+1. **Bill or write off the unbilled time.** Otherwise: *"Bill or write off the unbilled time before
+   closing the matter."*
+2. **Bring the trust balance to $0**: pay out or transfer the remaining funds, and give the client a
+   final trust statement. Otherwise: *"Account for the $… held in trust before closing the matter."*
 3. Select **Closed** on the stage path (or set Status to Closed). The **Closed** date is set and the
    matter's stage and status both become Closed. No more time can be recorded on it.
 
 **Retention.** Matters with time or trust records can't be deleted: *"Matters with time or trust records
-must be kept (7-year retention)."*
+must be kept (7-year retention)."* A client with trust transactions from the last 7 years can't have their
+personal data erased either.
 
 ---
 
-## 14. Clients in the portal
+## 15. Clients in the portal
 
-Invite a client from their record: **⌄ More actions → Invite to Customer Portal**. Once signed in they see:
-- their matters: stage and key dates. They don't see rates, WIP, the supervising principal, conflict
-  status or the internal description;
+Invite a client from their record: **⌄ More actions → Invite to Client Portal**. The invitation e-mail
+comes from your firm's name. Once signed in they see:
+- their matters: stage and key dates. They don't see rates, WIP, billed-to-date, the supervising
+  principal, conflict status, disclosure flags or the internal description;
 - court dates marked **Visible to Client**;
-- their invoices;
-- a way to send you requests and messages.
+- their invoices (and tax invoice PDFs);
+- **New Client Request** to send you a question or request, and a conversation and files area on each
+  matter.
 
 ---
 
-## 15. Reports and dashboard
+## 16. Reports and dashboard
 
 **Practice Dashboard** (also summarised on Home): open matters by stage, practice areas, work in progress,
 billable hours this month and limitation dates.
 
-**Reports** (Reports tab → *Legal Practice Reports*):
+**Reports** (Reports tab → *Legal Practice Reports*; sales, case and campaign reports aren't shown in a law
+firm):
 
 | Report | Shows |
 |---|---|
@@ -341,18 +454,27 @@ billable hours this month and limitation dates.
 | Trust Balances by Matter | Net trust held per matter. |
 | Limitation Dates (next 90 days) | Upcoming limitation dates with the responsible solicitor. |
 | Solicitor Workload | Open matters per responsible solicitor. |
+| Aged Receivables, Revenue by Month | Unpaid invoices by age; invoiced revenue. |
 
 **Subscribe** to a report to get it by e-mail daily, weekly or monthly (once e-mail is set up).
 
 ---
 
-## 16. Messages you may see and what to do
+## 17. Messages you may see and what to do
 
 | Message | What to do |
 |---|---|
 | *New matters start at Intake.* | Create the matter without choosing a later stage. |
 | *Clear the conflict check before engaging on this matter.* | Open the matter's conflict check; if it found matches, a Principal must clear it with notes (section 6). |
-| *Give the client costs disclosure (Legal Profession Uniform Law s 174)…* | Tick **Costs Disclosure Provided**, or record an estimate of $750 or less, or mark the matter Pro Bono. |
+| *Give the client costs disclosure (Legal Profession Uniform Law s 174)…* | Tick **Costs Disclosure Provided** (and the method), or record an estimate of $750 or less, mark the client Commercial or Government, or mark the matter Pro Bono. |
+| *The uniform standard disclosure form is only for costs up to $3,000…* | Give full written disclosure and choose **Full Written Disclosure**. |
+| *Verify [client]'s identity (VOI) before acting on a … matter…* | Sight ID and tick **Identity Verified** on the client. |
+| *Record the limitation date before engaging on a … matter…* | Enter the **Limitation Date** (or the court file number if proceedings are filed). |
+| *Give the client updated costs disclosure first…* | Disclose the revised estimate in writing, then change the **Costs Disclosure Date**. |
+| *This bill takes the matter to $…, past the $… estimate…* | Raise the estimate, disclose it, record the disclosure date, then bill. |
+| *This is a fixed-fee matter: use Invoice Fixed Fee…* | Bill the agreed fee with **Invoice Fixed Fee**. |
+| *The fixed fee has already been invoiced on this matter.* | Nothing more to bill; add disbursements to an invoice yourself. |
+| *Add the practice's ABN in Setup → Company & Branding before issuing tax invoices.* | Enter the ABN there (it must be a valid ABN). |
 | *Only a principal can clear a check that found matches.* | Ask a Principal to review and clear it. |
 | *Record why the matches are not a conflict (or the waiver).* | Fill in **Clearance Notes / Waiver** before setting Clear. |
 | *Time can't be recorded on a closed matter.* | Record it on an open matter, or ask a Principal whether to reopen. |
@@ -361,29 +483,35 @@ billable hours this month and limitation dates.
 | *Only a principal can write off time.* | Ask a Principal. |
 | *There is no unbilled billable time on this matter.* | Nothing to bill: check the entries are Billable and Unbilled. |
 | *Recording trust money needs the Manage Trust Account permission.* | Ask a Principal or Trust Accountant to post it. |
+| *Trust money is paid out only by EFT, BPAY or cheque…* | Choose EFT, BPAY or Cheque as the method. |
 | *Trust money can't be overdrawn (available on this matter: $…).* | Reduce the amount or receipt more funds first. |
 | *Transfers to office need an issued, unpaid invoice on this matter.* | Issue the invoice first, and link the one for this matter. |
 | *The transfer is more than the invoice's balance due.* | Transfer no more than what's owing. |
 | *Trust records can't be changed or deleted; record a correcting transaction.* | Post a correcting entry and explain it in Purpose. |
+| *Bill or write off the unbilled time before closing the matter.* | Invoice the WIP or have a Principal write it off. |
 | *Account for the $… held in trust before closing the matter.* | Pay out or transfer the balance, then close. |
 | *Matters with time or trust records must be kept (7-year retention).* | Close the matter instead of deleting it. |
+| *… isn't available for this record now.* | The action doesn't apply to the record as it stands (for example billing a matter with nothing to bill). Refresh the page. |
 
 ---
 
-## 17. Quick reference
+## 18. Quick reference
 
 ```
 Enquiry ──Convert──► Client ──New matter──► Matter (Intake)
                                                │  conflict check runs automatically
                                                ▼
                                          Conflict Check ── matches? ── Principal clears with notes
-                                               │ clear + costs disclosure (or ≤ $750 / pro bono)
+                                               │ clear + costs disclosure (where required)
+                                               │ + VOI (conveyancing) + limitation date (claims)
                                                ▼
                                             Engaged ► Active ► Settlement/Hearing
                                                │
-              time entries (6-min units) ──► WIP ──Invoice Unbilled Time──► Invoice ──Issue──► Paid
-              trust: Receipt / Payment / Transfer to Office (issued invoice, same matter)
-                                               │ trust balance $0
+   time (6-min units) ──► WIP ──Invoice Unbilled Time / Invoice Fixed Fee──► Invoice ──Issue──► Paid
+   (within the disclosed estimate; estimate up 10%+ → Updated Disclosure Due)
+   trust: Receipt / Payment / Transfer to Office (EFT, BPAY, cheque; issued invoice, same matter)
+   every month: Trust Reconciliation (balances to $0) → Principal signs off
+                                               │ WIP billed + trust balance $0
                                                ▼
                                              Closed (kept 7 years if time or trust records exist)
 ```
@@ -393,11 +521,16 @@ Enquiry ──Convert──► Client ──New matter──► Matter (Intake)
 | Open a file | Client → Related → Matters → New |
 | See possible conflicts | Matter → Related → Conflict Checks |
 | Clear a conflict (Principal) | Conflict check → notes → Result: Clear |
-| Engage | Tick Costs Disclosure Provided → stage path → Engaged |
+| Engage | Tick Costs Disclosure Provided (+ method) → stage path → Engaged |
+| Record a revised estimate | Change Estimated Legal Costs → disclose → change Costs Disclosure Date |
 | Record time | Home → Record time, or Time Entries → New |
 | Bill WIP | Matter → Invoice Unbilled Time → check draft → Issue Invoice |
+| Bill a fixed fee | Matter → Invoice Fixed Fee → Issue Invoice |
 | Receive money into trust | Trust Ledger → New → Receipt |
 | Pay my invoice from trust | Issue invoice → Trust Ledger → New → Transfer to Office → choose the invoice |
+| Give a client their trust statement | Matter → ⌄ More actions → Trust Statement → Print or save as PDF |
+| Reconcile the trust account | Trust Reconciliations → New → month end and bank balance → Principal: Reconciled |
 | Add a hearing | Matter → Related → Court Dates → New |
-| Close the file | Trust to $0 → stage path → Closed |
-| Give a client access | Client → ⌄ More actions → Invite to Customer Portal |
+| Close the file | Bill or write off WIP → trust to $0 → stage path → Closed |
+| Give a client access | Client → ⌄ More actions → Invite to Client Portal |
+| Change rates and thresholds | Setup → Practice Settings |

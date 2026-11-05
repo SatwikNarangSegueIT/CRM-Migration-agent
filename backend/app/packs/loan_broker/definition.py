@@ -1,4 +1,4 @@
-"""Loan Broker (Australia) pack, version 1.0.0 (plan v4, section 6).
+"""Loan Broker (Australia) pack (plan v4, section 6; the version is VERSION below).
 
 Loan applications from enquiry to settlement, lender panel, fact finds, commissions (upfront, trail,
 clawback) and NCCP / Best Interests Duty records. The pack supports compliance; the licensee confirms
@@ -40,6 +40,11 @@ PURPOSES: Final = [
     "Purchase - Owner Occupied", "Purchase - Investment", "Refinance", "Construction", "Equity Release",
     "First Home Buyer", "Commercial", "Car / Asset Finance", "Personal",
 ]  # fmt: skip
+# NCCP s 115: the preliminary assessment is made within 90 days before the credit assistance; the
+# regulations allow 120 days for secured credit to buy residential property.
+ASSESSMENT_DAYS: Final = 90
+RESIDENTIAL_PURCHASE_DAYS: Final = 120
+RESIDENTIAL_PURCHASES: Final = {"Purchase - Owner Occupied", "Purchase - Investment", "First Home Buyer"}
 
 LOAN: Final[dict[str, Any]] = {
     "api_name": "loan_application", "label": "Loan Application", "plural_label": "Loan Applications", "icon": "home",

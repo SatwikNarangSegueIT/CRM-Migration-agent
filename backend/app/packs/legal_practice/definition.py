@@ -1,4 +1,4 @@
-"""Legal Practice (Australia) pack, version 1.0.0 (plan v4, section 6).
+"""Legal Practice (Australia) pack (plan v4, section 6; the version is VERSION below).
 
 Matters, parties, conflict checks, time recording in 6-minute units, court dates, trust accounting and
 costs disclosure under the Legal Profession Uniform Law. The pack supports compliance; the principal

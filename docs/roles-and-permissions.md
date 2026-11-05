@@ -104,15 +104,23 @@ CEO
     └── Finance Officer
 ```
 
-The person who signs up a firm is placed at **CEO**. The default names are generic; rename them in
-**Setup → Roles** to match your firm, for example:
+The person who signs up a firm is placed at the top of the tree. A profession's workspace names the roles
+for the profession when it's set up (a role an administrator has already renamed is left alone):
 
-| Law firm | Migration agency | Accounting practice | Loan broking |
-|---|---|---|---|
-| Managing Partner | Principal | Managing Partner | Principal Broker |
-| └ Senior Associate | └ Senior RMA | └ Client Manager | └ Senior Broker |
-| &nbsp;&nbsp;└ Solicitor | &nbsp;&nbsp;└ RMA | &nbsp;&nbsp;└ Accountant | &nbsp;&nbsp;└ Broker |
-| &nbsp;&nbsp;&nbsp;&nbsp;└ Paralegal | &nbsp;&nbsp;&nbsp;&nbsp;└ Case Officer | &nbsp;&nbsp;&nbsp;&nbsp;└ Bookkeeper | &nbsp;&nbsp;&nbsp;&nbsp;└ Loan Processor |
+| Starting role | Law firm | Migration agency | Accounting practice | Loan broking |
+|---|---|---|---|---|
+| CEO | Managing Principal | Principal | Managing Partner | Principal Broker |
+| └ Sales Director | Principal | Practice Manager | Partner | Broking Manager |
+| &nbsp;&nbsp;└ Sales Manager | Senior Associate | Senior Migration Agent | Client Manager | Senior Broker |
+| &nbsp;&nbsp;&nbsp;&nbsp;└ Sales Representative | Solicitor | Registered Migration Agent | Accountant | Broker |
+| └ Service Manager | Practice Manager | Case Manager | Bookkeeping Manager | Processing Manager |
+| &nbsp;&nbsp;└ Service Agent | Paralegal | Case Officer | Bookkeeper | Loan Processor |
+| └ Marketing Manager | Business Development Manager | Client Services Manager | Client Services Manager | Marketing Manager |
+| &nbsp;&nbsp;└ Marketing User | Business Development Coordinator | Intake Consultant | Client Services Coordinator | Marketing Coordinator |
+| └ Finance Manager | Finance Manager | Accounts Manager | Practice Manager | Finance Manager |
+| &nbsp;&nbsp;└ Finance Officer | Trust Accountant | Accounts Officer | Practice Administrator | Commissions Administrator |
+
+Rename, add or rearrange roles in **Setup → Roles** to match your firm.
 
 **Profile vs role.** The profile is *what kind of work* (a Solicitor can create time entries). The role is
 *where they sit* (a Senior Associate sees the matters of the solicitors who report to them). Two people
@@ -137,7 +145,7 @@ Defaults in every workspace:
 
 | Private | Public Read Only | Controlled by parent |
 |---|---|---|
-| Enquiries (leads), Opportunities, Cases, Quotes, Invoices, E-mail sends, Reports, Dashboards, **all matters / engagements / loan applications**, time entries, trust and client-account ledgers, lodgement deadlines, commissions | Clients and Organisations (contacts and accounts), Campaigns, Products, Price books, Templates, Segments, Tax rates, Visa types, Lenders | Line items, Payments, Consent, Tasks, Events, Notes, Files, Parties, Conflict checks, Court dates, Applicants, Checklist items, Service agreements, Engagement letters, Document requests, Fact finds |
+| Enquiries (leads), Opportunities, Client Requests (cases), Quotes, Invoices, E-mail sends, Reports, Dashboards, **all matters / engagements / loan applications**, time entries, trust and client-account ledgers, lodgement deadlines, commissions | Clients and Organisations (contacts and accounts), Campaigns, Products, Price books, Templates, Segments, Tax rates, Visa types, Lenders, Trust reconciliations | Line items, Payments, Consent, Tasks, Events, Notes, Files, Parties, Conflict checks, Court dates, Applicants, Checklist items, Service agreements, Engagement letters, Document requests, Fact finds |
 
 Client confidentiality is the reason the main work records are private: a solicitor doesn't see another
 solicitor's matter unless they're above them, it's shared, or their profile has View All.
@@ -151,8 +159,13 @@ solicitor's matter unless they're above them, it's shared, or their profile has 
 - **Queues** hold unassigned work (for example new cases) for a group to pick up.
 - **Manual sharing**: on any record, open the **⌄ More actions** menu → **Sharing** → add a person or group
   with Read or Read/Write.
-- **Team fields share automatically.** In a migration agency, the *Case Officer* and *Responsible RMA* on a
-  matter get read/write access to it as soon as they're set, and lose it when they're changed.
+- **Team fields share automatically.** The people named on a work record get read/write access to it as
+  soon as they're set, and lose it when they're changed: the *Responsible Solicitor* and *Supervising
+  Principal* on a matter (law firm), the *Responsible RMA* and *Case Officer* (migration agency), the
+  *Responsible Accountant* and *Reviewer* on an engagement, and the *Client Manager* on a client
+  (accounting practice), the *Broker* and *Loan Processor* on an application (loan broking). A broker also
+  gets read access to the commission on their own loans. **My …** list views include the records you're
+  named on.
 
 ### Owner
 
@@ -178,6 +191,11 @@ Sensitive identifiers are encrypted in the database and hidden unless a profile 
 Fields filled in by the system (matter numbers, balances, lodgement dates, signatures) are read-only for
 everyone.
 
+**Locked records.** Some records can't change once they're final, whatever the profile: signed service
+agreements and engagement letters, billed or written-off time, trust and client-account entries (a cash
+receipt stays open only for its AUSTRAC report reference) and signed-off trust reconciliations. They show
+without Edit or Delete; corrections are new records.
+
 ---
 
 ## Permissions reference
@@ -187,11 +205,11 @@ everyone.
 | Permission | Allows |
 |---|---|
 | Manage Users | Invite, deactivate and unlock users; reset sign-in and two-step verification; assign profiles and roles. |
-| Customize Application | Object Manager (fields, layouts, validation), App Manager, company and branding settings. |
+| Customize Application | Object Manager (fields, layouts, validation), App Manager, company and branding settings, and changing Practice Settings. |
 | Manage Profiles & Sharing | Profiles, roles, sharing defaults and rules, groups and queues. |
 | Manage Billing Settings | Invoice numbering, payment terms and tax rates. |
 | Manage Industry Packs | Install another practice area into the workspace. |
-| View Setup | Read-only access to Setup (useful for auditors and examiners). |
+| View Setup | Read-only access to Setup, including Practice Settings (useful for auditors and examiners). |
 | View Audit Log | The log of sign-ins, changes, exports and permission changes. |
 | Import Data | CSV import into any record type the profile can create. |
 | Export Data | CSV export from lists and reports. |
@@ -205,13 +223,13 @@ everyone.
 
 | Profession | Permission | Guards |
 |---|---|---|
-| Law firm | **Clear Conflicts** | Clearing a conflict check that found matches (with notes, audited). |
-| Law firm | **Manage Trust Account** | Recording receipts, payments and transfers in the trust ledger. |
+| Law firm | **Clear Conflicts** | Clearing a conflict check that found matches (with notes, audited); writing off time; signing off the monthly trust reconciliation. |
+| Law firm | **Manage Trust Account** | Recording receipts, payments and transfers in the trust ledger; preparing the monthly trust reconciliation. |
 | Migration agency | **Lodge Applications** | Moving a matter to Lodged or beyond, the *Lodge Application* action, recording the decision. |
 | Migration agency | **Override Agreement Gate** | Letting a matter proceed without a signed service agreement (reason required, audited). |
-| Accounting practice | **Lodge Returns** (registered tax agent) | Moving an engagement to Lodged; signing off review in place of the reviewer. |
+| Accounting practice | **Lodge Returns** (registered tax agent) | Moving a return, BAS, IAS or FBT engagement to Lodged (once the client's identity is verified and, for a business, the practice is its nominated agent). |
 | Loan broking | **Submit to Lender** | Moving an application to Lodged with a lender. |
-| Loan broking | **Manage Commissions** | Recording and changing entries in the commission ledger. |
+| Loan broking | **Manage Commissions** | Recording and changing entries in the commission ledger, including the expected commissions and clawbacks the system creates. |
 
 ---
 
@@ -223,51 +241,90 @@ on) remain available for firms that use the general apps.
 
 ### Law firm
 
-| Profile | Based on | Matters | Parties, Court dates | Conflict checks | Time entries | Trust ledger | Invoices | Clients & Organisations | Extra permissions |
-|---|---|---|---|---|---|---|---|---|---|
-| **Principal** | Sales Manager | RCED VA | RCED VA | RCED VA | RCED VA | RC VA | RCE VA | RCED VA | Clear Conflicts, Manage Trust Account, Import, Export, Transfer Records, Portal Users, Public Reports |
-| **Solicitor** | Sales Representative | RCE | RCED | RCE | RCE | R | RCE | RCE | Portal Users |
-| **Paralegal** | Service Agent | RE | RCED | RC | RCE | - | R | RCE / RE | - |
-| **Trust Accountant** | Finance | R VA | - | - | R VA | RC VA | RCE VA MA | R | Manage Trust Account, Import, Export, Billing Settings, Public Reports |
-| **External Examiner** | Read Only | R VA | R VA | R VA | R VA | R VA | R VA | R VA | View Setup, View Audit Log, Export |
+| Profile | Based on | Matters | Parties, Court dates | Conflict checks | Time entries | Trust ledger | Trust reconciliations | Invoices | Clients & Organisations | Extra permissions |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **Principal** | Sales Manager | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | RC VA | RCE VA MA | RCE VA MA | RCED VA MA | Clear Conflicts, Manage Trust Account, Import, Export, Transfer Records, Portal Users, Public Reports |
+| **Solicitor** | Sales Representative | RCE | RCED | RCE | RCE | R | - | RCE | RCE | Portal Users |
+| **Paralegal** | Service Agent | RE | RCED | RC | RCE | - | - | R | RCE / RE | - |
+| **Trust Accountant** | Finance | R VA | - | - | R VA | RC VA | RCE VA | RCE VA MA | R | Manage Trust Account, Import, Export, Billing Settings, Public Reports |
+| **External Examiner** | Read Only | R VA | R VA | R VA | R VA | R VA | R VA | R VA | R VA | View Setup, View Audit Log, Export |
 
 The trust ledger is append-only for everyone: there is no edit or delete, corrections are new entries.
+
+**Good to know**
+
+- A principal can update any solicitor's matters, time and invoices (Modify All), for example to take over a file.
+- "My Matters" and the home page list the matters you're the responsible solicitor or supervising principal on, not only the ones you created.
+- The monthly trust reconciliation is prepared by a Trust Accountant (or Principal) and signed off by a Principal; a signed-off month can't be changed.
+- Records that can no longer change (billed or written-off time, trust ledger entries, signed-off reconciliations) show without Edit or Delete.
+- Billing an individual client creates one billing organisation in their name, linked to them and reused on their later matters.
 
 ### Migration agency
 
 | Profile | Based on | Matters | Applicants, Checklist | Service agreements | Visa types | Client account | Invoices | Extra permissions |
 |---|---|---|---|---|---|---|---|---|
-| **Practice Manager** | Sales Manager | RCED VA | RCED VA | RCED VA | RCED | R VA | R VA | Lodge Applications, Override Agreement Gate, Import, Export, Transfer Records, Portal Users, Public Reports |
-| **Registered Migration Agent** | Sales Representative | RCE VA | RCED VA | RCE VA | R | R | RCE | Lodge Applications, Portal Users |
+| **Practice Manager** | Sales Manager | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | R VA | R VA | Lodge Applications, Override Agreement Gate, Import, Export, Transfer Records, Portal Users, Public Reports |
+| **Registered Migration Agent** | Sales Representative | RCE VA | RCED VA | RCE VA | R | R VA | RCE (with lines) | Lodge Applications, Portal Users |
 | **Case Officer** | Service Agent | RE (their matters) | RCE / RCED | R | R | - | R | - |
 | **Intake Consultant** | Sales Representative | RC | - | - | R | - | R | - (works enquiries and converts them) |
 | **Accounts** | Finance | R VA | - | - | R | RCE VA | RCE VA MA | Import, Export, Billing Settings, Public Reports |
 | **Practice Auditor** | Read Only | R VA | R VA | R VA | R VA | R VA | R VA | View Setup, View Audit Log, Export |
 
-Case officers see a matter when they are its *Case Officer* or *Responsible RMA* (automatic sharing).
+Case officers see a matter when they are its *Case Officer* or *Responsible RMA* (automatic sharing). The
+client account ledger is append-only for everyone.
+
+**Good to know**
+
+- Registered Migration Agents and Practice Managers can edit every client's details (passport, visa, sponsorship), whoever created the client.
+- A service agreement can only be sent once the agent responsible for it has their MARN on their user record; the agreement records the agent and MARN.
+- Only the client can sign a service agreement, from the client portal; staff don't see a Sign action. If the agreement exists only on paper, the Practice Manager uses **Override Agreement Gate** with a reason.
+- A decision (outcome) can only be recorded once the application has been lodged; recording it closes the matter.
+- Client money can only pay that client's own invoice. An individual is invoiced without an organisation: the system keeps one billing record in their name.
+- "My Matters" lists the matters you're the responsible RMA or case officer on.
+- New agencies start with common visa subclasses and document checklists; set your fees on each visa type.
 
 ### Accounting practice
 
 | Profile | Based on | Engagements | Engagement letters | Lodgement deadlines | Document requests | Time entries | Invoices | Clients | Extra permissions |
 |---|---|---|---|---|---|---|---|---|---|
-| **Partner** | Sales Manager | RCED VA | RCED VA | RCED VA | RCED VA | RCED VA | RCE VA | RCED VA | Lodge Returns, Import, Export, Transfer Records, Portal Users, Public Reports |
+| **Partner** | Sales Manager | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | RCE VA MA | RCED VA MA | Lodge Returns, Import, Export, Transfer Records, Portal Users, Public Reports |
 | **Accountant** | Sales Representative | RCE | RCE | RCE | RCED | RCE | RCE | RCE | Lodge Returns, Portal Users |
 | **Bookkeeper** | Service Agent | RE | - | RE | RCE | RCE | R | RE | - |
-| **Practice Administrator** | Finance | RC VA | RCE VA | RCE VA | RCE VA | R VA | RCE VA MA | R | Portal Users, Import, Export, Billing Settings, Public Reports |
+| **Practice Administrator** | Finance | RC VA | RCE VA | RCE VA | RCE VA | R VA | RCE VA MA | RCE VA | Portal Users, Import, Export, Billing Settings, Public Reports |
 
-Reviewer sign-off is enforced separately: only the engagement's assigned reviewer (or someone with Lodge
-Returns) can move it past Review, and the reviewer can't be the preparer.
+Reviewer sign-off is enforced separately: only the engagement's assigned reviewer (or a partner) can move it
+past Review, and the reviewer can't be the preparer.
+
+**Good to know**
+
+- Lodging rights don't let the preparer sign off their own work; the reviewer (or a partner) does.
+- Lodging for a client needs its identity verified and, for a business, the practice nominated as its agent in ATO Online services (ticked on the client).
+- An engagement letter can only be sent once the practitioner (or the practice) has a tax agent number; the letter records both.
+- Only the client can sign an engagement letter, from the client portal. For a letter signed on paper, a partner uses **Record Paper Signature** (who signed and where the copy is kept; audited).
+- The **Client Manager** on a client can work that client's file (for example generate BAS deadlines) without owning it.
+- An SMSF audit can't be given to someone who prepared the fund's return or bookkeeping for the same year.
+- Tax File Numbers and ABNs are checked against the ATO check digits when saved.
+- An engagement's lodgement deadline follows its due date and responsible accountant.
 
 ### Loan broking
 
 | Profile | Based on | Loan applications | Fact finds | Lenders | Commissions | Clients & Organisations | Extra permissions |
 |---|---|---|---|---|---|---|---|
-| **Principal Broker** | Sales Manager | RCED VA | RCED VA | RCED VA | RCED VA | RCED VA | Submit to Lender, Manage Commissions, Import, Export, Transfer Records, Portal Users, Public Reports |
-| **Broker** | Sales Representative | RCE | RCED | R | R | RCE | Submit to Lender, Portal Users |
+| **Principal Broker** | Sales Manager | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | RCED VA MA | Submit to Lender, Manage Commissions, Import, Export, Transfer Records, Portal Users, Public Reports |
+| **Broker** | Sales Representative | RCE | RCED | R | R (their loans) | RCE | Submit to Lender, Portal Users |
 | **Loan Processor** | Service Agent | RE VA | RCE VA | R | - | RE / RCE | - |
-| **Commissions Administrator** | Finance | R VA | - | RCE | RCE VA | R | Manage Commissions, Import, Export, Billing Settings, Public Reports |
+| **Commissions Administrator** | Finance | R VA | - | RCE | RCE VA MA | R | Manage Commissions, Import, Export, Billing Settings, Public Reports |
 
-The commission ledger can't be edited: clawbacks and corrections are new entries.
+Commission amounts can't be edited: clawbacks and corrections are new entries.
+
+**Good to know**
+
+- Brokers read the commission on their own loans; only Manage Commissions can record or change it.
+- The Loan Processor sees every application and works the ones they're assigned to as processor.
+- Settled and declined applications are final for brokers and processors; a principal can correct a mistake.
+- Changing the amount, purpose, borrower or lender after the preliminary assessment means recording the assessment again before lodging.
+- Recording a discharge on a settled loan creates the expected clawback for the Commissions Administrator to reconcile.
+- Clients see their application and their lender's name in the portal, not commission, rates or the products comparison.
 
 ### General profiles (every workspace)
 
@@ -308,13 +365,17 @@ see records linked to themselves, and internal fields are hidden.
 
 | Profession | What clients see and do |
 |---|---|
-| Law firm | Their matters (stage, key dates; not rates, WIP, supervising principal or internal notes) and court dates marked *Visible to client*. |
-| Migration agency | Their matters (not fees, team or internal notes), their document checklist (and upload against it), and service agreements to read and **sign**. |
-| Accounting practice | Their engagements, engagement letters to **sign**, and document requests to mark *uploaded*. |
-| Loan broking | Their loan applications and progress. |
-| All | Their invoices, and support requests (cases) with comments and files. |
+| Law firm | Their matters (stage, key dates, the estimate and trust balance; not the rate, WIP, billed to date, conflict status, supervising principal or internal notes) and court dates marked *Visible to client*. |
+| Migration agency | Their matters (not fees, the team, the override, processing time or internal notes), their document checklist (to upload and press *I've Uploaded This*), and service agreements with the agent's name and MARN to read and **sign**. |
+| Accounting practice | Their engagements (not the reviewer, time cost, WIP or recoverability), engagement letters with the practitioner and tax agent number to **sign**, and document requests to mark *uploaded*. |
+| Loan broking | Their loan applications and progress, with the lender's name (not commission, rates, the products comparison or the lender reference). |
+| All | Their invoices, and Client Requests with comments and files. |
 
-Invite a client from their record (**⌄ More actions → Invite to Customer Portal**) or in **Setup → Portal
+Signing is the client's own act: the *Sign* actions appear only in the portal, never to staff. Clients are
+e-mailed, from the firm's name, when something is waiting for them; if nobody at the client can sign in yet,
+the person who sent it is notified instead.
+
+Invite a client from their record (**⌄ More actions → Invite to Client Portal**) or in **Setup → Portal
 Users → Invite contact**; it needs *Manage Portal Users*. Removing access takes effect immediately.
 
 ---
@@ -322,7 +383,13 @@ Users → Invite contact**; it needs *Manage Portal Users*. Removing access take
 ## Common set-ups
 
 **A new solicitor joins.** Setup → Users → New user. Profile *Solicitor*, role under their supervising
-partner. They get an e-mail invitation, set a password and enrol two-step verification.
+principal, and their practising certificate number. They get an e-mail invitation from the firm, set a
+password and enrol two-step verification.
+
+**Professional registration numbers.** Each user record holds the person's registration, named and checked
+for the profession: *Practising certificate number* (law firm), *MARN* (7 digits, migration agency), *Tax
+agent number* (8 digits, accounting practice), *Credit representative number* (6 or 7 digits, loan broking).
+Service agreements and engagement letters record the practitioner's number and can't be sent without one.
 
 **Someone covers for a colleague on leave.** Share the colleague's open matters with them (on each matter,
 **⌄ More actions → Sharing**), or add both to a group and create a sharing rule. Remove it when they return. Avoid

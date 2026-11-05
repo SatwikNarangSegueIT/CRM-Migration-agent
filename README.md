@@ -36,14 +36,15 @@ shaped for that profession. See [docs/domains.md](docs/domains.md).
 | Document | For |
 |---|---|
 | [User guide](docs/user-guide.md) | Everyone: signing up, lists, records, portal, import/export, reports, troubleshooting |
-| [Legal Practice user guide](docs/user-guide-legal.md) | Law firms: matters, conflict checks, costs disclosure, time, billing, trust accounting, court dates |
-| [Migration Practice user guide](docs/user-guide-migration.md) | Migration agents: visa matters, service agreements, checklists, lodgement, client account, expiries |
-| [Accounting Practice user guide](docs/user-guide-accounting.md) | Accountants: engagements, APES 305 letters, document requests, review, lodgement, BAS deadlines |
-| [Loan Broking user guide](docs/user-guide-lending.md) | Brokers: applications, credit guide, fact find, BID, lodging, settlement, commissions |
+| [Legal Practice user guide](docs/user-guide-legal.md) | Law firms: matters, conflict checks, costs disclosure (Uniform Law), VOI and limitation dates, time, billing, trust accounting and monthly reconciliation, AUSTRAC, court dates |
+| [Migration Practice user guide](docs/user-guide-migration.md) | Migration agents: visa matters, service agreements (Code of Conduct, MARN), checklists and client uploads, lodge-by deadlines, s 56 requests, decisions, client account, expiries |
+| [Accounting Practice user guide](docs/user-guide-accounting.md) | Accountants: client identity and agent linking, engagements, APES 305 letters, document requests, review, SMSF audit independence, lodgement, BAS and lodgment program dates |
+| [Loan Broking user guide](docs/user-guide-lending.md) | Brokers: applications, credit guide, quote and proposal (NCCP), verified fact find, serviceability and BID, lodging, settlement, discharge and clawbacks, commissions |
 | Word versions | `docs/*_User_Guide.docx` (one per profession) |
 | [How each profession's workspace works](docs/domain-workflows.md) | Step-by-step flow, stage checks, automation and reminders for law, migration, accounting and lending |
-| [Roles and permissions](docs/roles-and-permissions.md) | Profiles, roles, sharing, field security and each profession's default profiles |
-| [Operations runbook](docs/operations.md) | Deploying, upgrading the database, sign-up checklist, backups, performance |
+| [Roles and permissions](docs/roles-and-permissions.md) | Profiles, roles, sharing, field security and each profession's default profiles; one document per profession in [`docs/roles/`](docs/roles/) and `docs/*_Roles_and_Permissions.docx` |
+| [UAT checklist](docs/uat-checklist.md) | Acceptance tests, including each profession's compliance rules |
+| [Operations runbook](docs/operations.md) | Deploying, upgrading the database, automatic pack upgrades, sign-up checklist, backups, scheduled jobs, performance |
 | [`backend/.env.production.example`](backend/.env.production.example) | Example production settings, including Zoho Mail SMTP |
 
 ## Repository layout
@@ -51,7 +52,7 @@ shaped for that profession. See [docs/domains.md](docs/domains.md).
 ```
 backend/    FastAPI app (app/), Alembic migrations, tests
 frontend/   React SPA, nginx config for production
-docs/       Implementation plan, Neon setup
+docs/       User guides (Markdown and Word), roles, workflows, operations, implementation plan, Neon setup
 .github/    CI and Neon preview-branch workflows
 ```
 
