@@ -61,7 +61,7 @@ export function AuthLayout({
   const brand = useBranding();
   return (
     <div className="grid min-h-screen bg-white lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-      <aside className="relative hidden overflow-hidden bg-brand-900 px-12 py-10 text-white lg:flex lg:flex-col">
+      <aside className="surface-brand hidden px-12 py-10 text-white lg:flex lg:flex-col">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute -right-32 -top-32 h-96 w-96 rounded-full bg-brand-500/30 blur-3xl"
@@ -69,10 +69,6 @@ export function AuthLayout({
         <div
           aria-hidden="true"
           className="pointer-events-none absolute -bottom-40 -left-24 h-96 w-96 rounded-full bg-brand-700/40 blur-3xl"
-        />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 opacity-[0.07] [background-image:radial-gradient(white_1px,transparent_1px)] [background-size:22px_22px]"
         />
         <div className="relative flex items-center gap-2 text-lg font-semibold">
           {brand.logoUrl && (

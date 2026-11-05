@@ -101,11 +101,17 @@ function RecordsCard({
                   .join(" ") || r.name}
               </Link>
               <p className="flex flex-wrap gap-x-3 text-xs text-slate-600">
-                {columns.map((c) => (
-                  <span key={c}>
-                    <FieldDisplay field={meta.data?.fields[c]} record={r} apiName={c} />
-                  </span>
-                ))}
+                {columns
+                  .filter((c) => {
+                    if (c === "created_at" || c === "updated_at") return true;
+                    const v = r.fields[c];
+                    return v !== null && v !== undefined && v !== "";
+                  })
+                  .map((c) => (
+                    <span key={c}>
+                      <FieldDisplay field={meta.data?.fields[c]} record={r} apiName={c} />
+                    </span>
+                  ))}
               </p>
             </li>
           ))}
@@ -450,11 +456,11 @@ export function HomePage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-xl bg-gradient-to-br from-brand-900 to-brand-700 px-6 py-6 text-white shadow-sm">
+      <section className="surface-brand rounded-2xl px-6 py-7 text-white shadow-pop sm:px-8">
         <p className="text-xs font-medium uppercase tracking-wider text-white/70">
           {app ? app.label : "Home"}
         </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">
+        <h1 className="mt-1 text-[26px] font-semibold tracking-tight">
           {greeting()}, {firstName}
         </h1>
         <p className="mt-1 text-sm text-white/75">
@@ -466,9 +472,17 @@ export function HomePage() {
               <Link
                 key={s.title}
                 to={s.to}
-                className="group rounded-lg bg-white/10 px-4 py-3 ring-1 ring-white/10 transition hover:bg-white/15"
+                className="group rounded-xl bg-white/[0.08] px-4 py-3.5 ring-1 ring-inset ring-white/15 backdrop-blur-sm transition hover:-translate-y-0.5 hover:bg-white/[0.14] hover:ring-white/25"
               >
-                <p className="font-medium">{s.title}</p>
+                <p className="flex items-center justify-between font-medium">
+                  {s.title}
+                  <span
+                    aria-hidden="true"
+                    className="text-white/50 transition group-hover:translate-x-0.5 group-hover:text-white"
+                  >
+                    →
+                  </span>
+                </p>
                 <p className="mt-0.5 text-xs text-white/70">{s.text}</p>
               </Link>
             ))}

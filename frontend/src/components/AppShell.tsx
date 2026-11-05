@@ -204,10 +204,48 @@ function Notifications() {
   );
 }
 
+const COLLAPSED_KEY = "crm.sidebarCollapsed";
+
+function storedCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Sidebar collapsed to icons: remembered per browser, toggled by its button or Ctrl/⌘+B. */
+function useCollapsedSidebar(): [boolean, () => void] {
+  const [collapsed, setCollapsed] = useState(storedCollapsed);
+  const toggle = useCallback(() => {
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem(COLLAPSED_KEY, c ? "0" : "1");
+      } catch {
+        /* private mode: the choice lasts for this visit */
+      }
+      return !c;
+    });
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "b" || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      e.preventDefault();
+      toggle();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggle]);
+  return [collapsed, toggle];
+}
+
 export function AppShell() {
   const { canSeeSetup, object } = useAuth();
   const { pathname, search } = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [collapsed, toggleCollapsed] = useCollapsedSidebar();
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const apps = useApps();
   const list = apps.data ?? [];
@@ -270,8 +308,10 @@ export function AppShell() {
   const bottomLinks: SideLink[] = canSeeSetup ? [setupLink(inSetup)] : [];
   // In Setup the sidebar keeps the last used app's tabs, so the way back is one click.
   const navApp = app ?? currentApp(list, "/", "") ?? list[0];
-  const sidebar = (onNavigate?: () => void) => (
+  const sidebar = (onNavigate?: () => void, desktop = false) => (
     <Sidebar
+      collapsed={desktop && collapsed}
+      onToggleCollapsed={desktop ? toggleCollapsed : undefined}
       apps={list}
       app={navApp}
       activeTab={tab}
@@ -291,8 +331,13 @@ export function AppShell() {
         Skip to content
       </a>
 
-      <aside className="sticky top-0 hidden h-screen w-64 flex-none border-r border-slate-200/80 bg-white md:block print:hidden">
-        {sidebar()}
+      <aside
+        className={cx(
+          "sticky top-0 hidden h-screen flex-none border-r border-slate-200/70 bg-white/80 backdrop-blur-xl transition-[width] duration-200 ease-out md:block print:hidden",
+          collapsed ? "w-[68px]" : "w-64",
+        )}
+      >
+        {sidebar(undefined, true)}
       </aside>
 
       {drawerOpen && (

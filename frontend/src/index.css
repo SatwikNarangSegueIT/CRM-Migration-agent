@@ -4,6 +4,8 @@
 
 /* Brand palette (RGB channels); replaced at runtime by src/lib/theme.ts with the workspace colour. */
 :root {
+  /* Film-grain texture (tiny SVG noise tile), layered over surfaces that should feel tactile. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.1 0 0 0 0 0.12 0 0 0 0 0.18 0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.28'/%3E%3C/svg%3E");
   --brand-50: 241 245 254;
   --brand-100: 224 233 252;
   --brand-200: 193 209 247;
@@ -22,9 +24,48 @@
     -webkit-font-smoothing: antialiased;
   }
   body {
-    @apply bg-[#f6f7f9] text-slate-900;
+    @apply text-slate-900;
+    background-color: #f4f6f9;
+    /* A faint wash of the brand colour at the top corners, over a fine grain: depth without noise. */
+    background-image:
+      var(--grain), radial-gradient(1100px 520px at 100% -8%, rgb(var(--brand-100) / 0.55), transparent 62%),
+      radial-gradient(900px 480px at -6% -4%, rgb(var(--brand-50) / 0.9), transparent 60%);
+    background-attachment: fixed;
   }
   ::selection {
     background: rgb(var(--brand-100));
+  }
+}
+
+@layer components {
+  /* Brand surfaces (Home banner, sign-in panel): soft light, dot grid and grain. */
+  .surface-brand {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background-color: rgb(var(--brand-900));
+    background-image:
+      radial-gradient(600px 300px at 85% -20%, rgb(var(--brand-400) / 0.45), transparent 70%),
+      radial-gradient(500px 260px at -10% 120%, rgb(var(--brand-600) / 0.55), transparent 70%),
+      linear-gradient(135deg, rgb(var(--brand-900)), rgb(var(--brand-800)) 55%, rgb(var(--brand-700)));
+  }
+  .surface-brand::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image: radial-gradient(rgb(255 255 255 / 0.16) 1px, transparent 1px);
+    background-size: 20px 20px;
+    mask-image: linear-gradient(to bottom, black, transparent 85%);
+  }
+  .surface-brand::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image: var(--grain);
+    opacity: 0.5;
+    mix-blend-mode: soft-light;
+    pointer-events: none;
   }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type FocusEvent, type MouseEvent } from "react";
 import { Link, NavLink } from "react-router-dom";
 import type { AppInfo, AppTab } from "../api/types";
 import { useBranding } from "../lib/branding";
@@ -9,6 +9,8 @@ import {
   ChartIcon,
   CheckIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   GaugeIcon,
   HomeIcon,
   InboxIcon,
@@ -39,19 +41,23 @@ function tabIcon(tab: AppTab): Icon {
   }
 }
 
-const itemClass = (active: boolean) =>
+const itemClass = (active: boolean, collapsed = false) =>
   cx(
-    "group flex items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] transition-colors",
+    "group relative flex items-center rounded-lg py-2 text-[13.5px] transition-colors",
+    collapsed ? "justify-center px-0" : "gap-3 px-3",
     "focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-600",
     active
-      ? "bg-brand-50 font-semibold text-brand-800"
-      : "font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+      ? "bg-brand-50 font-semibold text-brand-800 shadow-[inset_0_0_0_1px_rgb(var(--brand-100))]"
+      : "font-medium text-slate-600 hover:bg-slate-100/80 hover:text-slate-900",
   );
+
+/** Hover/focus label for an icon-only (collapsed) item: fixed-positioned so the scroll area can't clip it. */
+type Hint = { label: string; top: number } | null;
 
 const iconClass = (active: boolean) =>
   cx("flex-none", active ? "text-brand-700" : "text-slate-400 group-hover:text-slate-600");
 
-function WorkspaceBadge() {
+function WorkspaceBadge({ collapsed }: { collapsed: boolean }) {
   const brand = useBranding();
   const initials =
     brand.name
@@ -64,7 +70,10 @@ function WorkspaceBadge() {
     <Link
       to="/"
       aria-label={`${brand.name} home`}
-      className="flex h-16 flex-none items-center gap-3 px-5 focus-visible:outline-none"
+      className={cx(
+        "flex h-16 flex-none items-center gap-3 focus-visible:outline-none",
+        collapsed ? "justify-center px-0" : "px-5",
+      )}
     >
       {brand.logoUrl ? (
         <img src={brand.logoUrl} alt="" className="h-8 w-8 flex-none rounded-lg object-contain" />
@@ -76,9 +85,11 @@ function WorkspaceBadge() {
           {initials}
         </span>
       )}
-      <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-slate-900">
-        {brand.name}
-      </span>
+      {!collapsed && (
+        <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-slate-900">
+          {brand.name}
+        </span>
+      )}
     </Link>
   );
 }
@@ -87,10 +98,12 @@ function WorkspaceBadge() {
 function AppSwitcher({
   apps,
   current,
+  collapsed,
   onNavigate,
 }: {
   apps: AppInfo[];
   current: AppInfo | undefined;
+  collapsed: boolean;
   onNavigate?: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -100,9 +113,9 @@ function AppSwitcher({
   if (!current) return null;
   if (apps.length < 2) {
     return (
-      <div className="flex items-center gap-2.5 px-3 py-2">
+      <div className={cx("flex items-center gap-2.5 py-2", collapsed ? "justify-center" : "px-3")}>
         <ObjectIcon icon={current.icon} color={current.color} size={26} className="rounded-lg" />
-        <span className="truncate text-sm font-semibold text-slate-900">{current.label}</span>
+        {!collapsed && <span className="truncate text-sm font-semibold text-slate-900">{current.label}</span>}
       </div>
     );
   }
@@ -114,19 +127,31 @@ function AppSwitcher({
         aria-expanded={open}
         aria-label={`App: ${current.label}. Switch app`}
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2.5 rounded-xl border border-slate-200/80 bg-white shadow-card px-3 py-2 text-left transition-colors hover:border-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600"
+        className={cx(
+          "flex w-full items-center rounded-xl border border-slate-200/80 bg-white py-2 text-left shadow-card transition-colors hover:border-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600",
+          collapsed ? "justify-center px-0" : "gap-2.5 px-3",
+        )}
       >
         <ObjectIcon icon={current.icon} color={current.color} size={26} className="rounded-lg" />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{current.label}</span>
-        <ChevronDownIcon
-          size={16}
-          className={cx("text-slate-400 transition-transform", open && "rotate-180")}
-        />
+        {!collapsed && (
+          <>
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
+              {current.label}
+            </span>
+            <ChevronDownIcon
+              size={16}
+              className={cx("text-slate-400 transition-transform", open && "rotate-180")}
+            />
+          </>
+        )}
       </button>
       {open && (
         <div
           role="menu"
-          className="absolute inset-x-0 z-40 mt-1.5 rounded-xl border border-slate-200/80 bg-white p-1 shadow-pop"
+          className={cx(
+            "absolute z-40 rounded-xl border border-slate-200/80 bg-white p-1 shadow-pop",
+            collapsed ? "left-full top-0 ml-3 w-64" : "inset-x-0 mt-1.5",
+          )}
         >
           {apps.map((a) => (
             <Link
@@ -168,6 +193,8 @@ export function Sidebar({
   bottomLinks,
   onPrefetch,
   onNavigate,
+  collapsed = false,
+  onToggleCollapsed,
 }: {
   apps: AppInfo[];
   app: AppInfo | undefined;
@@ -176,7 +203,27 @@ export function Sidebar({
   bottomLinks: SideLink[];
   onPrefetch: (t: AppTab) => void;
   onNavigate?: () => void;
+  /** Icons only; each item's name shows beside it on hover or keyboard focus. */
+  collapsed?: boolean;
+  /** Shown as the collapse / expand button when given (not in the phone drawer). */
+  onToggleCollapsed?: () => void;
 }) {
+  const [hint, setHint] = useState<Hint>(null);
+  const showHint = (label: string) =>
+    collapsed
+      ? {
+          onMouseEnter: (e: MouseEvent<HTMLElement>) => place(label, e.currentTarget),
+          onMouseLeave: () => setHint(null),
+          onFocus: (e: FocusEvent<HTMLElement>) => place(label, e.currentTarget),
+          onBlur: () => setHint(null),
+        }
+      : {};
+  const place = (label: string, el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    setHint({ label, top: r.top + r.height / 2 });
+  };
+  const label = (text: string) =>
+    collapsed ? <span className="sr-only">{text}</span> : <span className="truncate">{text}</span>;
   const plain = (l: SideLink) => {
     const Icon = l.icon;
     return (
@@ -185,22 +232,23 @@ export function Sidebar({
           to={l.href}
           onClick={onNavigate}
           aria-current={l.active ? "page" : undefined}
-          className={itemClass(l.active)}
+          className={itemClass(l.active, collapsed)}
+          {...showHint(l.label)}
         >
           <Icon size={18} className={iconClass(l.active)} />
-          <span className="truncate">{l.label}</span>
+          {label(l.label)}
         </Link>
       </li>
     );
   };
   return (
     <div className="flex h-full flex-col">
-      <WorkspaceBadge />
+      <WorkspaceBadge collapsed={collapsed} />
       <nav aria-label="Apps" className="flex min-h-0 flex-1 flex-col">
-        <div className="px-3 pb-2">
-          <AppSwitcher apps={apps} current={app} onNavigate={onNavigate} />
+        <div className={cx("pb-2", collapsed ? "px-2.5" : "px-3")}>
+          <AppSwitcher apps={apps} current={app} collapsed={collapsed} onNavigate={onNavigate} />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        <div className={cx("min-h-0 flex-1 overflow-y-auto pb-3", collapsed ? "px-2.5" : "px-3")}>
           {topLinks.length > 0 && <ul className="mb-2 space-y-0.5">{topLinks.map(plain)}</ul>}
           {app && (
             <div role="navigation" aria-label={`${app.label} tabs`}>
@@ -216,13 +264,21 @@ export function Sidebar({
                           rememberApp(app.key);
                           onNavigate?.();
                         }}
-                        onMouseEnter={() => onPrefetch(t)}
-                        onFocus={() => onPrefetch(t)}
+                        onMouseEnter={(e) => {
+                          onPrefetch(t);
+                          if (collapsed) place(t.label, e.currentTarget);
+                        }}
+                        onMouseLeave={() => setHint(null)}
+                        onFocus={(e) => {
+                          onPrefetch(t);
+                          if (collapsed) place(t.label, e.currentTarget);
+                        }}
+                        onBlur={() => setHint(null)}
                         aria-current={active ? "page" : undefined}
-                        className={itemClass(active)}
+                        className={itemClass(active, collapsed)}
                       >
                         <Icon size={18} className={iconClass(active)} />
-                        <span className="truncate">{t.label}</span>
+                        {label(t.label)}
                       </NavLink>
                     </li>
                   );
@@ -231,10 +287,48 @@ export function Sidebar({
             </div>
           )}
         </div>
-        {bottomLinks.length > 0 && (
-          <ul className="space-y-0.5 border-t border-slate-200/80 px-3 py-3">{bottomLinks.map(plain)}</ul>
+        {(bottomLinks.length > 0 || onToggleCollapsed) && (
+          <ul className={cx("space-y-0.5 border-t border-slate-200/70 py-3", collapsed ? "px-2.5" : "px-3")}>
+            {bottomLinks.map(plain)}
+            {onToggleCollapsed && (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHint(null);
+                    onToggleCollapsed();
+                  }}
+                  aria-expanded={!collapsed}
+                  aria-keyshortcuts="Control+B Meta+B"
+                  className={cx(itemClass(false, collapsed), "w-full")}
+                  {...showHint("Expand sidebar (Ctrl+B)")}
+                >
+                  {collapsed ? (
+                    <ChevronRightIcon size={18} className={iconClass(false)} />
+                  ) : (
+                    <ChevronLeftIcon size={18} className={iconClass(false)} />
+                  )}
+                  {label(collapsed ? "Expand sidebar" : "Collapse sidebar")}
+                  {!collapsed && (
+                    <kbd className="ml-auto rounded border border-slate-200 bg-white px-1.5 py-px font-sans text-[10px] font-medium text-slate-400">
+                      Ctrl B
+                    </kbd>
+                  )}
+                </button>
+              </li>
+            )}
+          </ul>
         )}
       </nav>
+      {collapsed && hint && (
+        <div
+          role="tooltip"
+          className="pointer-events-none fixed left-[76px] z-50 -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-white shadow-pop"
+          style={{ top: hint.top }}
+        >
+          {hint.label}
+        </div>
+      )}
     </div>
   );
 }
