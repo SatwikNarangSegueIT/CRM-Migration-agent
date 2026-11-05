@@ -58,7 +58,7 @@ export function DashboardsPage() {
             <Link
               key={d.id}
               to={`/dashboards/${d.id}`}
-              className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-brand-300"
+              className="rounded-xl border border-slate-200/80 bg-white shadow-card p-4 hover:border-brand-300"
             >
               <p className="font-semibold text-brand-700">{d.name}</p>
               <p className="mt-1 text-sm text-slate-600">{d.description}</p>
@@ -111,7 +111,7 @@ export function DashboardPage() {
             key={i}
             aria-label={c.title}
             className={cx(
-              "rounded-lg border border-slate-200 bg-white shadow-sm",
+              "rounded-xl border border-slate-200/80 bg-white shadow-card",
               c.width === 3 ? "md:col-span-3" : c.width === 2 ? "md:col-span-2" : "",
             )}
           >

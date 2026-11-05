@@ -68,7 +68,7 @@ export function ConfirmDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={children ? bodyId : undefined}
-        className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
+        className="w-full max-w-md rounded-lg bg-white p-6 shadow-pop"
       >
         <h2 id={titleId} className="text-lg font-semibold text-slate-900">
           {title}

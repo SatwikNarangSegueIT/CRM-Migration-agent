@@ -30,8 +30,58 @@ export function Path({
   const chosen = selected && selected !== value ? selected : null;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-      <ol className="flex flex-wrap gap-1 sm:flex-nowrap" aria-label={`${field.label} path`}>
+    <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-card">
+      {/* Phones: the chevrons would be too narrow to read, so show the current stage and a progress bar. */}
+      <div className="sm:hidden">
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="min-w-0 truncate text-sm font-semibold text-slate-900">
+            {current ? current.label : "Not started"}
+          </p>
+          <p className="flex-none text-xs text-slate-500">
+            {field.label} {Math.max(visible.indexOf(current!) + 1, 0)} of {visible.length}
+          </p>
+        </div>
+        <div className="mt-2 flex gap-1" aria-hidden="true">
+          {visible.map((v) => {
+            const i = values.indexOf(v);
+            return (
+              <span
+                key={v.value}
+                className={cx(
+                  "h-1.5 flex-1 rounded-full",
+                  i === currentIndex
+                    ? v.closed && v.won === false
+                      ? "bg-red-600"
+                      : "bg-brand-700"
+                    : currentIndex >= 0 && i < currentIndex && !closed
+                      ? "bg-emerald-500"
+                      : "bg-slate-200",
+                )}
+              />
+            );
+          })}
+        </div>
+        {canEdit && !closed && (
+          <label className="mt-3 block">
+            <span className="sr-only">Choose a {field.label.toLowerCase()}</span>
+            <select
+              value={chosen ?? ""}
+              onChange={(e) => setSelected(e.target.value || null)}
+              className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            >
+              <option value="">Go to another {field.label.toLowerCase()}…</option>
+              {visible
+                .filter((v) => v.value !== value)
+                .map((v) => (
+                  <option key={v.value} value={v.value}>
+                    {v.label}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+      </div>
+      <ol className="hidden gap-1 sm:flex" aria-label={`${field.label} path`}>
         {visible.map((v) => {
           const i = values.indexOf(v);
           const done = currentIndex >= 0 && i < currentIndex && !closed;
@@ -73,6 +123,7 @@ export function Path({
         <div className="mt-2 flex justify-end">
           <Button
             size="sm"
+            className="w-full sm:w-auto"
             loading={saving}
             disabled={!chosen && currentIndex >= values.length - 1}
             onClick={() => {

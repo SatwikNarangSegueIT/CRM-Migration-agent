@@ -15,3 +15,16 @@
   --brand-800: 16 60 185;
   --brand-900: 13 47 146;
 }
+
+@layer base {
+  html {
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-[#f6f7f9] text-slate-900;
+  }
+  ::selection {
+    background: rgb(var(--brand-100));
+  }
+}

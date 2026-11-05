@@ -83,7 +83,7 @@ export function ActivityPanel({ meta, record }: { meta: ObjectDescribe; record: 
   ];
 
   return (
-    <section aria-label="Activity" className="rounded-lg border border-slate-200 bg-white shadow-sm">
+    <section aria-label="Activity" className="rounded-xl border border-slate-200/80 bg-white shadow-card">
       <header className="border-b border-slate-100 px-4 py-2.5">
         <h3 className="text-sm font-semibold text-slate-900">Activity</h3>
         <div className="mt-2 flex flex-wrap gap-1">

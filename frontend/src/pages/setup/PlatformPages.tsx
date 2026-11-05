@@ -456,7 +456,7 @@ export function PacksPage() {
       ) : (
         <div className="space-y-4">
           {packs.data.map((p) => (
-            <section key={p.key} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <section key={p.key} className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">

@@ -128,7 +128,7 @@ export function SignupPage() {
   if (created || submit.isPending) {
     const title = created ? "Opening your workspace" : `Setting up ${firm.trim() || "your workspace"}`;
     return (
-      <AuthLayout title={title} aside={<DomainAside domain={chosen} />}>
+      <AuthLayout title={title} aside={chosen ? <DomainAside domain={chosen} /> : undefined}>
         <div className="flex flex-col items-center gap-3 py-8 text-sm text-slate-600">
           <Spinner label={title} />
           <p>{created ? "Signing you in…" : `Preparing your ${chosen?.label ?? "workspace"}…`}</p>
@@ -139,7 +139,7 @@ export function SignupPage() {
 
   if (submit.isSuccess) {
     return (
-      <AuthLayout title="Check your inbox" aside={<DomainAside domain={chosen} />}>
+      <AuthLayout title="Check your inbox" aside={chosen ? <DomainAside domain={chosen} /> : undefined}>
         <div className="space-y-6">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-50 text-brand-700">
             <MailIcon size={24} />
@@ -174,7 +174,7 @@ export function SignupPage() {
         wide
         title="What kind of firm do you run?"
         subtitle="We'll set up your workspace with the right records, workflows and compliance checks."
-        aside={<DomainAside domain={chosen} />}
+        aside={chosen ? <DomainAside domain={chosen} /> : undefined}
       >
         <StepLabel step={1} />
         {domains.isPending ? (
@@ -267,7 +267,7 @@ export function SignupPage() {
           {chosen?.label ?? "Change firm type"}
         </button>
       }
-      aside={<DomainAside domain={chosen} />}
+      aside={chosen ? <DomainAside domain={chosen} /> : undefined}
     >
       <StepLabel step={2} />
       <form onSubmit={onSubmit} className="space-y-5" noValidate>

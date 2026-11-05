@@ -88,7 +88,7 @@ function GroupForm({ group }: { group: Group }) {
   return (
     <form
       onSubmit={onSubmit}
-      className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+      className="space-y-4 rounded-xl border border-slate-200/80 bg-white shadow-card p-5"
       noValidate
     >
       <h2 className="text-lg font-semibold text-slate-900">{group.title}</h2>

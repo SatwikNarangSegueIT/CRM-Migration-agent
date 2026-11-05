@@ -186,7 +186,7 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
         </Alert>
       )}
       {/* Highlights panel */}
-      <section aria-label="Highlights" className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <section aria-label="Highlights" className="rounded-xl border border-slate-200/80 bg-white shadow-card">
         <div className="flex flex-wrap items-start justify-between gap-3 px-4 pt-4">
           <div className="flex min-w-0 items-center gap-3">
             <ObjectIcon icon={meta.icon} color={meta.color} size={40} />
@@ -363,7 +363,7 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
 
       <div className="grid gap-3 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="rounded-xl border border-slate-200/80 bg-white shadow-card">
             <div
               role="tablist"
               aria-label="Record tabs"
@@ -545,7 +545,7 @@ function DetailsTab({
               <button
                 type="button"
                 aria-expanded={open}
-                className="flex w-full items-center gap-2 rounded bg-slate-100 px-3 py-1.5 text-left text-sm font-semibold text-slate-800"
+                className="flex w-full items-center gap-2 rounded-lg border-b border-slate-100 px-2 py-2 text-left text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-50"
                 onClick={() =>
                   setCollapsed((c) => {
                     const n = new Set(c);
@@ -629,7 +629,7 @@ export function RelatedCard({
   const total = rows.data?.total ?? 0;
   const cols = list.columns.filter((c) => childMeta.data?.fields[c]);
   return (
-    <section aria-label={list.label} className="rounded-lg border border-slate-200 bg-white shadow-sm">
+    <section aria-label={list.label} className="rounded-xl border border-slate-200/80 bg-white shadow-card">
       <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
           {childMeta.data && <ObjectIcon icon={childMeta.data.icon} color={childMeta.data.color} size={22} />}
@@ -770,7 +770,7 @@ export function FilesCard({ object, record }: { object: string; record: RecordDa
     onError: (e) => toast.show(errorMessage(e), "error"),
   });
   return (
-    <section aria-label="Files" className="rounded-lg border border-slate-200 bg-white shadow-sm">
+    <section aria-label="Files" className="rounded-xl border border-slate-200/80 bg-white shadow-card">
       <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
           <PaperclipIcon size={16} /> Files ({files.data?.total ?? "…"})

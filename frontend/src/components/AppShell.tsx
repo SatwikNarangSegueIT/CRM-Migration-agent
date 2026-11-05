@@ -2,12 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { metaApi, recordsApi, workspaceApi } from "../api/records";
-import type { AppInfo, AppTab } from "../api/types";
+import type { AppTab } from "../api/types";
 import { useAuth } from "../auth/context";
 import { recordPath, useApps } from "../lib/records";
 import { useDismiss } from "../lib/useDismiss";
-import { activeTab, appHref, currentApp, rememberApp } from "../navigation";
-import { AppTabs } from "./AppTabs";
+import { activeTab, currentApp, rememberApp } from "../navigation";
+import { setupLink, Sidebar, type SideLink } from "./Sidebar";
 import { HeaderIconButton, PanelHeader } from "./HeaderMenus";
 import {
   BellIcon,
@@ -18,62 +18,11 @@ import {
   MenuIcon,
   PersonIcon,
   SearchIcon,
-  SettingsIcon,
 } from "./icons";
-import { useBranding } from "../lib/branding";
 import { Logo } from "./Logo";
-import { iconFor, ObjectIcon } from "./record/ObjectIcon";
+import { ObjectIcon } from "./record/ObjectIcon";
 import { cx } from "./ui/cx";
 import { UserMenu } from "./UserMenu";
-
-function railWord(label: string): string {
-  const words = label.split(" ");
-  return (words[words.length - 1] === "Practice" ? words[0] : words[words.length - 1]) ?? label;
-}
-
-type RailEntry = {
-  id: string;
-  label: string;
-  href: string;
-  icon: React.ComponentType<{ size?: number }>;
-  active: boolean;
-  app?: AppInfo;
-};
-
-function RailItem({ entry, onNavigate }: { entry: RailEntry; onNavigate?: () => void }) {
-  const Icon = entry.icon;
-  return (
-    <li>
-      <Link
-        to={entry.href}
-        onClick={() => {
-          if (entry.app) rememberApp(entry.app.key);
-          onNavigate?.();
-        }}
-        aria-current={entry.active ? "page" : undefined}
-        className={cx(
-          "relative mx-2 flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-center text-[11px] font-medium leading-tight transition-colors",
-          "focus-visible:outline focus-visible:outline-2 focus-visible:outline-white",
-          entry.active ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/5 hover:text-white",
-        )}
-      >
-        {entry.active && (
-          <span
-            aria-hidden="true"
-            className="absolute -left-2 top-2 bottom-2 w-1 rounded-r-full bg-brand-400"
-          />
-        )}
-        <Icon size={20} />
-        <span
-          className={cx("w-full truncate", entry.label.length > 9 && "text-[10px] tracking-tight")}
-          title={entry.label}
-        >
-          {entry.label}
-        </span>
-      </Link>
-    </li>
-  );
-}
 
 function GlobalSearch() {
   const navigate = useNavigate();
@@ -106,7 +55,7 @@ function GlobalSearch() {
     navigate(`/search?q=${encodeURIComponent(value.trim())}`);
   }
   return (
-    <div ref={ref} className="relative mx-auto w-full max-w-xl">
+    <div ref={ref} className="relative w-full max-w-lg">
       <form role="search" onSubmit={onSubmit}>
         <label htmlFor="global-search" className="sr-only">
           Search
@@ -120,19 +69,19 @@ function GlobalSearch() {
             id="global-search"
             type="search"
             autoComplete="off"
-            placeholder="Search..."
+            placeholder="Search clients, matters, records…"
             value={value}
             onFocus={() => setOpen(true)}
             onChange={(e) => {
               setValue(e.target.value);
               setOpen(true);
             }}
-            className="h-9 w-full rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm placeholder:text-slate-500 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-200"
+            className="h-10 w-full rounded-xl border border-slate-200 bg-slate-100/70 pl-10 pr-4 text-sm placeholder:text-slate-500 transition-colors hover:bg-slate-100 focus:border-brand-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-brand-100"
           />
         </div>
       </form>
       {open && (
-        <div className="absolute left-0 right-0 z-40 mt-1 max-h-[70vh] overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-xl">
+        <div className="absolute left-0 right-0 z-40 mt-2 max-h-[70vh] overflow-y-auto rounded-xl border border-slate-200/80 bg-white py-1 text-sm shadow-pop">
           {debounced.length < 2 ? (
             <>
               <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -257,7 +206,6 @@ function Notifications() {
 
 export function AppShell() {
   const { canSeeSetup, object } = useAuth();
-  const brand = useBranding();
   const { pathname, search } = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
@@ -290,9 +238,9 @@ export function AppShell() {
   const objectLabel = (api: string, fallback: string) =>
     list.flatMap((a) => a.tabs).find((t) => t.kind === "object" && t.object === api)?.label ?? fallback;
   // A domain workspace's own app is its home page, and its tabs already hold clients and organisations:
-  // the rail then lists only the apps, so nothing appears twice.
+  // the sidebar then shows only the app's tabs, so nothing appears twice.
   const domainWorkspace = list.some((a) => a.is_primary);
-  const generic: RailEntry[] = domainWorkspace
+  const topLinks: SideLink[] = domainWorkspace
     ? []
     : [
         { id: "home", label: "Home", href: "/", icon: HomeIcon, active: pathname === "/" },
@@ -319,24 +267,23 @@ export function AppShell() {
             ]
           : []),
       ];
-  const entries: RailEntry[] = [
-    ...generic,
-    ...list.map((a) => ({
-      id: a.key,
-      // "Legal Practice" -> "Legal", "Loan Broking" -> "Broking": the word that names the profession.
-      label: domainWorkspace ? railWord(a.label) : a.label,
-      href: appHref(a),
-      icon: iconFor(a.icon),
-      active: a.key === app?.key,
-      app: a,
-    })),
-    ...(canSeeSetup
-      ? [{ id: "setup", label: "Setup", href: "/setup", icon: SettingsIcon, active: inSetup }]
-      : []),
-  ];
+  const bottomLinks: SideLink[] = canSeeSetup ? [setupLink(inSetup)] : [];
+  // In Setup the sidebar keeps the last used app's tabs, so the way back is one click.
+  const navApp = app ?? currentApp(list, "/", "") ?? list[0];
+  const sidebar = (onNavigate?: () => void) => (
+    <Sidebar
+      apps={list}
+      app={navApp}
+      activeTab={tab}
+      topLinks={topLinks}
+      bottomLinks={bottomLinks}
+      onPrefetch={prefetchTab}
+      onNavigate={onNavigate}
+    />
+  );
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-white focus:px-3 focus:py-2"
@@ -344,66 +291,46 @@ export function AppShell() {
         Skip to content
       </a>
 
-      <aside className="sticky top-0 hidden h-screen w-[76px] flex-none overflow-y-auto bg-slate-900 md:block print:hidden">
-        {brand.logoUrl && (
-          <Link
-            to="/"
-            aria-label="Home"
-            className="flex h-14 items-center justify-center border-b border-white/5"
-          >
-            <img src={brand.logoUrl} alt="" className="h-8 w-8 rounded-lg object-contain" />
-          </Link>
-        )}
-        <nav aria-label="Apps">
-          <ul className="flex flex-col gap-1 py-3">
-            {entries.map((e) => (
-              <RailItem key={e.id} entry={e} />
-            ))}
-          </ul>
-        </nav>
+      <aside className="sticky top-0 hidden h-screen w-64 flex-none border-r border-slate-200/80 bg-white md:block print:hidden">
+        {sidebar()}
       </aside>
 
       {drawerOpen && (
-        <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="Apps">
-          <div className="absolute inset-0 bg-slate-900/40" onClick={closeDrawer} aria-hidden="true" />
-          <div className="absolute inset-x-0 top-0 bg-slate-900 pb-2 shadow-xl">
-            <div className="flex h-14 items-center justify-between px-4 text-white">
-              <span className="font-semibold">Apps</span>
-              <button
-                type="button"
-                aria-label="Close apps menu"
-                onClick={closeDrawer}
-                className="rounded p-1 hover:bg-white/10"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-            <nav aria-label="Apps (mobile)">
-              <ul className="grid grid-cols-4 gap-1 px-2">
-                {entries.map((e) => (
-                  <RailItem key={e.id} entry={e} onNavigate={closeDrawer} />
-                ))}
-              </ul>
-            </nav>
+        <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
+            onClick={closeDrawer}
+            aria-hidden="true"
+          />
+          <div className="absolute inset-y-0 left-0 w-72 max-w-[85vw] bg-white shadow-pop">
+            <button
+              type="button"
+              aria-label="Close menu"
+              onClick={closeDrawer}
+              className="absolute right-3 top-4 z-10 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+            >
+              <CloseIcon size={18} />
+            </button>
+            {sidebar(closeDrawer)}
           </div>
         </div>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white print:hidden">
-          <div className="flex h-14 items-center gap-3 px-3 sm:px-4">
+        <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/85 backdrop-blur-md print:hidden">
+          <div className="flex h-16 items-center gap-3 px-3 sm:px-6">
             <button
               type="button"
-              aria-label="Open apps menu"
+              aria-label="Open menu"
               onClick={() => setDrawerOpen(true)}
-              className="rounded p-1.5 text-slate-600 hover:bg-slate-100 md:hidden"
+              className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 md:hidden"
             >
               <MenuIcon />
             </button>
-            <Link to="/" className="flex-none md:hidden" aria-label="Home">
+            <Link to="/" className="min-w-0 flex-none truncate md:hidden" aria-label="Home">
               <Logo />
             </Link>
-            <div className="hidden flex-1 sm:block">
+            <div className="hidden min-w-0 flex-1 sm:block">
               <GlobalSearch />
             </div>
             <div className="ml-auto flex items-center gap-1">
@@ -413,22 +340,12 @@ export function AppShell() {
               </div>
             </div>
           </div>
-          <div className="px-3 pb-2 sm:hidden">
+          <div className="px-3 pb-2.5 sm:hidden">
             <GlobalSearch />
           </div>
-
-          {app && (
-            <div className="flex items-end gap-6 border-t border-slate-200 px-4">
-              <p className="flex flex-none items-center gap-2 py-2.5 text-lg font-semibold text-slate-900">
-                <ObjectIcon icon={app.icon} color={app.color} size={24} />
-                {app.label}
-              </p>
-              <AppTabs app={app} active={tab} onPrefetch={prefetchTab} />
-            </div>
-          )}
         </header>
 
-        <main id="main" className="w-full flex-1 px-3 py-4 sm:px-4">
+        <main id="main" className="w-full flex-1 px-3 py-5 sm:px-6 sm:py-6">
           <Outlet />
         </main>
       </div>

@@ -163,7 +163,7 @@ export function SetupLayout() {
     <div className="flex flex-col gap-4 md:flex-row">
       <nav
         aria-label="Setup"
-        className="w-full flex-none rounded-lg border border-slate-200 bg-white p-2 text-sm shadow-sm md:w-60"
+        className="w-full flex-none rounded-xl border border-slate-200/80 bg-white shadow-card p-2 text-sm md:w-60"
       >
         <NavLink
           to="/setup"
@@ -226,7 +226,7 @@ export function SetupHomePage() {
               <Link
                 key={i.to}
                 to={i.to}
-                className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-300 hover:shadow"
+                className="group rounded-xl border border-slate-200/80 bg-white shadow-card p-4 transition hover:border-brand-300 hover:shadow"
               >
                 <p className="font-medium text-slate-900 group-hover:text-brand-700">{i.label}</p>
                 <p className="mt-1 text-sm text-slate-600">{i.description}</p>

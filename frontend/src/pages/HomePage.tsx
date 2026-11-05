@@ -35,7 +35,7 @@ function Card({
   return (
     <section
       aria-label={title}
-      className={cx("flex flex-col rounded-lg border border-slate-200 bg-white shadow-sm", className)}
+      className={cx("flex flex-col rounded-xl border border-slate-200/80 bg-white shadow-card", className)}
     >
       <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">

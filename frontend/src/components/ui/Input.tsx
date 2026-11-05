@@ -3,8 +3,8 @@ import { cx } from "./cx";
 import { FormField } from "./FormField";
 
 const CONTROL =
-  "block w-full rounded-md border bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 " +
-  "focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-100 disabled:text-slate-500";
+  "block w-full rounded-lg border bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-shadow placeholder:text-slate-400 " +
+  "focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100 disabled:bg-slate-100 disabled:text-slate-500";
 
 function controlClass(invalid: boolean, className?: string): string {
   return cx(CONTROL, invalid ? "border-red-400" : "border-slate-300", className);

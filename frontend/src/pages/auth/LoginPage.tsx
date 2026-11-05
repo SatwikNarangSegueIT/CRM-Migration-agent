@@ -119,7 +119,12 @@ export function LoginPage() {
             />
           )}
         </FormField>
-        <Button type="submit" className="w-full" loading={login.isPending} disabled={!email || !password}>
+        <Button
+          type="submit"
+          className="w-full py-2.5"
+          loading={login.isPending}
+          disabled={!email || !password}
+        >
           Sign in
         </Button>
       </form>

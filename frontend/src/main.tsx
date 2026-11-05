@@ -4,6 +4,7 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthProvider";
 import { BrandTheme } from "./components/BrandTheme";
 import { ToastProvider } from "./components/ui";
+import "@fontsource-variable/inter";
 import "./index.css";
 import { persistMetadata } from "./persistMetadata";
 import { publicApi } from "./api/portal";

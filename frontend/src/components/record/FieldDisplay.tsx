@@ -62,7 +62,11 @@ export function FieldDisplay({
 
   const value = record.fields[apiName];
   if (value === null || value === undefined || value === "")
-    return <span className="text-slate-400" aria-label="empty" />;
+    return (
+      <span className="text-slate-300" aria-label="empty">
+        —
+      </span>
+    );
 
   switch (field?.type) {
     case "lookup":

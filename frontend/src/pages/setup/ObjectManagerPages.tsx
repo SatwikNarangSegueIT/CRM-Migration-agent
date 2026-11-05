@@ -568,7 +568,7 @@ function DetailsTab({ obj }: { obj: SetupObject }) {
   const deletable = obj.is_custom && !obj.pack_key;
   return (
     <div className="space-y-4">
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
         {save.isError && (
           <Alert tone="error" className="mb-3">
             {errorMessage(save.error)}
@@ -817,7 +817,7 @@ function FieldsTab({ obj }: { obj: SetupObject }) {
         </table>
       </div>
       {obj.deleted_fields.length > 0 && (
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-4">
           <h3 className="font-semibold text-slate-900">Deleted fields</h3>
           <p className="text-xs text-slate-600">
             Deleted fields keep their data until they are purged (see Data Retention settings).
@@ -1548,7 +1548,7 @@ function LayoutTab({ obj }: { obj: SetupObject }) {
   return (
     <div className="space-y-4">
       {save.isError && <Alert tone="error">{errorMessage(save.error)}</Alert>}
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
         <div className="mb-3 flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-slate-900">Record page sections</h3>
@@ -1630,7 +1630,7 @@ function LayoutTab({ obj }: { obj: SetupObject }) {
         </div>
       </section>
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
           <h3 className="font-semibold text-slate-900">Highlights panel</h3>
           <p className="mb-2 text-xs text-slate-600">
             Key fields shown under the record name (compact layout).
@@ -1644,7 +1644,7 @@ function LayoutTab({ obj }: { obj: SetupObject }) {
             onChange={setCompact}
           />
         </section>
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
           <h3 className="font-semibold text-slate-900">Default list columns</h3>
           <p className="mb-2 text-xs text-slate-600">Columns of new list views and search results.</p>
           <OrderedList
@@ -1657,7 +1657,7 @@ function LayoutTab({ obj }: { obj: SetupObject }) {
           />
         </section>
       </div>
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
         <h3 className="font-semibold text-slate-900">Related lists</h3>
         <p className="mb-2 text-xs text-slate-600">
           Shown on the Related tab. Lookup fields on other objects pointing here can appear as related lists.

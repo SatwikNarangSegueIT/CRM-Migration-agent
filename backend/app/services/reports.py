@@ -461,7 +461,7 @@ def _num(value: Any) -> float | int | None:
 
 def _plain(value: Any) -> str:
     if value is None:
-        return "(blank)"
+        return "Not set"
     if isinstance(value, datetime | date):
         return value.isoformat()
     if isinstance(value, Decimal):

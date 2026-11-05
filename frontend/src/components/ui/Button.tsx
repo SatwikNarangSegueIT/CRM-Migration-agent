@@ -5,9 +5,10 @@ type Variant = "primary" | "secondary" | "danger" | "ghost";
 type Size = "sm" | "md";
 
 const VARIANTS: Record<Variant, string> = {
-  primary: "bg-brand-700 text-white hover:bg-brand-800 focus-visible:outline-brand-700",
+  primary:
+    "bg-brand-700 text-white shadow-brand-900/20 hover:bg-brand-800 active:bg-brand-900 focus-visible:outline-brand-700",
   secondary:
-    "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus-visible:outline-brand-700",
+    "border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-brand-700",
   danger: "bg-red-600 text-white hover:bg-red-700 focus-visible:outline-red-600",
   ghost: "text-slate-600 hover:bg-slate-100 focus-visible:outline-brand-700",
 };
@@ -40,7 +41,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-md font-medium shadow-sm transition-colors",
+        "inline-flex items-center justify-center gap-2 rounded-lg font-medium shadow-sm transition-colors",
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
         "disabled:cursor-not-allowed disabled:opacity-60",
         VARIANTS[variant],

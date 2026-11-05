@@ -67,7 +67,7 @@ function SearchGroupCard({
 }) {
   const meta = useObjectMeta(group.object);
   return (
-    <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+    <section className="rounded-xl border border-slate-200/80 bg-white shadow-card">
       <header className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5">
         <ObjectIcon icon={group.icon} color={group.color} size={24} />
         <h2 className="font-semibold text-slate-900">

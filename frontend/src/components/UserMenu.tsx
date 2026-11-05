@@ -35,7 +35,7 @@ export function UserMenu({ accountPath = "/account" }: { accountPath?: string })
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-40 mt-2 w-64 rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-xl"
+          className="absolute right-0 z-40 mt-2 w-64 rounded-xl border border-slate-200/80 bg-white py-1 text-sm shadow-pop"
         >
           <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3">
             <span

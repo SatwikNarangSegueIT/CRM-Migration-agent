@@ -17,7 +17,7 @@ export function PageHeader({
   icon?: ReactNode;
 }) {
   return (
-    <div className="mb-6 rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
+    <div className="mb-6 rounded-xl border border-slate-200/80 bg-white shadow-card px-5 py-4">
       {breadcrumbs && breadcrumbs.length > 0 && (
         <nav aria-label="Breadcrumb" className="mb-1 text-xs text-slate-500">
           <ol className="flex flex-wrap items-center gap-1">

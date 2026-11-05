@@ -63,7 +63,7 @@ export function ReportsPage() {
       <div className="grid gap-4 md:grid-cols-[14rem_1fr]">
         <nav
           aria-label="Folders"
-          className="rounded-lg border border-slate-200 bg-white p-2 text-sm shadow-sm"
+          className="rounded-xl border border-slate-200/80 bg-white shadow-card p-2 text-sm"
         >
           {["all", ...folders].map((f) => (
             <button

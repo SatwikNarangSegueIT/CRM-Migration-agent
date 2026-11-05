@@ -293,7 +293,7 @@ function SettingGroup({
     },
   });
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
       <h2 className="font-semibold text-slate-900">{group.title}</h2>
       {group.description && <p className="text-xs text-slate-600">{group.description}</p>}
       {save.isError && (
@@ -441,7 +441,7 @@ function SlaGroup({
     },
   });
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
       <h2 className="font-semibold text-slate-900">Case SLA targets</h2>
       <p className="text-xs text-slate-600">
         New cases get first-response and resolution due dates from their priority. Overdue cases are escalated
@@ -526,7 +526,7 @@ function WebQueueGroup({
     },
   });
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
       <h2 className="font-semibold text-slate-900">Web and portal case queue</h2>
       <p className="text-xs text-slate-600">
         Cases from the web form and the customer portal are owned by this queue. Manage queues in{" "}

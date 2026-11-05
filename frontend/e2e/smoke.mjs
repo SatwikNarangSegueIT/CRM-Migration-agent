@@ -88,8 +88,12 @@ try {
     await signIn(page, "admin@demo.example.com");
     await page.getByRole("heading", { name: /Good (morning|afternoon|evening), Alex/ }).waitFor();
     const rail = page.getByRole("navigation", { name: "Apps" });
-    for (const app of ["Home", "Sales", "Service", "Marketing", "Setup"])
-      await rail.getByText(app, { exact: true }).waitFor();
+    for (const link of ["Home", "Setup"]) await rail.getByText(link, { exact: true }).waitFor();
+    // The other apps are one click away in the app switcher.
+    await rail.getByRole("button", { name: /Switch app/ }).click();
+    for (const app of ["Sales", "Service", "Marketing"])
+      await rail.getByRole("menuitem", { name: new RegExp(`^${app}`) }).waitFor();
+    await page.keyboard.press("Escape");
     await shot(page, "01-home");
   });
 
@@ -135,7 +139,10 @@ try {
     await dialog.getByRole("button", { name: "Save" }).click();
     await page.getByText("App created.").waitFor();
     await page.goto(`${BASE}/`);
-    await page.getByRole("navigation", { name: "Apps" }).getByText(`Fleet ${RUN}`).waitFor();
+    const switcher = page.getByRole("navigation", { name: "Apps" });
+    await switcher.getByRole("button", { name: /Switch app/ }).click();
+    await switcher.getByRole("menuitem", { name: new RegExp(`^Fleet ${RUN}`) }).waitFor();
+    await page.keyboard.press("Escape");
   });
 
   await step("create a record of the custom object with the picklist", async () => {

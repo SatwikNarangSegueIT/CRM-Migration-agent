@@ -109,7 +109,7 @@ export function PortalHomePage() {
               <Link
                 key={o.api_name}
                 to={`/portal/o/${o.api_name}`}
-                className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-brand-300 hover:shadow"
+                className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white shadow-card p-4 hover:border-brand-300 hover:shadow"
               >
                 <ObjectIcon icon={o.icon} color="#0176d3" size={36} />
                 <span>
@@ -123,7 +123,7 @@ export function PortalHomePage() {
         </div>
       )}
       {me.data.contact && (
-        <section className="rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-sm">
+        <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-4 text-sm">
           <h2 className="font-semibold text-slate-900">Your details</h2>
           <p className="mt-1 text-slate-700">
             {me.data.contact.name}
@@ -291,7 +291,7 @@ export function PortalRecordPage() {
           {m.plural_label}
         </Link>
       </nav>
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <ObjectIcon icon={m.icon} color={m.color} size={40} />
@@ -330,7 +330,7 @@ export function PortalRecordPage() {
         )}
       </section>
       {sections.map((s) => (
-        <section key={s.label} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section key={s.label} className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
           <h2 className="font-semibold text-slate-900">{s.label}</h2>
           <dl className={cx("mt-3 grid gap-x-6 gap-y-3 text-sm", s.columns === 2 && "sm:grid-cols-2")}>
             {s.fields.map((f) => (
@@ -359,7 +359,7 @@ function RelatedSection({ rel }: { rel: PortalRecord["related"][number] }) {
   const meta = useDescribe(rel.object);
   const cols = rel.columns.filter((c) => c !== "name" && !STAFF_ONLY.has(c));
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
       <h2 className="font-semibold text-slate-900">
         {rel.label} ({rel.items.length})
       </h2>
@@ -426,7 +426,7 @@ function Conversation({ object, record }: { object: string; record: PortalRecord
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       {notes !== undefined && (
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+        <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5 lg:col-span-2">
           <h2 className="font-semibold text-slate-900">Conversation</h2>
           <ol className="mt-3 space-y-3">
             {notes.map((n) => (
@@ -470,7 +470,7 @@ function Conversation({ object, record }: { object: string; record: PortalRecord
         </section>
       )}
       {files !== undefined && (
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-5">
           <h2 className="flex items-center justify-between font-semibold text-slate-900">
             Files
             <Button
@@ -619,7 +619,7 @@ export function PortalNewCasePage() {
       </nav>
       <h1 className="text-2xl font-semibold text-slate-900">How can we help?</h1>
       <form
-        className="space-y-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+        className="space-y-3 rounded-xl border border-slate-200/80 bg-white shadow-card p-5"
         onSubmit={(e) => {
           e.preventDefault();
           if (subject.trim()) create.mutate();

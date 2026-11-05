@@ -68,7 +68,7 @@ export function StatementPage() {
         </Link>
         <Button onClick={() => window.print()}>Print or save as PDF</Button>
       </div>
-      <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm print:border-0 print:shadow-none">
+      <section className="rounded-xl border border-slate-200/80 bg-white shadow-card p-6 print:border-0 print:shadow-none">
         <header className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
           <div>
             <p className="text-lg font-semibold text-slate-900">{brand.name}</p>

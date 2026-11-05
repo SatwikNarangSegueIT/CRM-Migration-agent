@@ -43,7 +43,7 @@ export function HeaderIconButton({
         <div
           role="dialog"
           aria-label={label}
-          className="absolute right-0 z-40 mt-2 w-72 rounded-lg border border-slate-200 bg-white text-sm shadow-xl"
+          className="absolute right-0 z-40 mt-2 w-72 rounded-xl border border-slate-200/80 bg-white text-sm shadow-pop"
         >
           {children}
         </div>
