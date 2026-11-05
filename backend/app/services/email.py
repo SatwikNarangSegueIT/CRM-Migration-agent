@@ -13,7 +13,7 @@ import smtplib
 import ssl
 import threading
 from email.message import EmailMessage
-from email.utils import formataddr
+from email.utils import formataddr, parseaddr
 
 from sqlalchemy import event
 from sqlalchemy.orm import Session
@@ -87,7 +87,17 @@ def _send_smtp(config: MailConfig, message: EmailMessage) -> None:
         raise _smtp_error(exc, config) from exc
 
 
+# Headers the ZeptoMail API takes as fields of its own rather than as MIME headers.
+_ZEPTO_OWN_HEADERS = {"from", "to", "subject", "reply-to", "content-type", "mime-version"}
+
+
+def _address(value: str) -> dict[str, str]:
+    name, email_address = parseaddr(value)
+    return {"address": email_address, "name": name} if name else {"address": email_address}
+
+
 def _send_zeptomail(config: MailConfig, message: EmailMessage, text_body: str, html_body: str | None) -> None:
+    """ZeptoMail's Send Mail API (https://www.zoho.com/zeptomail/help/api/email-sending.html)."""
     import httpx
 
     if not config.zeptomail_token:
@@ -95,14 +105,27 @@ def _send_zeptomail(config: MailConfig, message: EmailMessage, text_body: str, h
     token = config.zeptomail_token.strip()
     if not token.lower().startswith("zoho-enczapikey"):
         token = f"Zoho-enczapikey {token}"
+    sender = _address(str(message["From"]))
+    sender.setdefault("name", sender["address"])
     payload: dict[str, object] = {
-        "from": {"address": config.from_email, "name": config.from_name or config.from_email},
-        "to": [{"email_address": {"address": str(message["To"])}}],
+        "from": sender,  # the message's sender (a firm's own name on its campaigns), else the default
+        "to": [{"email_address": _address(str(message["To"]))}],
         "subject": str(message["Subject"]),
         "textbody": text_body,
     }
     if html_body:
         payload["htmlbody"] = html_body
+    if message["Reply-To"]:
+        payload["reply_to"] = [_address(str(message["Reply-To"]))]
+    extra = {
+        k: str(v)
+        for k, v in message.items()
+        if k.lower() not in _ZEPTO_OWN_HEADERS and not k.lower().startswith("content-")
+    }
+    if extra:
+        payload["mime_headers"] = extra  # e.g. List-Unsubscribe
+    if config.zeptomail_bounce_address:
+        payload["bounce_address"] = config.zeptomail_bounce_address
     try:
         response = httpx.post(
             config.zeptomail_api_url,

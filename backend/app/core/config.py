@@ -117,6 +117,8 @@ class Settings(BaseSettings):
     # Zoho ZeptoMail: the API URL of your account's data centre and a "Send Mail" token.
     zeptomail_api_url: str = "https://api.zeptomail.com/v1.1/email"
     zeptomail_token: SecretStr | None = None
+    # Optional bounce address (a bounce domain configured in the ZeptoMail Mail Agent).
+    zeptomail_bounce_address: str | None = None
 
     @field_validator("database_url", mode="before")
     @classmethod

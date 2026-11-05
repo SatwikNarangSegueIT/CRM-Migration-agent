@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+from dataclasses import replace
 from typing import Any, ClassVar
 
 import pytest
@@ -138,6 +139,22 @@ def test_zeptomail_api(monkeypatch: pytest.MonkeyPatch) -> None:
     assert seen["json"]["to"] == [{"email_address": {"address": "client@example.com"}}]
     assert seen["json"]["subject"] == "Hello"
     assert seen["json"]["textbody"] == "Body text" and seen["json"]["htmlbody"] == "<p>Body</p>"
+
+    # A message's own sender, reply-to and headers (a firm's campaign) are passed through; so is a bounce
+    # address when one is set up.
+    email.send(
+        "client@example.com",
+        "News",
+        "Body",
+        from_name="Harbour Legal News",
+        from_email="news@harbour.example.com",
+        headers={"Reply-To": "Front Desk <desk@harbour.example.com>", "List-Unsubscribe": "<https://x/u>"},
+        config=replace(config, zeptomail_bounce_address="bounce@bounce.harbour.example.com"),
+    )
+    assert seen["json"]["from"] == {"address": "news@harbour.example.com", "name": "Harbour Legal News"}
+    assert seen["json"]["reply_to"] == [{"address": "desk@harbour.example.com", "name": "Front Desk"}]
+    assert seen["json"]["mime_headers"] == {"List-Unsubscribe": "<https://x/u>"}
+    assert seen["json"]["bounce_address"] == "bounce@bounce.harbour.example.com"
 
     def unauthorised(*_: Any, **__: Any) -> httpx.Response:
         return httpx.Response(401, json={"error": {"code": "TM_3601", "message": "Invalid API Token"}})

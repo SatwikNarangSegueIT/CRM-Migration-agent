@@ -37,7 +37,9 @@ export function AuthLayout({
           className="pointer-events-none absolute -bottom-40 -left-24 h-96 w-96 rounded-full bg-brand-700/40 blur-3xl"
         />
         <div className="relative flex items-center gap-2 text-lg font-semibold">
-          <img src={brand.logoUrl ?? "/favicon.svg"} alt="" className="h-8 w-8 rounded-md bg-white/10 p-1" />
+          {brand.logoUrl && (
+            <img src={brand.logoUrl} alt="" className="h-8 w-8 rounded-md bg-white/10 object-contain p-1" />
+          )}
           {brand.name}
         </div>
         <div className="relative my-auto max-w-md">

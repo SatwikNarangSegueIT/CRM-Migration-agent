@@ -345,13 +345,15 @@ export function AppShell() {
       </a>
 
       <aside className="sticky top-0 hidden h-screen w-[76px] flex-none overflow-y-auto bg-slate-900 md:block print:hidden">
-        <Link
-          to="/"
-          aria-label="Home"
-          className="flex h-14 items-center justify-center border-b border-white/5"
-        >
-          <img src={brand.logoUrl ?? "/favicon.svg"} alt="" className="h-8 w-8 rounded-lg" />
-        </Link>
+        {brand.logoUrl && (
+          <Link
+            to="/"
+            aria-label="Home"
+            className="flex h-14 items-center justify-center border-b border-white/5"
+          >
+            <img src={brand.logoUrl} alt="" className="h-8 w-8 rounded-lg object-contain" />
+          </Link>
+        )}
         <nav aria-label="Apps">
           <ul className="flex flex-col gap-1 py-3">
             {entries.map((e) => (

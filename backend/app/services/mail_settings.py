@@ -56,6 +56,8 @@ class MailConfig:
     smtp_password: str | None = field(default=None, repr=False)
     zeptomail_api_url: str = ZEPTOMAIL_DEFAULT_URL
     zeptomail_token: str | None = field(default=None, repr=False)
+    # Optional: a bounce address on a domain set up in the Mail Agent (ZeptoMail -> Mail Agents -> Domains).
+    zeptomail_bounce_address: str | None = None
     source: Literal["environment", "setup"] = "environment"
 
     @property
@@ -80,6 +82,7 @@ class MailConfig:
             "smtp_password_set": bool(self.smtp_password),
             "zeptomail_api_url": self.zeptomail_api_url,
             "zeptomail_token_set": bool(self.zeptomail_token),
+            "zeptomail_bounce_address": self.zeptomail_bounce_address or "",
             "source": self.source,
         }
 
@@ -102,6 +105,7 @@ def from_environment() -> MailConfig:
         smtp_password=_secret(s.smtp_password),
         zeptomail_api_url=s.zeptomail_api_url,
         zeptomail_token=_secret(s.zeptomail_token),
+        zeptomail_bounce_address=s.zeptomail_bounce_address or None,
     )
 
 
