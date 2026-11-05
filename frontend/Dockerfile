@@ -8,7 +8,7 @@ RUN npm run build
 
 FROM nginx:1.27-alpine AS runtime
 # API_UPSTREAM is substituted into the nginx template at container start.
-ENV API_UPSTREAM=http://api:8000
+ENV API_UPSTREAM=http://api:8000 API_HOST_HEADER=\$host
 COPY deploy/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY deploy/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
