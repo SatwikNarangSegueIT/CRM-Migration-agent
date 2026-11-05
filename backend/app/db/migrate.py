@@ -289,8 +289,8 @@ def refill_warm_pool_soon() -> None:
 
     settings = get_settings()
     size, per_domain = settings.signup_warm_pool_size, settings.signup_ready_per_domain
-    if size <= 0 and per_domain <= 0:
-        return
+    if (size <= 0 and per_domain <= 0) or settings.is_serverless:
+        return  # serverless: a thread wouldn't finish; the "maintain" scheduled job refills the pools
 
     def run() -> None:
         try:

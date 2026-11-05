@@ -243,6 +243,12 @@ def queue_email(to: str, subject: str, body: str, *, wait: bool = False) -> None
                 forget_worker_check()
     if wait:
         deliver_email(to, subject, body)
+    elif get_settings().is_serverless:
+        # A serverless function may be frozen once it responds: send before returning.
+        try:
+            deliver_email(to, subject, body)
+        except Exception:
+            logger.exception("E-mail delivery failed", extra={"to": to, "subject": subject})
     else:
         _send_in_background(to, subject, body)
 

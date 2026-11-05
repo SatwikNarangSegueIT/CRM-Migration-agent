@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlsplit
@@ -86,6 +87,12 @@ class Settings(BaseSettings):
     # sign the person in. "required": e-mail a confirmation link first. "auto": required in production or
     # whenever e-mail delivery is set up, otherwise off. Set "auto" or "required" once e-mail works again.
     signup_email_verification: Literal["auto", "required", "off"] = "off"
+    # Serverless (e.g. Vercel functions): send e-mail and run jobs before the response instead of in
+    # background threads, and leave start-up warm-up and pool refills to the scheduled jobs (/api/v1/cron).
+    # None = detect (the VERCEL variable is set on Vercel).
+    serverless: bool | None = None
+    # Bearer secret for /api/v1/cron/<job> (Vercel Cron sends CRON_SECRET in the Authorization header).
+    cron_secret: SecretStr | None = None
     signup_verification_hours: int = Field(default=24, ge=1, le=24 * 7)
     # Pre-built workspaces kept ready so sign-up is instant (topped up by the API and the worker).
     signup_warm_pool_size: int = Field(default=2, ge=0, le=50)
@@ -172,9 +179,21 @@ class Settings(BaseSettings):
         return self.app_env not in ("development", "test")
 
     @property
+    def is_serverless(self) -> bool:
+        """Running as short-lived functions (Vercel): no background threads outlive the request."""
+        if self.serverless is not None:
+            return self.serverless
+        return bool(os.environ.get("VERCEL"))
+
+    @property
     def allowed_origins(self) -> set[str]:
         origins = {self.public_app_url.rstrip("/")}
         origins |= {o.strip().rstrip("/") for o in self.extra_allowed_origins.split(",") if o.strip()}
+        # On Vercel, the deployment's own addresses (production domain, branch and preview URLs).
+        for var in ("VERCEL_PROJECT_PRODUCTION_URL", "VERCEL_BRANCH_URL", "VERCEL_URL"):
+            host = os.environ.get(var)
+            if host:
+                origins.add(f"https://{host.strip().rstrip('/')}")
         return origins
 
     @property

@@ -207,6 +207,24 @@ def migrate() -> int:
     return 0
 
 
+def release() -> int:
+    """Everything a new deployment needs, for hosts without a long-running API (e.g. Vercel): migrations,
+    profession pack upgrades for existing workspaces, and the ready-made workspace pools."""
+    from app.core.config import get_settings
+    from app.db.migrate import fill_ready_pool, fill_warm_pool, migrate_all
+    from app.domains import upgrade_all_domain_workspaces
+
+    schemas = migrate_all()
+    upgraded = upgrade_all_domain_workspaces()
+    settings = get_settings()
+    built = fill_ready_pool(settings.signup_ready_per_domain) + fill_warm_pool(settings.signup_warm_pool_size)
+    print(
+        f"Platform and {len(schemas)} tenant schema(s) are up to date; {sum(upgraded.values())} workspace "
+        f"change(s) applied; {built} ready-made workspace(s) built."
+    )
+    return 0
+
+
 def create_tenant_cmd(name: str, domain: str, slug: str | None) -> int:
     from app.db.migrate import create_tenant
 
@@ -229,6 +247,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tenant", help="Workspace address (default: the first workspace)")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("migrate", help="Run platform and tenant migrations")
+    sub.add_parser("release", help="Migrations, pack upgrades and ready-made workspaces (run on each deploy)")
     p_tenant = sub.add_parser("create-tenant", help="Create a workspace (firm) with its own schema")
     p_tenant.add_argument("--name", required=True)
     p_tenant.add_argument(
@@ -252,6 +271,8 @@ def main(argv: list[str] | None = None) -> int:
     _TENANT = args.tenant
     if args.command == "migrate":
         return migrate()
+    if args.command == "release":
+        return release()
     if args.command == "create-tenant":
         return create_tenant_cmd(args.name, args.domain, args.slug)
     if args.command == "list-tenants":

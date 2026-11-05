@@ -66,5 +66,14 @@ def dispatch(task: Any, *args: Any) -> str:
         except Exception:
             logger.warning("Task queue unavailable; running the job in the API", exc_info=True)
             forget_worker_check()
+    from app.core.config import get_settings
+
+    if get_settings().is_serverless:
+        # A function may be frozen as soon as it responds: finish the job first.
+        try:
+            task.run(*args)
+        except Exception:
+            logger.exception("Background job failed", extra={"task": getattr(task, "name", str(task))})
+        return "inline"
     run_in_thread(task, *args)
     return "inline"

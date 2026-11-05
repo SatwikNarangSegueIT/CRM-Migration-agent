@@ -98,11 +98,12 @@ def enqueue_email_send(send_id: uuid.UUID, tenant: str | None = None) -> None:
 @celery_app.task(name="marketing.dispatch_due")
 def dispatch_due_sends() -> int:
     from app.apps.marketing import due_sends
+    from app.worker.dispatch import dispatch
 
     count = 0
     for schema, ids in _each_tenant(due_sends).items():
         for sid in ids:
-            process_email_send_task.delay(str(sid), schema)
+            dispatch(process_email_send_task, str(sid), schema)  # the worker if one runs, else here
             count += 1
     return count
 

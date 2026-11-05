@@ -20,6 +20,7 @@ from app.routers import (
     admin_users,
     audit_logs,
     auth,
+    cron,
     data,
     health,
     meta,
@@ -80,8 +81,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         logger.info("Starting %s", settings.app_name, extra={"environment": settings.app_env})
-        if settings.app_env != "test":
-            _warm_up_in_background()
+        if settings.app_env != "test" and not settings.is_serverless:
+            _warm_up_in_background()  # serverless: done by `app.cli release` and the "maintain" cron job
         yield
         logger.info("Shutting down %s", settings.app_name)
 
@@ -101,6 +102,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     api = APIRouter(prefix=API_PREFIX, dependencies=[Depends(verify_origin)])
     api.include_router(health.router)
+    api.include_router(cron.router)
     api.include_router(auth.router)
     api.include_router(setup.router)
     api.include_router(admin_users.router)
