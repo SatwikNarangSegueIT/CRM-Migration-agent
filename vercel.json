@@ -1,6 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["syd1"],
+  "regions": [
+    "syd1"
+  ],
   "services": {
     "backend": {
       "root": "backend",
@@ -15,16 +17,42 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": { "service": "backend" }
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/assets/(.*)",
+      "destination": {
+        "service": "frontend"
+      }
+    },
+    {
+      "source": "/([^/]+\\.[a-zA-Z0-9]+)",
+      "destination": {
+        "service": "frontend"
+      }
     },
     {
       "source": "/(.*)",
-      "destination": { "service": "frontend" }
+      "destination": {
+        "service": "frontend",
+        "path": "/index.html"
+      }
     }
   ],
   "crons": [
-    { "path": "/api/v1/cron/maintain", "schedule": "0 16 * * *" },
-    { "path": "/api/v1/cron/purge", "schedule": "0 17 * * *" },
-    { "path": "/api/v1/cron/packs-daily", "schedule": "0 20 * * *" }
+    {
+      "path": "/api/v1/cron/maintain",
+      "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/v1/cron/purge",
+      "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/v1/cron/packs-daily",
+      "schedule": "0 20 * * *"
+    }
   ]
 }
