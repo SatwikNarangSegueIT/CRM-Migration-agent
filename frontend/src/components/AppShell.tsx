@@ -206,27 +206,26 @@ function Notifications() {
 }
 
 /**
- * Where "Back" goes on a page below a main section. Top-level pages (an app's home, a tab's list, Setup,
- * Calendar, Reports, Dashboards) return null: the sidebar is how people move between those.
+ * Where "Back" goes when there's no earlier page in this visit (a link opened directly): one level up.
+ * Every page has it except Home (the firm's home page and app home pages).
  */
 export function parentPath(pathname: string, search: string): string | null {
   const parts = pathname.split("/").filter(Boolean);
   if (parts.length === 0) return null;
   const [first, second] = parts;
-  if (parts.length === 1 && ["setup", "calendar", "reports", "dashboards"].includes(first!)) return null;
   if (first === "app" && parts.length === 2) return null;
-  if (first === "o" && parts.length === 2) return null;
   if (first === "import") {
     const object = new URLSearchParams(search).get("object");
     return object ? `/o/${object}` : "/";
   }
+  if (parts.length === 1) return first === "recycle-bin" ? "/setup" : "/";
+  if (first === "o" && parts.length === 2) return "/";
   if (first === "admin") return parts.length > 2 ? `/admin/${second}` : "/setup";
-  if (first === "statements" || first === "search" || first === "account") return "/";
-  if (first === "recycle-bin") return "/setup";
+  if (first === "statements") return "/";
   return "/" + parts.slice(0, -1).join("/");
 }
 
-function BackButton({ to }: { to: string }) {
+export function BackButton({ to }: { to: string }) {
   const navigate = useNavigate();
   const { key } = useLocation();
   return (
@@ -248,12 +247,15 @@ function BackButton({ to }: { to: string }) {
 
 const COLLAPSED_KEY = "crm.sidebarCollapsed";
 
+/** The saved choice; with none, collapsed on screens narrower than a laptop (tablets), open on wider ones. */
 function storedCollapsed(): boolean {
   try {
-    return localStorage.getItem(COLLAPSED_KEY) === "1";
+    const saved = localStorage.getItem(COLLAPSED_KEY);
+    if (saved !== null) return saved === "1";
   } catch {
-    return false;
+    /* storage unavailable: fall back to the screen size */
   }
+  return typeof window !== "undefined" && window.matchMedia?.("(max-width: 1023px)").matches === true;
 }
 
 /** Sidebar collapsed to icons: remembered per browser, toggled by its button or Ctrl/⌘+B. */
@@ -437,7 +439,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main id="main" className="w-full flex-1 px-3 py-5 sm:px-6 sm:py-6">
+        <main id="main" className="relative w-full min-w-0 flex-1 overflow-x-clip px-3 py-5 sm:px-6 sm:py-6">
           <Outlet />
         </main>
       </div>

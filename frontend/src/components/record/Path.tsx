@@ -28,11 +28,13 @@ export function Path({
     (v, i) => !v.closed || i === currentIndex || (!closed && v === values.find((x) => x.closed)),
   );
   const chosen = selected && selected !== value ? selected : null;
+  // Many stages (a visa matter has eight) need a laptop-wide screen to read as chevrons.
+  const long = visible.length > 5;
 
   return (
     <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-card">
       {/* Phones: the chevrons would be too narrow to read, so show the current stage and a progress bar. */}
-      <div className="sm:hidden">
+      <div className={long ? "lg:hidden" : "sm:hidden"}>
         <div className="flex items-baseline justify-between gap-3">
           <p className="min-w-0 truncate text-sm font-semibold text-slate-900">
             {current ? current.label : "Not started"}
@@ -81,7 +83,7 @@ export function Path({
           </label>
         )}
       </div>
-      <ol className="hidden gap-1 sm:flex" aria-label={`${field.label} path`}>
+      <ol className={cx("hidden gap-1", long ? "lg:flex" : "sm:flex")} aria-label={`${field.label} path`}>
         {visible.map((v) => {
           const i = values.indexOf(v);
           const done = currentIndex >= 0 && i < currentIndex && !closed;
@@ -123,7 +125,7 @@ export function Path({
         <div className="mt-2 flex justify-end">
           <Button
             size="sm"
-            className="w-full sm:w-auto"
+            className={long ? "w-full lg:w-auto" : "w-full sm:w-auto"}
             loading={saving}
             disabled={!chosen && currentIndex >= values.length - 1}
             onClick={() => {

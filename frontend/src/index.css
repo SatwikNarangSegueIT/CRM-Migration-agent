@@ -69,3 +69,11 @@
     pointer-events: none;
   }
 }
+
+@layer base {
+  /* A table's scroll box contains its own visually-hidden labels (sr-only is absolutely positioned), so
+     they can't stretch the page sideways on a phone. */
+  .overflow-x-auto {
+    position: relative;
+  }
+}

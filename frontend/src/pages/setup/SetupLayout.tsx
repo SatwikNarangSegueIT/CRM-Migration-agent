@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/context";
 import { SettingsIcon } from "../../components/icons";
 import { cx } from "../../components/ui/cx";
@@ -157,13 +157,48 @@ export function useSetupSections() {
   })).filter((s) => s.items.length > 0);
 }
 
+/** Phones and tablets: the Setup menu as one picker above the page, so the page gets the full width. */
+function SetupPicker({ sections }: { sections: ReturnType<typeof useSetupSections> }) {
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const all = sections.flatMap((s) => s.items);
+  const current = all
+    .filter((i) => pathname === i.to || pathname.startsWith(`${i.to}/`))
+    .sort((a, b) => b.to.length - a.to.length)[0];
+  if (pathname === "/setup") return null;
+  return (
+    <label className="block lg:hidden">
+      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Setup section
+      </span>
+      <select
+        className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm"
+        value={current?.to ?? ""}
+        onChange={(e) => navigate(e.target.value || "/setup")}
+      >
+        <option value="">Setup Home</option>
+        {sections.map((s) => (
+          <optgroup key={s.title} label={s.title}>
+            {s.items.map((i) => (
+              <option key={i.to} value={i.to}>
+                {i.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function SetupLayout() {
   const sections = useSetupSections();
   return (
-    <div className="flex flex-col gap-4 md:flex-row">
+    <div className="flex flex-col gap-4 lg:flex-row">
+      <SetupPicker sections={sections} />
       <nav
         aria-label="Setup"
-        className="w-full flex-none rounded-xl border border-slate-200/80 bg-white shadow-card p-2 text-sm md:w-60"
+        className="hidden w-60 flex-none self-start rounded-xl border border-slate-200/80 bg-white p-2 text-sm shadow-card lg:block"
       >
         <NavLink
           to="/setup"

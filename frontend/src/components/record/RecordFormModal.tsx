@@ -192,7 +192,10 @@ export function RecordFormModal({
                 const group = groupOf(api);
                 const alternatives = group?.filter((a) => a !== api) ?? [];
                 return (
-                  <div key={api} className={wide && section.columns === 2 ? "sm:col-span-2" : undefined}>
+                  <div
+                    key={api}
+                    className={wide && section.columns === 2 ? "min-w-0 sm:col-span-2" : "min-w-0"}
+                  >
                     <FormField
                       label={f.label}
                       required={f.required || (api === "name" && creating) || Boolean(group)}

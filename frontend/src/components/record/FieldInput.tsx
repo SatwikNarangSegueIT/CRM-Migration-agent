@@ -469,23 +469,26 @@ function PolymorphicLookup({
   });
   const readable = targets.filter((t) => !objects.data || objects.data.some((o) => o.api_name === t));
   return (
-    <div className={cx(targets.length > 1 && !value && "flex gap-2")}>
+    <div className={cx(targets.length > 1 && !value && "flex min-w-0 gap-2")}>
       {targets.length > 1 && !value && (
-        <select
-          aria-label="Object"
-          className={controlClass(false, "w-40 flex-none")}
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-          disabled={disabled}
-        >
-          {readable.map((t) => (
-            <option key={t} value={t}>
-              {objects.data?.find((o) => o.api_name === t)?.label ?? t}
-            </option>
-          ))}
-        </select>
+        // The record type: a fixed narrow slot (the control itself is full width), the search takes the rest.
+        <div className="w-32 flex-none sm:w-36">
+          <select
+            aria-label="Record type"
+            className={controlClass(false, "truncate pr-7")}
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            disabled={disabled}
+          >
+            {readable.map((t) => (
+              <option key={t} value={t}>
+                {objects.data?.find((o) => o.api_name === t)?.label ?? t}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <Combobox
           id={id}
           value={value}
