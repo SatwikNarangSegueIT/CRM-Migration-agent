@@ -307,7 +307,7 @@ CLEARER_LABELS: dict[tuple[str, str], tuple[str, str]] = {
 }
 
 # Bump when apply_forms changes: existing workspaces are brought up to date at start-up.
-FORMS_VERSION = 9
+FORMS_VERSION = 11
 
 # Sales-oriented fields that a profession workspace doesn't use. They're taken off the page layouts (so off
 # the forms and record pages), not deleted: an administrator can put them back in Object Manager.
@@ -873,6 +873,8 @@ def upgrade_domain_workspace(db: Session, *, force: bool = False) -> int:
         return renamed
     spec = DOMAINS.get(str(domain))
     changed = upgrade_pack(db, spec.pack_key if spec else None)
+    changed += apply_request_tab(db, str(domain))
+    db.flush()
     changed += (
         apply_related_lists(db)
         + repair_double_renames(db)
@@ -910,6 +912,32 @@ def finish_ready_workspace(db: Session, actor_id: uuid.UUID) -> int:
     return changed
 
 
+def apply_request_tab(db: Session, domain: str) -> int:
+    """Client Requests (portal requests, the standard "case") as a tab of the profession's app, before
+    Calendar, and the profession's staff profiles able to read and answer them. Additive and idempotent."""
+    import importlib
+
+    from app.models import Profile
+
+    spec = DOMAINS.get(domain)
+    if spec is None or spec.pack_key is None:
+        return 0
+    changed = 0
+    app = db.scalar(select(App).where(App.key == spec.app_key))
+    tabs = list(app.tabs or []) if app is not None else []
+    if app is not None and not any(t.get("object") == "case" for t in tabs):
+        at = next((i for i, t in enumerate(tabs) if t.get("kind") != "object" and i > 0), len(tabs))
+        tabs.insert(at, {"kind": "object", "object": "case"})
+        app.tabs = tabs
+        changed += 1
+    definition = importlib.import_module(f"app.packs.{spec.pack_key}.definition")
+    keys = [p[0] for p in getattr(definition, "PROFILES", None) or []]
+    for profile in db.scalars(select(Profile).where(Profile.key.in_(keys))):
+        if _grant(db, profile.id, "case", "RCE VA"):
+            changed += 1
+    return changed
+
+
 def apply_domain(db: Session, domain: str, actor_id: uuid.UUID | None) -> None:
     """Install the domain's pack and shape the workspace for the profession. Caller commits."""
     from app import packs
@@ -925,6 +953,7 @@ def apply_domain(db: Session, domain: str, actor_id: uuid.UUID | None) -> None:
     mark_forms_current(db, spec.pack_key)
     apply_navigation(db, spec.app_key)
     apply_terminology(db, spec.terminology)
+    apply_request_tab(db, spec.key)
     db.flush()
     apply_related_lists(db)
     apply_forms(db, spec.key)

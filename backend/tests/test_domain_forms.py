@@ -327,3 +327,35 @@ def test_practice_settings_api(admin_client: TestClient) -> None:
         ).status_code
         == 422
     )
+
+
+@pytest.mark.parametrize("domain", ["legal", "migration", "accounting", "lending"])
+def test_client_requests_tab_and_access(db: Session, domain: str) -> None:
+    """Requests clients send from the portal have a tab in the profession's app, and its staff can answer
+    them; an existing workspace that predates the tab gets it on upgrade."""
+    import importlib
+
+    from app.domains import DOMAINS
+    from app.models import App, Profile, ProfileObjectPermission
+
+    apply_domain(db, domain, None)
+    db.flush()
+    spec = DOMAINS[domain]
+    app = db.scalar(select(App).where(App.key == spec.app_key))
+    assert app is not None
+    objects = [t.get("object") for t in app.tabs]
+    assert "case" in objects
+    assert app.tabs[objects.index("case") + 1]["kind"] == "calendar"  # just before Calendar
+    assert _obj(db, "case").plural_label == "Client Requests"
+    assert _obj(db, "case").name_label == "Request Number"
+    keys = [p[0] for p in importlib.import_module(f"app.packs.{spec.pack_key}.definition").PROFILES]
+    for profile in db.scalars(select(Profile).where(Profile.key.in_(keys))):
+        perm = db.get(ProfileObjectPermission, (profile.id, "case"))
+        assert perm is not None and perm.can_read and perm.can_edit and perm.view_all, profile.key
+
+    # A workspace built before the tab: removed, then put back by the upgrade (once).
+    app.tabs = [t for t in app.tabs if t.get("object") != "case"]
+    db.flush()
+    assert upgrade_domain_workspace(db, force=True) > 0
+    assert sum(t.get("object") == "case" for t in app.tabs) == 1
+    db.rollback()

@@ -454,8 +454,9 @@ def test_domain_related_lists_follow_the_visible_apps(db: Session) -> None:
     assert contact is not None
     objects = [rl["object"] for rl in contact.related_lists]
     assert objects[0] == "matter"
-    assert "opportunity" not in objects and "case" not in objects and "campaign_member" not in objects
-    assert "consent" in objects and "invoice" in objects
+    assert "opportunity" not in objects and "campaign_member" not in objects
+    # Client Requests are a tab of the profession's app, so a client's record lists theirs.
+    assert "case" in objects and "consent" in objects and "invoice" in objects
     db.rollback()
 
 

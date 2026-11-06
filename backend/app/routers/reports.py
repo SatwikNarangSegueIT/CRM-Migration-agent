@@ -230,6 +230,9 @@ def _unused_objects(svc: Records) -> set[str]:
 
     tabs = [t for app in svc.db.scalars(select(App).where(App.is_active.is_(True))) for t in (app.tabs or [])]
     shown = {str(t.get("object")) for t in tabs if t.get("kind") == "object"}
+    # Help-desk reports on cases (SLA compliance, volume by status) go with the Service app's queues; a
+    # practice's Client Requests tab alone doesn't bring them back.
+    shown.discard("case")
     if any(t.get("kind") == "queues" for t in tabs):
         shown.add("case")
     return set(_APP_ONLY_OBJECTS - shown)

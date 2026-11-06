@@ -322,6 +322,29 @@ def apply_content(db: Session, domain: str) -> int:
     if case is not None and (case.label, case.plural_label) == ("Case", "Cases"):
         case.label, case.plural_label = REQUEST_LABELS
         changed += 1
+    if case is not None and case.name_label == "Case Number":
+        case.name_label = "Request Number"
+        changed += 1
+    if case is not None:
+        from app.models import ListView
+
+        # Shipped list views ("All Cases", "My Open Cases") and related lists on clients and organisations.
+        for view in db.scalars(select(ListView).where(ListView.object_api_name == "case")):
+            if "Cases" in view.name:
+                view.name = view.name.replace("Cases", REQUEST_LABELS[1])
+                changed += 1
+        for holder in db.scalars(
+            select(ObjectDefinition).where(ObjectDefinition.api_name.in_(("contact", "account")))
+        ):
+            lists = [dict(rl) for rl in holder.related_lists or []]
+            renamed = False
+            for rl in lists:
+                if rl.get("object") == "case" and rl.get("label") == "Cases":
+                    rl["label"] = REQUEST_LABELS[1]
+                    renamed = True
+            if renamed:
+                holder.related_lists = lists
+                changed += 1
     queue = db.scalar(select(Queue).where(Queue.name == "Customer Support"))
     if queue is not None and db.scalar(select(Queue).where(Queue.name == REQUEST_QUEUE)) is None:
         queue.name = REQUEST_QUEUE
