@@ -66,4 +66,13 @@ export const usersApi = {
   unlock: (id: string) => apiRequest<User>(`/admin/users/${id}/unlock`, { method: "POST" }),
   revokeSessions: (id: string) =>
     apiRequest<MessageResponse>(`/admin/users/${id}/revoke-sessions`, { method: "POST" }),
+  /** Delete a user: their records move to `transferTo` (default: you) and their e-mail is released. */
+  remove: (id: string, transferTo?: string) =>
+    apiRequest<MessageResponse>(
+      `/admin/users/${id}${transferTo ? `?transfer_to=${encodeURIComponent(transferTo)}` : ""}`,
+      { method: "DELETE" },
+    ),
+  /** Active staff, for choosing who takes over a deleted user's records. */
+  staff: (signal?: AbortSignal) =>
+    apiRequest<{ id: string; name: string; email: string }[]>("/meta/users?limit=50", { signal }),
 };

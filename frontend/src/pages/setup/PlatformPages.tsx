@@ -579,6 +579,15 @@ export function PortalUsersPage() {
   const [inviting, setInviting] = useState(false);
   const [contact, setContact] = useState<{ id: string; name: string } | null>(null);
   const [toggle, setToggle] = useState<PortalUser | null>(null);
+  const [removing, setRemoving] = useState<PortalUser | null>(null);
+  const remove = useMutation({
+    mutationFn: (u: PortalUser) => setupApi.deletePortalUser(u.id),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ["setup", "portal-users"] });
+      toast.show(r.message);
+      setRemoving(null);
+    },
+  });
   const invite = useMutation({
     mutationFn: () => setupApi.invitePortalUser(contact!.id),
     onSuccess: (u) => {
@@ -656,13 +665,21 @@ export function PortalUsersPage() {
                   <td className="px-4 py-2 text-slate-600">
                     {u.last_login_at ? formatDateTimeValue(u.last_login_at) : "—"}
                   </td>
-                  <td className="px-4 py-2 text-right">
+                  <td className="space-x-4 whitespace-nowrap px-4 py-2 text-right">
                     <button
                       type="button"
                       className="text-sm font-medium text-brand-700 hover:underline"
                       onClick={() => setToggle(u)}
                     >
                       {u.is_active ? "Deactivate" : "Activate"}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-red-700 hover:underline"
+                      onClick={() => setRemoving(u)}
+                      aria-label={`Delete portal access for ${u.name}`}
+                    >
+                      Delete
                     </button>
                   </td>
                 </tr>
@@ -722,6 +739,23 @@ export function PortalUsersPage() {
         {toggle?.is_active
           ? "They are signed out and can no longer use the portal."
           : "They can sign in to the portal again."}
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={removing !== null}
+        title={`Delete ${removing?.name ?? ""}'s portal access?`}
+        tone="danger"
+        confirmLabel="Delete access"
+        loading={remove.isPending}
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => removing && remove.mutate(removing)}
+      >
+        {remove.isError && (
+          <Alert tone="error" className="mb-2">
+            {errorMessage(remove.error)}
+          </Alert>
+        )}
+        Their portal sign-in is removed for good and the e-mail address is freed. Their client record and
+        everything on it stay, and you can invite them again later.
       </ConfirmDialog>
     </div>
   );

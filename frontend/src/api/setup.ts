@@ -240,4 +240,5 @@ export const setupApi = {
   invitePortalUser: (contactId: string) => json<PortalUser>(`/portal-users/invite/${contactId}`, "POST"),
   setPortalUserActive: (id: string, active: boolean) =>
     json<PortalUser>(`/portal-users/${id}/${active ? "activate" : "deactivate"}`, "POST"),
+  deletePortalUser: (id: string) => json<{ message: string }>(`/portal-users/${id}`, "DELETE"),
 };

@@ -319,3 +319,81 @@ def test_sign_in_does_not_make_an_open_edit_stale(admin_client: TestClient, db: 
         f"{API}/admin/users/{target.id}", json={"updated_at": loaded["updated_at"], "title": "X"}
     )
     assert stale.status_code == 409
+
+
+def test_delete_user_transfers_records_and_releases_the_email(admin_client: TestClient, db: Session) -> None:
+    """Edge case from testing: the same person added as staff and as a client. Deleting the staff account
+    hands their records over and frees the address, so the client can then be invited to the portal."""
+    from app.models import Record
+
+    c = admin_client
+    staff = make_user(db, profile="service_agent", email="sam@example.com", name="Sam Both")
+    login_c = TestClient(c.app)
+    login(login_c, "sam@example.com")
+    contact = c.post(
+        f"{API}/objects/contact/records",
+        json={"fields": {"first_name": "Sam", "last_name": "Both", "email": "sam@example.com"}},
+    ).json()
+    db.execute(text("UPDATE records SET owner_id = :u WHERE id = :r"), {"u": staff.id, "r": contact["id"]})
+    db.commit()
+    # The address is taken by the staff account, so the client can't get portal access yet.
+    assert c.post(f"{API}/portal-users/invite/{contact['id']}").status_code == 409
+
+    assert c.delete(f"{API}/admin/users/{staff.id}").status_code == 200
+    db.expire_all()
+    gone = db.get(User, staff.id)
+    assert gone is not None and gone.is_deleted and not gone.is_active and gone.password_hash is None
+    assert gone.name == "Sam Both (deleted)"
+    admin = db.scalars(select(User).where(User.email == "admin@example.com")).one()
+    assert db.get(Record, contact["id"]).owner_id == admin.id  # type: ignore[union-attr]
+    assert db.scalars(select(UserSession).where(UserSession.user_id == staff.id)).all() == []
+    assert login_c.get(f"{API}/auth/me").status_code == 401  # signed out everywhere
+    assert c.get(f"{API}/admin/users/{staff.id}").status_code == 404
+    emails = [u["email"] for u in c.get(f"{API}/admin/users").json()["items"]]
+    assert "sam@example.com" not in emails and not any("deleted.invalid" in e for e in emails)
+    entry = db.scalars(
+        select(AuditLog).where(AuditLog.entity_id == str(staff.id), AuditLog.action == "DELETE")
+    ).one()
+    assert "sam@example.com" in entry.summary
+
+    # Now the same person can be a client with portal access...
+    invited = c.post(f"{API}/portal-users/invite/{contact['id']}")
+    assert invited.status_code == 201, invited.text
+    assert invited.json()["email"] == "sam@example.com"
+
+
+def test_delete_portal_user_and_guards(admin_client: TestClient, db: Session) -> None:
+    c = admin_client
+    contact = c.post(
+        f"{API}/objects/contact/records",
+        json={"fields": {"first_name": "Pat", "last_name": "Client", "email": "pat@example.com"}},
+    ).json()
+    portal = c.post(f"{API}/portal-users/invite/{contact['id']}").json()
+    r = c.delete(f"{API}/portal-users/{portal['id']}")
+    assert r.status_code == 200, r.text
+    assert all(u["id"] != portal["id"] for u in c.get(f"{API}/portal-users").json())
+    assert c.get(f"{API}/objects/contact/records/{contact['id']}").status_code == 200  # the client stays
+    assert c.post(f"{API}/portal-users/invite/{contact['id']}").status_code == 201  # and can be re-invited
+    assert c.delete(f"{API}/portal-users/{portal['id']}").status_code == 404  # already deleted
+
+    admin = db.scalars(select(User).where(User.email == "admin@example.com")).one()
+    assert c.delete(f"{API}/admin/users/{admin.id}").json()["error"]["code"] == "self_delete"
+    staff = make_user(db, profile="finance", email="fin@example.com")
+    assert c.delete(f"{API}/portal-users/{staff.id}").status_code == 404  # not a portal user
+    bad = c.delete(f"{API}/admin/users/{staff.id}", params={"transfer_to": str(staff.id)})
+    assert bad.status_code == 422
+    other_admin = make_user(db, email="admin2@example.com")
+    ok = c.delete(f"{API}/admin/users/{staff.id}", params={"transfer_to": str(other_admin.id)})
+    assert ok.status_code == 200, ok.text
+
+
+def test_deleting_a_client_switches_off_their_portal_access(admin_client: TestClient, db: Session) -> None:
+    c = admin_client
+    contact = c.post(
+        f"{API}/objects/contact/records",
+        json={"fields": {"first_name": "Kim", "last_name": "Client", "email": "kim@example.com"}},
+    ).json()
+    portal = c.post(f"{API}/portal-users/invite/{contact['id']}").json()
+    assert c.delete(f"{API}/objects/contact/records/{contact['id']}").status_code == 204
+    db.expire_all()
+    assert db.get(User, portal["id"]).is_active is False  # type: ignore[union-attr]

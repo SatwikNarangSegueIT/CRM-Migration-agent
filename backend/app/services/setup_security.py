@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.auth.deps import AuthContext
 from app.core.errors import AppError, ConflictError, NotFoundError
 from app.models import (
+    DELETED_EMAIL_DOMAIN,
     Group,
     GroupMember,
     Profile,
@@ -99,7 +100,11 @@ def _record(
 
 
 def user_counts_by_profile(db: Session) -> dict[uuid.UUID, int]:
-    rows = db.execute(select(User.profile_id, func.count()).group_by(User.profile_id))
+    rows = db.execute(
+        select(User.profile_id, func.count())
+        .where(User.email.not_like(f"%@{DELETED_EMAIL_DOMAIN}"))
+        .group_by(User.profile_id)
+    )
     return {pid: int(n) for pid, n in rows}
 
 

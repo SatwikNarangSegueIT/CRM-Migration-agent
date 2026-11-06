@@ -12,6 +12,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.security import Profile, Role
 
+# A deleted user's e-mail becomes deleted-<id>@deleted.invalid (".invalid" can never be a real domain).
+DELETED_EMAIL_DOMAIN = "deleted.invalid"
+
 
 class TokenPurpose(StrEnum):
     INVITATION = "INVITATION"
@@ -67,6 +70,12 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     @property
     def has_password(self) -> bool:
         return self.password_hash is not None
+
+    @property
+    def is_deleted(self) -> bool:
+        """Deleted accounts keep their row (the audit trail and old records still name them) but give up
+        their e-mail address, so it can be used again."""
+        return self.email.endswith("@" + DELETED_EMAIL_DOMAIN)
 
 
 class UserSession(UUIDPrimaryKeyMixin, Base):

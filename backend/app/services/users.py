@@ -5,13 +5,28 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.auth.deps import AuthContext
 from app.core.errors import AppError, ConflictError, NotFoundError
 from app.db.session import escape_like
-from app.models import Profile, RecoveryCode, Role, User
+from app.models import (
+    DELETED_EMAIL_DOMAIN,
+    Dashboard,
+    GroupMember,
+    Profile,
+    QueueMember,
+    Record,
+    RecordShare,
+    RecoveryCode,
+    Report,
+    ReportFolder,
+    ReportSchedule,
+    Role,
+    User,
+    UserToken,
+)
 from app.schemas.common import PageParams
 from app.schemas.users import UserCreate, UserUpdate
 from app.security.policy import SYSTEM_ADMIN_KEY
@@ -28,7 +43,7 @@ def _snapshot(user: User) -> dict[str, Any]:
 
 def get_user(db: Session, user_id: uuid.UUID) -> User:
     user = db.get(User, user_id)
-    if user is None:
+    if user is None or user.is_deleted:
         raise NotFoundError("User not found.")
     return user
 
@@ -42,7 +57,7 @@ def list_users(
     role_id: uuid.UUID | None,
     is_active: bool | None,
 ) -> tuple[list[User], int]:
-    stmt = select(User)
+    stmt = select(User).where(not_deleted())
     if q:
         pattern = f"%{escape_like(q.strip().lower())}%"
         stmt = stmt.where(
@@ -59,6 +74,11 @@ def list_users(
         stmt.order_by(func.lower(User.name), User.email).offset(params.offset).limit(params.page_size)
     )
     return list(rows), total
+
+
+def not_deleted() -> Any:
+    """SQL condition: the user hasn't been deleted (see delete_user)."""
+    return User.email.not_like(f"%@{DELETED_EMAIL_DOMAIN}")
 
 
 def _active_admin_count(db: Session, *, excluding: uuid.UUID) -> int:
@@ -315,3 +335,79 @@ def revoke_all_sessions(db: Session, actor: AuthContext, user_id: uuid.UUID, met
     )
     db.commit()
     return count
+
+
+def delete_user(
+    db: Session,
+    actor: AuthContext,
+    user_id: uuid.UUID,
+    meta: RequestMeta,
+    *,
+    transfer_to: uuid.UUID | None = None,
+) -> User:
+    """Delete a staff or portal user.
+
+    The row stays, because audit entries and old records name the person, but everything else goes: their
+    records, reports and dashboards move to ``transfer_to`` (default: the administrator deleting them),
+    their sign-ins, tokens, MFA, group and queue memberships and record shares are removed, and the
+    e-mail address is released so the same person can be added again (e.g. as a client instead).
+    """
+    user = db.scalar(select(User).where(User.id == user_id).with_for_update(of=User))
+    if user is None or user.is_deleted:
+        raise NotFoundError("User not found.")
+    if user.id == actor.user.id:
+        raise AppError("You cannot delete your own account.", status_code=422, code="self_delete")
+    if (
+        user.is_active
+        and user.profile.key == SYSTEM_ADMIN_KEY
+        and _active_admin_count(db, excluding=user.id) == 0
+    ):
+        raise _last_admin_error("user")
+    heir_id = transfer_to or actor.user.id
+    if heir_id == user.id:
+        raise AppError("Choose someone else to take over their records.", status_code=422)
+    heir = db.get(User, heir_id)
+    if heir is None or not heir.is_active or heir.is_deleted or heir.profile.is_portal:
+        raise AppError(
+            "Records can only be transferred to an active staff member.",
+            status_code=422,
+            fields={"transfer_to": "Choose an active staff member"},
+        )
+
+    moved = int(db.scalar(select(func.count()).select_from(Record).where(Record.owner_id == user.id)) or 0)
+    db.execute(update(Record).where(Record.owner_id == user.id).values(owner_id=heir.id))
+    for model in (ReportFolder, Report, Dashboard, ReportSchedule):
+        db.execute(update(model).where(model.owner_id == user.id).values(owner_id=heir.id))
+    db.execute(update(Dashboard).where(Dashboard.running_user_id == user.id).values(running_user_id=heir.id))
+    db.execute(delete(GroupMember).where(GroupMember.user_id == user.id))
+    db.execute(delete(QueueMember).where(QueueMember.user_id == user.id))
+    db.execute(
+        delete(RecordShare).where(RecordShare.principal_type == "user", RecordShare.principal_id == user.id)
+    )
+    db.execute(delete(UserToken).where(UserToken.user_id == user.id))
+    db.execute(delete(RecoveryCode).where(RecoveryCode.user_id == user.id))
+    revoke_sessions(db, user.id)
+
+    old_email, old_name = user.email, user.name
+    user.email = f"deleted-{user.id.hex}@{DELETED_EMAIL_DOMAIN}"
+    user.name = f"{old_name} (deleted)"[:120]
+    user.is_active = False
+    user.password_hash = None
+    user.mfa_enabled = False
+    user.mfa_secret_encrypted = None
+    user.contact_id = None
+    user.role_id = None
+    user.phone = None
+    user.updated_at = func.now()
+    audit.record(
+        db,
+        action=AuditAction.DELETE,
+        entity_type="user",
+        entity_id=user.id,
+        actor_id=actor.user.id,
+        summary=f"Deleted user {old_name} <{old_email}>; {moved} record(s) transferred to {heir.name}",
+        changes={"email": {"from": old_email, "to": None}, "is_active": {"from": True, "to": False}},
+        meta=meta,
+    )
+    db.commit()
+    return user

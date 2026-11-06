@@ -23,6 +23,7 @@ from app.models import Profile, Record, User
 from app.routers.workspace import file_response, store_file
 from app.security.catalog import SystemPermission
 from app.services import audit
+from app.services import users as users_service
 from app.services.audit import AuditAction, RequestMeta
 from app.services.auth import issue_invitation, revoke_sessions
 from app.services.email import app_link, queue_email
@@ -332,7 +333,7 @@ def list_portal_users(db: DbSession, _: PortalAdmin) -> list[dict[str, Any]]:
     rows = db.scalars(
         select(User)
         .join(Profile, Profile.id == User.profile_id)
-        .where(Profile.is_portal.is_(True))
+        .where(Profile.is_portal.is_(True), users_service.not_deleted())
         .order_by(func.lower(User.name))
     ).all()
     return [_portal_user_out(u) for u in rows]
@@ -381,6 +382,19 @@ def invite(contact_id: uuid.UUID, request: Request, svc: Records, auth: PortalAd
         f"{app_link('/accept-invitation#token=' + qualify_token(svc.db, token))}\n",
     )
     return _portal_user_out(user)
+
+
+@staff_router.delete("/{user_id}")
+def delete_portal_user(
+    user_id: uuid.UUID, request: Request, db: DbSession, auth: PortalAdmin
+) -> dict[str, str]:
+    """Remove a client's portal access for good; the contact record stays and can be invited again."""
+    user = db.get(User, user_id)
+    if user is None or user.is_deleted or not user.profile.is_portal:
+        raise NotFoundError("Portal user not found.")
+    name = user.name
+    users_service.delete_user(db, auth, user.id, RequestMeta.from_request(request))
+    return {"message": f"{name}'s portal access was deleted."}
 
 
 @staff_router.post("/{user_id}/deactivate")

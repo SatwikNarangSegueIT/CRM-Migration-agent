@@ -1067,6 +1067,8 @@ class RecordService:
         self._check_restrict(record)
         now = utcnow()
         self._soft_delete_tree(record, now)
+        if api_name == "contact":
+            self._close_portal_access(record)
         self._run(
             api_name,
             Event.AFTER_DELETE,
@@ -1083,6 +1085,25 @@ class RecordService:
         )
         self.db.flush()
         return record
+
+    def _close_portal_access(self, contact: Record) -> None:
+        """A deleted client can't keep using the portal: their portal sign-in is switched off (an
+        administrator can switch it back on if the record is restored from the recycle bin)."""
+        from app.services.auth import revoke_sessions
+
+        for user in self.db.scalars(select(User).where(User.contact_id == contact.id, User.is_active)):
+            user.is_active = False
+            revoke_sessions(self.db, user.id)
+            audit.record(
+                self.db,
+                action=AuditAction.UPDATE,
+                entity_type="user",
+                entity_id=user.id,
+                summary=f"Portal access switched off: client {contact.name} was deleted",
+                actor_id=self.user_id,
+                changes={"is_active": {"from": True, "to": False}},
+                meta=self.request_meta,
+            )
 
     def _check_restrict(self, record: Record) -> None:
         """Lookups with delete rule "restrict" block deleting a record that is still referenced."""

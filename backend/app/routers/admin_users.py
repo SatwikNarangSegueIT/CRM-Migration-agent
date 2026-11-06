@@ -77,6 +77,20 @@ def update_user(
     return UserOut.model_validate(user)
 
 
+@router.delete("/{user_id}", response_model=Message)
+def delete_user(
+    user_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    auth: Admin,
+    transfer_to: uuid.UUID | None = None,
+) -> Message:
+    """Delete a user: their records move to `transfer_to` (default: you) and their e-mail is released."""
+    name = users_service.get_user(db, user_id).name
+    users_service.delete_user(db, auth, user_id, RequestMeta.from_request(request), transfer_to=transfer_to)
+    return Message(message=f"{name} was deleted.")
+
+
 @router.post("/{user_id}/resend-invitation", response_model=Message)
 def resend_invitation(user_id: uuid.UUID, request: Request, db: DbSession, auth: Admin) -> Message:
     user, token = users_service.resend_invitation(db, auth, user_id, RequestMeta.from_request(request))

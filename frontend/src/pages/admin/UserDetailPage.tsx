@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ApiError, errorMessage, fieldError } from "../../api/client";
 import { isLocked, usersApi, type User, type UserUpdateInput } from "../../api/users";
 import { useAuth } from "../../auth/context";
@@ -77,6 +77,7 @@ export function UserDetailPage() {
   const roles = useHierarchyRoles();
   const user = useQuery({ queryKey: ["users", id], queryFn: ({ signal }) => usersApi.get(id, signal) });
   const [pending, setPending] = useState<ActionKey | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   function onUserChanged(updated: User) {
     queryClient.setQueryData(["users", id], updated);
@@ -167,6 +168,14 @@ export function UserDetailPage() {
             ) : (
               <Button onClick={() => setPending("activate")}>Activate</Button>
             )}
+            <Button
+              variant="danger"
+              disabled={isSelf}
+              title={isSelf ? "You cannot delete your own account" : undefined}
+              onClick={() => setDeleting(true)}
+            >
+              Delete
+            </Button>
           </>
         }
       />
@@ -227,7 +236,70 @@ export function UserDetailPage() {
       >
         {dialog?.body}
       </ConfirmDialog>
+      <DeleteUserDialog user={u} open={deleting} onClose={() => setDeleting(false)} />
     </div>
+  );
+}
+
+/**
+ * Delete a user for good. Their records, reports and dashboards go to the person chosen here; the audit
+ * trail keeps their name; the e-mail address is freed (e.g. to add the same person as a client).
+ */
+function DeleteUserDialog({ user, open, onClose }: { user: User; open: boolean; onClose: () => void }) {
+  const { me } = useAuth();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const staff = useQuery({
+    queryKey: ["meta", "users", "staff"],
+    queryFn: ({ signal }) => usersApi.staff(signal),
+    enabled: open,
+  });
+  const [heir, setHeir] = useState("");
+  const choices = (staff.data ?? []).filter((s) => s.id !== user.id);
+  const target = heir || me?.user.id || "";
+  const remove = useMutation({
+    mutationFn: () => usersApi.remove(user.id, target || undefined),
+    onSuccess: (r) => {
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
+      void queryClient.invalidateQueries({ queryKey: ["meta", "users"] });
+      toast.show(r.message);
+      onClose();
+      navigate("/admin/users");
+    },
+    onError: (error) => toast.show(errorMessage(error), "error"),
+  });
+  return (
+    <ConfirmDialog
+      open={open}
+      title={`Delete ${user.name}?`}
+      confirmLabel="Delete user"
+      tone="danger"
+      loading={remove.isPending}
+      onCancel={onClose}
+      onConfirm={() => remove.mutate()}
+    >
+      <p>
+        {user.name} is signed out and can never sign in again. Their e-mail address ({user.email}) becomes
+        free, so you can add the same person again, for example as a client. The audit log keeps their
+        history. This can't be undone.
+      </p>
+      <label className="mt-4 block text-sm font-medium text-slate-800">
+        Give their records, reports and dashboards to
+        <select
+          className="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          value={target}
+          onChange={(e) => setHeir(e.target.value)}
+        >
+          {choices.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+              {s.id === me?.user.id ? " (you)" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+    </ConfirmDialog>
   );
 }
 

@@ -13,7 +13,14 @@ import { ObjectIcon } from "../../components/record/ObjectIcon";
 import { Path } from "../../components/record/Path";
 import { PrivacyDialog } from "../../components/record/PrivacyDialog";
 import { RecordFormModal } from "../../components/record/RecordFormModal";
-import { ChevronDownIcon, DownloadIcon, EditIcon, PaperclipIcon, RecycleIcon } from "../../components/icons";
+import {
+  ChevronDownIcon,
+  DownloadIcon,
+  EditIcon,
+  PaperclipIcon,
+  RecycleIcon,
+  TrashIcon,
+} from "../../components/icons";
 import { Alert, Button, ConfirmDialog, Spinner, useToast } from "../../components/ui";
 import { cx } from "../../components/ui/cx";
 import { formatDateTimeValue, recordPath, useObjectMeta } from "../../lib/records";
@@ -316,20 +323,18 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
                         </MenuItem>
                       </>
                     )}
-                    {record.access.delete && (
-                      <MenuItem
-                        danger
-                        onClick={() => {
-                          close();
-                          setConfirm("delete");
-                        }}
-                      >
-                        Delete
-                      </MenuItem>
-                    )}
                   </>
                 )}
               </MoreMenu>
+              {record.access.delete && (
+                <Button
+                  variant="secondary"
+                  className="text-red-700 hover:border-red-200 hover:bg-red-50"
+                  onClick={() => setConfirm("delete")}
+                >
+                  <TrashIcon size={16} /> Delete
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -520,6 +525,7 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
       >
         "{record.name}" goes to the recycle bin for 30 days
         {meta.related_lists.length ? ", together with its detail records" : ""}.
+        {api === "contact" && " If they have client portal access, it is switched off too."}
       </ConfirmDialog>
     </div>
   );

@@ -31,9 +31,10 @@ from app.models.security import (
     SharingDefault,
     SharingRule,
 )
-from app.models.user import RecoveryCode, User, UserSession, UserToken
+from app.models.user import DELETED_EMAIL_DOMAIN, RecoveryCode, User, UserSession, UserToken
 
 __all__ = [
+    "DELETED_EMAIL_DOMAIN",
     "App",
     "AuditLog",
     "Base",
