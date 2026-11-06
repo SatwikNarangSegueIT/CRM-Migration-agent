@@ -434,7 +434,13 @@ def _agreement_agent(svc: RecordService, matter: Record | None) -> Any:
 )
 def send_agreement(svc: RecordService, agreement: Record, payload: dict[str, Any]) -> dict[str, Any]:
     settings = get_setting(svc.db, "migration_agency") or {}
-    if settings.get("consumer_guide_required", True) and not agreement.data.get("consumer_guide_provided"):
+    # Confirmed in the Send dialog ("I have given the client the Consumer Guide"): recorded on the agreement.
+    guide_now = payload.get("consumer_guide_provided") is True and not agreement.data.get(
+        "consumer_guide_provided"
+    )
+    if settings.get("consumer_guide_required", True) and not (
+        agreement.data.get("consumer_guide_provided") or guide_now
+    ):
         raise BusinessRuleError(
             "Confirm the Consumer Guide has been provided (Code of Conduct).",
             fields={"consumer_guide_provided": "Required"},
@@ -449,6 +455,7 @@ def send_agreement(svc: RecordService, agreement: Record, payload: dict[str, Any
             "sent_at": format_datetime(datetime.now(UTC)),
             "agent": str(agent.id),
             "agent_marn": agent.mara_number,
+            **({"consumer_guide_provided": True} if guide_now else {}),
         },
         record=agreement,
     )

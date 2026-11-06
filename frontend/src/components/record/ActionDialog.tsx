@@ -12,7 +12,7 @@ import { Combobox, controlClass } from "./FieldInput";
 type ParamSpec = {
   name: string;
   label: string;
-  type: "text" | "textarea" | "datetime" | "date" | "segment";
+  type: "text" | "textarea" | "datetime" | "date" | "segment" | "checkbox";
   required?: boolean;
   hint?: string;
 };
@@ -50,6 +50,16 @@ const ACTION_PARAMS: Record<string, ParamSpec[]> = {
   "email_send.schedule": [
     { name: "scheduled_at", label: "Send at", type: "datetime", hint: "Leave empty to send now." },
   ],
+  // The Code of Conduct needs the Consumer Guide given before the agreement goes out: confirmed here.
+  "service_agreement.send": [
+    {
+      name: "consumer_guide_provided",
+      label: "I have given the client the Consumer Guide",
+      type: "checkbox",
+      required: true,
+      hint: "Required by the Code of Conduct. Recorded on the agreement.",
+    },
+  ],
   "campaign.add_members": [
     { name: "segment_id", label: "Add everyone in segment", type: "segment", required: true },
   ],
@@ -58,7 +68,8 @@ const ACTION_PARAMS: Record<string, ParamSpec[]> = {
 const CONFIRM_TEXT: Record<string, string> = {
   "invoice.issue": "Issuing assigns the next invoice number and locks the lines.",
   "quote.create_invoice": "A draft invoice is created with the quote's lines.",
-  "service_agreement.send": "The agreement is marked as sent; the client can sign it in the portal.",
+  "service_agreement.send":
+    "The client is e-mailed a link to read and sign the agreement in their client portal. The agent's name and MARN are recorded on it.",
   "email_send.cancel": "The scheduled e-mail won't be sent.",
   "case.accept": "You become the owner of this case.",
   "legal_matter.bill_time": "A draft invoice is created with a line for each unbilled time entry.",
@@ -120,7 +131,14 @@ function GenericActionDialog({
   onDone: (result: Record<string, unknown>) => void;
 }) {
   const spec = ACTION_PARAMS[specKey] ?? [];
-  const [values, setValues] = useState<Record<string, string>>({});
+  // Checkboxes start from the record (e.g. Consumer Guide already ticked on the agreement).
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      spec
+        .filter((p) => p.type === "checkbox" && record.fields[p.name] === true)
+        .map((p) => [p.name, "true"]),
+    ),
+  );
   const [segmentName, setSegmentName] = useState("");
   const run = useMutation({
     mutationFn: () => {
@@ -128,7 +146,8 @@ function GenericActionDialog({
       for (const p of spec) {
         const v = values[p.name];
         if (!v) continue;
-        payload[p.name] = p.type === "datetime" ? new Date(v).toISOString() : v;
+        payload[p.name] =
+          p.type === "datetime" ? new Date(v).toISOString() : p.type === "checkbox" ? true : v;
       }
       return recordsApi.action(object, record.id, action.name, payload);
     },
@@ -161,54 +180,71 @@ function GenericActionDialog({
     >
       <form id="action-form" onSubmit={onSubmit} className="space-y-4" noValidate>
         {err && <Alert tone="error">{errorMessage(err)}</Alert>}
-        {spec.length === 0 && (
+        {(spec.length === 0 || CONFIRM_TEXT[specKey]) && (
           <p className="text-sm text-slate-700">
             {CONFIRM_TEXT[specKey] ?? `Run "${action.label}" on ${record.name}?`}
           </p>
         )}
-        {spec.map((p) => (
-          <FormField
-            key={p.name}
-            label={p.label}
-            required={p.required}
-            hint={p.hint}
-            error={err?.fields[p.name]}
-          >
-            {({ id, describedBy, invalid }) =>
-              p.type === "textarea" ? (
-                <textarea
-                  id={id}
-                  rows={4}
-                  aria-describedby={describedBy}
-                  className={controlClass(invalid)}
-                  value={values[p.name] ?? ""}
-                  onChange={(e) => setValues((v) => ({ ...v, [p.name]: e.target.value }))}
-                />
-              ) : p.type === "segment" ? (
-                <Combobox
-                  id={id}
-                  value={values[p.name] ?? null}
-                  displayName={segmentName}
-                  onChange={(v, name) => {
-                    setValues((cur) => ({ ...cur, [p.name]: v ?? "" }));
-                    setSegmentName(name ?? "");
-                  }}
-                  search={(q, signal) => recordsApi.lookup("segment", q, signal)}
-                  queryKey={["lookup", "segment"]}
-                />
-              ) : (
-                <Input
-                  id={id}
-                  aria-describedby={describedBy}
-                  invalid={invalid}
-                  type={p.type === "datetime" ? "datetime-local" : p.type === "date" ? "date" : "text"}
-                  value={values[p.name] ?? ""}
-                  onChange={(e) => setValues((v) => ({ ...v, [p.name]: e.target.value }))}
-                />
-              )
-            }
-          </FormField>
-        ))}
+        {spec
+          .filter((p) => p.type === "checkbox")
+          .map((p) => (
+            <div key={p.name}>
+              <Checkbox
+                label={<span className="font-medium text-slate-800">{p.label}</span>}
+                checked={values[p.name] === "true"}
+                onChange={(e) => setValues((v) => ({ ...v, [p.name]: e.target.checked ? "true" : "" }))}
+              />
+              {p.hint && <p className="ml-6 mt-1 text-xs text-slate-500">{p.hint}</p>}
+              {err?.fields[p.name] && (
+                <p className="ml-6 mt-1 text-xs font-medium text-red-700">{err.fields[p.name]}</p>
+              )}
+            </div>
+          ))}
+        {spec
+          .filter((p) => p.type !== "checkbox")
+          .map((p) => (
+            <FormField
+              key={p.name}
+              label={p.label}
+              required={p.required}
+              hint={p.hint}
+              error={err?.fields[p.name]}
+            >
+              {({ id, describedBy, invalid }) =>
+                p.type === "textarea" ? (
+                  <textarea
+                    id={id}
+                    rows={4}
+                    aria-describedby={describedBy}
+                    className={controlClass(invalid)}
+                    value={values[p.name] ?? ""}
+                    onChange={(e) => setValues((v) => ({ ...v, [p.name]: e.target.value }))}
+                  />
+                ) : p.type === "segment" ? (
+                  <Combobox
+                    id={id}
+                    value={values[p.name] ?? null}
+                    displayName={segmentName}
+                    onChange={(v, name) => {
+                      setValues((cur) => ({ ...cur, [p.name]: v ?? "" }));
+                      setSegmentName(name ?? "");
+                    }}
+                    search={(q, signal) => recordsApi.lookup("segment", q, signal)}
+                    queryKey={["lookup", "segment"]}
+                  />
+                ) : (
+                  <Input
+                    id={id}
+                    aria-describedby={describedBy}
+                    invalid={invalid}
+                    type={p.type === "datetime" ? "datetime-local" : p.type === "date" ? "date" : "text"}
+                    value={values[p.name] ?? ""}
+                    onChange={(e) => setValues((v) => ({ ...v, [p.name]: e.target.value }))}
+                  />
+                )
+              }
+            </FormField>
+          ))}
       </form>
     </Modal>
   );

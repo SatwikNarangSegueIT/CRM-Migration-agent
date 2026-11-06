@@ -532,6 +532,9 @@ function RecordView({ meta, record }: { meta: ObjectDescribe; record: RecordData
   );
 }
 
+/** Records created from a related list that open straight away, because the next step happens on them. */
+const OPEN_AFTER_CREATE = new Set(["service_agreement", "engagement_letter"]);
+
 function DetailsTab({
   meta,
   record,
@@ -626,6 +629,7 @@ export function RelatedCard({
   const childMeta = useObjectMeta(list.object);
   const toast = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [limit, setLimit] = useState(compact ? 3 : 5);
   const rows = useQuery({
@@ -743,9 +747,15 @@ export function RelatedCard({
           onClose={() => setCreating(false)}
           onSaved={(r) => {
             setCreating(false);
-            toast.show(`${childMeta.data!.label} "${r.name}" was created.`);
             void queryClient.invalidateQueries({ queryKey: ["related", parent.id] });
             void queryClient.invalidateQueries({ queryKey: ["record", parentMeta.api_name, parent.id] });
+            if (OPEN_AFTER_CREATE.has(list.object)) {
+              // Drafts that are sent next (Send to Client is on the record itself).
+              toast.show(
+                `${childMeta.data!.label} "${r.name}" was created. Send it to the client from here.`,
+              );
+              navigate(recordPath(list.object, r.id));
+            } else toast.show(`${childMeta.data!.label} "${r.name}" was created.`);
           }}
         />
       )}

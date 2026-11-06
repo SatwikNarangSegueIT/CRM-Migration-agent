@@ -632,12 +632,9 @@ def test_migration_agency_pack(
         agent, "service_agreement", {"matter": matter["id"], "scope": "Prepare and lodge a 482 application."}
     )
     action(agent, "service_agreement", agreement["id"], "send", expect=422)  # Consumer Guide first
-    ag = get(agent, "service_agreement", agreement["id"])
-    agent.patch(
-        f"{API}/objects/service_agreement/records/{agreement['id']}",
-        json={"version": ag["version"], "fields": {"consumer_guide_provided": True}},
-    )
-    action(agent, "service_agreement", agreement["id"], "send")
+    # Confirmed in the Send dialog itself, and recorded on the agreement.
+    action(agent, "service_agreement", agreement["id"], "send", {"consumer_guide_provided": True})
+    assert get(agent, "service_agreement", agreement["id"])["fields"]["consumer_guide_provided"] is True
     assert get(agent, "matter", matter["id"])["fields"]["stage"] == "Service Agreement"
 
     c.post(f"{API}/portal-users/invite/{client_contact['id']}")
