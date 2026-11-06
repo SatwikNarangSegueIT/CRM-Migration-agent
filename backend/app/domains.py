@@ -298,8 +298,16 @@ def apply_related_lists(db: Session) -> int:
 
 # ------------------------------------------------------------------ forms
 
+# People's two numbers, named so nobody has to guess which goes where: (object, field) -> (old, new).
+CLEARER_LABELS: dict[tuple[str, str], tuple[str, str]] = {
+    ("contact", "mobile"): ("Mobile", "Mobile Number"),
+    ("contact", "phone"): ("Phone", "Landline / Office Phone"),
+    ("lead", "mobile"): ("Mobile", "Mobile Number"),
+    ("lead", "phone"): ("Phone", "Landline / Office Phone"),
+}
+
 # Bump when apply_forms changes: existing workspaces are brought up to date at start-up.
-FORMS_VERSION = 8
+FORMS_VERSION = 9
 
 # Sales-oriented fields that a profession workspace doesn't use. They're taken off the page layouts (so off
 # the forms and record pages), not deleted: an administrator can put them back in Object Manager.
@@ -495,6 +503,10 @@ def apply_forms(db: Session, domain: str) -> int:
             new_label = FIELD_RENAMES.get((api, f.api_name))
             if new_label and f.label != new_label:
                 f.label = new_label
+                changed += 1
+            clearer = CLEARER_LABELS.get((api, f.api_name))
+            if clearer and f.label == clearer[0]:  # still the shipped label: an administrator's own stays
+                f.label = clearer[1]
                 changed += 1
     for api, label in NAME_LABELS.items():
         named = objects.get(api)

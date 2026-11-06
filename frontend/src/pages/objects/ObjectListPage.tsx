@@ -317,8 +317,8 @@ function ListView({ meta }: { meta: ObjectDescribe }) {
                 </ButtonGroup>
               )}
               {access.create && (
-                <Button size="sm" onClick={() => setCreating(true)}>
-                  <PlusIcon size={16} /> New
+                <Button size="sm" className="whitespace-nowrap" onClick={() => setCreating(true)}>
+                  <PlusIcon size={16} /> New {meta.label}
                 </Button>
               )}
             </div>

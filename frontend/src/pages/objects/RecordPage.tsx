@@ -18,6 +18,7 @@ import {
   DownloadIcon,
   EditIcon,
   PaperclipIcon,
+  PlusIcon,
   RecycleIcon,
   TrashIcon,
 } from "../../components/icons";
@@ -636,14 +637,19 @@ export function RelatedCard({
   const cols = list.columns.filter((c) => childMeta.data?.fields[c]);
   return (
     <section aria-label={list.label} className="rounded-xl border border-slate-200/80 bg-white shadow-card">
-      <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+      <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2.5">
+        <h3 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-900">
           {childMeta.data && <ObjectIcon icon={childMeta.data.icon} color={childMeta.data.color} size={22} />}
           {list.label} ({rows.data ? `${total}${rows.data.total_capped ? "+" : ""}` : "…"})
         </h3>
         {list.can_create && childMeta.data && !parent.is_deleted && (
-          <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
-            New
+          <Button
+            size="sm"
+            variant="secondary"
+            className="flex-none whitespace-nowrap"
+            onClick={() => setCreating(true)}
+          >
+            <PlusIcon size={14} /> New {childMeta.data.label}
           </Button>
         )}
       </header>
@@ -777,8 +783,8 @@ export function FilesCard({ object, record }: { object: string; record: RecordDa
   });
   return (
     <section aria-label="Files" className="rounded-xl border border-slate-200/80 bg-white shadow-card">
-      <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+      <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2.5">
+        <h3 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-900">
           <PaperclipIcon size={16} /> Files ({files.data?.total ?? "…"})
         </h3>
         <Button

@@ -243,7 +243,31 @@ export function Sidebar({
   };
   return (
     <div className="flex h-full flex-col">
-      <WorkspaceBadge collapsed={collapsed} />
+      <div className={cx("flex flex-none items-center", collapsed ? "flex-col" : "pr-3")}>
+        <div className="min-w-0 flex-1">
+          <WorkspaceBadge collapsed={collapsed} />
+        </div>
+        {onToggleCollapsed && (
+          <button
+            type="button"
+            onClick={() => {
+              setHint(null);
+              onToggleCollapsed();
+            }}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-keyshortcuts="Control+B Meta+B"
+            title={collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"}
+            className={cx(
+              "flex-none rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700",
+              "focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600",
+              collapsed && "-mt-2 mb-2",
+            )}
+          >
+            {collapsed ? <ChevronRightIcon size={18} /> : <ChevronLeftIcon size={18} />}
+          </button>
+        )}
+      </div>
       <nav aria-label="Apps" className="flex min-h-0 flex-1 flex-col">
         <div className={cx("pb-2", collapsed ? "px-2.5" : "px-3")}>
           <AppSwitcher apps={apps} current={app} collapsed={collapsed} onNavigate={onNavigate} />
@@ -287,36 +311,9 @@ export function Sidebar({
             </div>
           )}
         </div>
-        {(bottomLinks.length > 0 || onToggleCollapsed) && (
+        {bottomLinks.length > 0 && (
           <ul className={cx("space-y-0.5 border-t border-slate-200/70 py-3", collapsed ? "px-2.5" : "px-3")}>
             {bottomLinks.map(plain)}
-            {onToggleCollapsed && (
-              <li>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHint(null);
-                    onToggleCollapsed();
-                  }}
-                  aria-expanded={!collapsed}
-                  aria-keyshortcuts="Control+B Meta+B"
-                  className={cx(itemClass(false, collapsed), "w-full")}
-                  {...showHint("Expand sidebar (Ctrl+B)")}
-                >
-                  {collapsed ? (
-                    <ChevronRightIcon size={18} className={iconClass(false)} />
-                  ) : (
-                    <ChevronLeftIcon size={18} className={iconClass(false)} />
-                  )}
-                  {label(collapsed ? "Expand sidebar" : "Collapse sidebar")}
-                  {!collapsed && (
-                    <kbd className="ml-auto rounded border border-slate-200 bg-white px-1.5 py-px font-sans text-[10px] font-medium text-slate-400">
-                      Ctrl B
-                    </kbd>
-                  )}
-                </button>
-              </li>
-            )}
           </ul>
         )}
       </nav>

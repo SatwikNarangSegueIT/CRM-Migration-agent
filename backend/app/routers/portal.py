@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
+from app.apps.service import notify_portal_activity
 from app.auth.deps import AuthContext, DbSession, require
 from app.core.errors import AppError, ConflictError, NotFoundError, PermissionDeniedError
 from app.engine import hooks
@@ -226,8 +227,14 @@ def run_action(
         if message:
             raise PermissionDeniedError(message)
     result = action.handler(svc, record, payload or {})
+    notify_portal_activity(svc, record, f"{_client_name(svc)}: {action.label} on {record.name}"[:200])
     svc.db.commit()
     return result
+
+
+def _client_name(svc: RecordService) -> str:
+    user = svc.db.get(User, svc.user_id) if svc.user_id else None
+    return user.name if user is not None else "A client"
 
 
 @router.post("/cases", status_code=status.HTTP_201_CREATED)
@@ -238,6 +245,9 @@ def create_case(body: CaseIn, svc: PortalRecords) -> dict[str, Any]:
     if body.type:
         values["type"] = body.type
     created = svc.create("case", {k: v for k, v in values.items() if v is not None})
+    notify_portal_activity(
+        svc, created, f"New client request from {_client_name(svc)}: {body.subject}"[:200], body.description
+    )
     svc.db.commit()
     return svc.serialize(created)
 
@@ -256,6 +266,9 @@ def add_comment(api_name: str, record_id: uuid.UUID, body: CommentIn, svc: Porta
     )
     if api_name == "case" and record.data.get("status") in ("Waiting on Customer", "Closed"):
         svc.elevated().update("case", record.id, {"status": "Working"}, record=record)
+    notify_portal_activity(
+        svc, record, f"{_client_name(svc)} commented on {record.name}"[:200], body.body[:500]
+    )
     svc.db.commit()
     return svc.serialize(note)
 
@@ -279,6 +292,7 @@ async def upload(
         related_to=record.id,
         is_public=True,
     )
+    notify_portal_activity(svc, record, f"{_client_name(svc)} uploaded {x_file_name} to {record.name}"[:200])
     svc.db.commit()
     return svc.serialize(file)
 

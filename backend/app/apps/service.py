@@ -13,7 +13,7 @@ from app.apps.sales import BusinessRuleError, rule, stamp_now
 from app.engine.hooks import Change, Event, action, on, ref
 from app.engine.records import RecordService
 from app.engine.types import format_datetime, parse_datetime
-from app.models import Notification, QueueMember, Record
+from app.models import Notification, QueueMember, Record, User
 from app.services.settings import get_setting
 
 CLOSED = "Closed"
@@ -123,6 +123,48 @@ def support_queue_id(db: Session) -> uuid.UUID | None:
     from app.models import Queue
 
     return SUPPORT_QUEUE_ID if db.get(Queue, SUPPORT_QUEUE_ID) is not None else None
+
+
+def notify_portal_activity(svc: RecordService, record: Record, title: str, body: str | None = None) -> int:
+    """Tell the firm a client did something in the portal (a new request, a comment, an upload, a
+    signature). Goes to the record's owner (or its queue's members) and to whoever owns the client's own
+    record; when no one does, to the workspace's administrators, so a client is never left unanswered."""
+    from app.models import Profile
+    from app.security.policy import SYSTEM_ADMIN_KEY
+
+    db = svc.db
+    staff: set[uuid.UUID] = set()
+    if record.owner_id and record.owner_id != svc.user_id:
+        staff.add(record.owner_id)
+    elif record.queue_id:
+        staff.update(db.scalars(select(QueueMember.user_id).where(QueueMember.queue_id == record.queue_id)))
+    contact_id = svc.sharing.contact_id
+    contact = db.get(Record, contact_id) if contact_id else None
+    if contact is not None and contact.owner_id:
+        staff.add(contact.owner_id)
+    active_staff = (
+        set(
+            db.scalars(
+                select(User.id)
+                .join(Profile, Profile.id == User.profile_id)
+                .where(User.id.in_(staff), User.is_active.is_(True), Profile.is_portal.is_(False))
+            )
+        )
+        if staff
+        else set()
+    )
+    if not active_staff:
+        active_staff = set(
+            db.scalars(
+                select(User.id)
+                .join(Profile, Profile.id == User.profile_id)
+                .where(Profile.key == SYSTEM_ADMIN_KEY, User.is_active.is_(True))
+            )
+        )
+    link = f"/o/{record.object_api_name}/{record.id}"
+    for uid in active_staff:
+        notify(db, uid, title, body, link, record.id)
+    return len(active_staff)
 
 
 def notify(

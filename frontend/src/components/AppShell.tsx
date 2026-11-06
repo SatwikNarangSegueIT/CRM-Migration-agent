@@ -12,6 +12,7 @@ import { HeaderIconButton, PanelHeader } from "./HeaderMenus";
 import {
   BellIcon,
   BuildingIcon,
+  ChevronLeftIcon,
   CloseIcon,
   HomeIcon,
   InboxIcon,
@@ -204,6 +205,47 @@ function Notifications() {
   );
 }
 
+/**
+ * Where "Back" goes on a page below a main section. Top-level pages (an app's home, a tab's list, Setup,
+ * Calendar, Reports, Dashboards) return null: the sidebar is how people move between those.
+ */
+export function parentPath(pathname: string, search: string): string | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts.length === 0) return null;
+  const [first, second] = parts;
+  if (parts.length === 1 && ["setup", "calendar", "reports", "dashboards"].includes(first!)) return null;
+  if (first === "app" && parts.length === 2) return null;
+  if (first === "o" && parts.length === 2) return null;
+  if (first === "import") {
+    const object = new URLSearchParams(search).get("object");
+    return object ? `/o/${object}` : "/";
+  }
+  if (first === "admin") return parts.length > 2 ? `/admin/${second}` : "/setup";
+  if (first === "statements" || first === "search" || first === "account") return "/";
+  if (first === "recycle-bin") return "/setup";
+  return "/" + parts.slice(0, -1).join("/");
+}
+
+function BackButton({ to }: { to: string }) {
+  const navigate = useNavigate();
+  const { key } = useLocation();
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        // Back to the page people came from inside the app; else up one level (a link opened directly).
+        if (key !== "default" && window.history.length > 1) navigate(-1);
+        else navigate(to);
+      }}
+      className="inline-flex flex-none items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
+    >
+      <ChevronLeftIcon size={16} />
+      <span className="hidden sm:inline">Back</span>
+      <span className="sr-only sm:hidden">Back</span>
+    </button>
+  );
+}
+
 const COLLAPSED_KEY = "crm.sidebarCollapsed";
 
 function storedCollapsed(): boolean {
@@ -246,6 +288,7 @@ export function AppShell() {
   const { pathname, search } = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, toggleCollapsed] = useCollapsedSidebar();
+  const back = parentPath(pathname, search);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const apps = useApps();
   const list = apps.data ?? [];
@@ -372,9 +415,13 @@ export function AppShell() {
             >
               <MenuIcon />
             </button>
-            <Link to="/" className="min-w-0 flex-none truncate md:hidden" aria-label="Home">
-              <Logo />
-            </Link>
+            {back ? (
+              <BackButton to={back} />
+            ) : (
+              <Link to="/" className="min-w-0 flex-none truncate md:hidden" aria-label="Home">
+                <Logo />
+              </Link>
+            )}
             <div className="hidden min-w-0 flex-1 sm:block">
               <GlobalSearch />
             </div>

@@ -507,6 +507,10 @@ def test_customer_portal(admin_client: TestClient, client: TestClient, db: Sessi
     portal.post(f"{API}/portal/objects/case/records/{mine['id']}/comments", json={"body": "Thanks!"})
     detail = portal.get(f"{API}/portal/objects/case/records/{mine['id']}").json()
     assert sorted(n["name"] for n in detail["timeline"]["note"]) == ["Comment from Pat Portal", "Reply"]
+    # The firm hears about it: the request and the comment both notify the client's owner (the admin here).
+    titles = [n["title"] for n in c.get(f"{API}/me/notifications").json()["items"]]
+    assert "New client request from Pat Portal: Help please" in titles
+    assert f"Pat Portal commented on {mine['name']}" in titles
 
     inv = create(c, "invoice", {"account": acct["id"]})
     create(c, "invoice_line", {"invoice": inv["id"], "description": "Support", "unit_price": 50})

@@ -33,6 +33,19 @@ function initialValues(
   return { ...values, ...defaults };
 }
 
+/**
+ * Records that need at least one of several fields (the server checks this too). Each field in a group is
+ * marked required, with a hint naming the alternatives, and the form checks the group before saving.
+ */
+const ONE_OF: Record<string, string[][]> = {
+  // Who the invoice is for: an organisation, a client, or the client of the matter / engagement.
+  invoice: [["account", "contact", "legal_matter", "matter", "engagement"]],
+  consent: [["contact", "lead"]],
+  campaign_member: [["lead", "contact"]],
+};
+
+const isBlank = (v: unknown) => v === undefined || v === null || v === "";
+
 /** Create or edit any record. Sections come from the object's page layout; only editable fields show. */
 export function RecordFormModal({
   meta,
@@ -74,6 +87,23 @@ export function RecordFormModal({
     return out;
   }, [meta, editable]);
 
+  // Groups present on this form (only the fields people can fill in count).
+  const groups = useMemo(
+    () =>
+      (ONE_OF[meta.api_name] ?? [])
+        .map((g) => g.filter((api) => editable.includes(api)))
+        .filter((g) => g.length > 1),
+    [meta.api_name, editable],
+  );
+  const groupOf = (api: string) => groups.find((g) => g.includes(api));
+  const [groupErrors, setGroupErrors] = useState<Record<string, string>>({});
+  const listNames = (apis: string[]) => {
+    const labels = apis.map((a) => meta.fields[a]?.label ?? a);
+    return labels.length > 1
+      ? `${labels.slice(0, -1).join(", ")} or ${labels[labels.length - 1]}`
+      : labels[0];
+  };
+
   const save = useMutation({
     mutationFn: () => {
       const fields: Record<string, unknown> = {};
@@ -107,13 +137,20 @@ export function RecordFormModal({
     },
   });
   const err = save.error instanceof ApiError ? save.error : null;
-  const fieldErrors = err?.fields ?? {};
+  const fieldErrors = { ...(err?.fields ?? {}), ...groupErrors };
   const unmapped =
     err && !Object.keys(fieldErrors).some((k) => editable.includes(k)) ? errorMessage(err) : null;
   const conflict = err?.status === 409 && err.code === "stale_version";
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
+    const missing: Record<string, string> = {};
+    for (const g of groups) {
+      if (g.every((api) => isBlank(values[api])))
+        for (const api of g) missing[api] = `Fill in ${listNames(g)}.`;
+    }
+    setGroupErrors(missing);
+    if (Object.keys(missing).length) return;
     save.mutate();
   }
 
@@ -152,12 +189,25 @@ export function RecordFormModal({
               {section.fields.map((api) => {
                 const f = meta.fields[api]!;
                 const wide = ["long_text", "textarea", "address", "multi_picklist"].includes(f.type);
+                const group = groupOf(api);
+                const alternatives = group?.filter((a) => a !== api) ?? [];
                 return (
                   <div key={api} className={wide && section.columns === 2 ? "sm:col-span-2" : undefined}>
                     <FormField
                       label={f.label}
-                      required={f.required || (api === "name" && creating)}
-                      hint={f.help_text ?? undefined}
+                      required={f.required || (api === "name" && creating) || Boolean(group)}
+                      hint={
+                        group ? (
+                          <>
+                            {f.help_text ? `${f.help_text} ` : ""}
+                            <span className="font-medium text-slate-600">
+                              Or fill in {listNames(alternatives)}.
+                            </span>
+                          </>
+                        ) : (
+                          (f.help_text ?? undefined)
+                        )
+                      }
                       error={fieldErrors[api]}
                     >
                       {({ id, describedBy, invalid }) => (
@@ -170,6 +220,7 @@ export function RecordFormModal({
                           describedBy={describedBy}
                           onChange={(v) => {
                             setValues((cur) => ({ ...cur, [api]: v }));
+                            if (group && !isBlank(v)) setGroupErrors({});
                             if (v === null) setNames((n) => ({ ...n, [api]: "" }));
                           }}
                         />
